@@ -18,8 +18,10 @@ import { AuthUser } from '../../common/auth/auth-user.interface';
 export class SitesController {
   constructor(private readonly sites: SitesService) {}
 
+  // Any authenticated user may list sites; results are scoped to the caller
+  // (SUPER_ADMIN sees all org sites, others only their assigned sites). This
+  // lets WATCHMAN/SUPERVISOR pick their active site on the mobile app.
   @Get()
-  @RequirePermissions(Permission.SITE_MANAGE)
   list(@CurrentUser() user: AuthUser, @Query('active') active?: string) {
     return this.sites.list(user, active === undefined ? undefined : active === 'true');
   }
