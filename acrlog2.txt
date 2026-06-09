@@ -1,0 +1,72 @@
+WARNING: Queued a run with ID: cua
+WARNING: Waiting for an agent...
+2026/06/09 09:26:19 Alias support enabled for version >= 1.1.0, please see https://aka.ms/acr/tasks/task-aliases for more information.
+2026/06/09 09:26:19 Creating Docker network: acb_default_network, driver: 'bridge'
+2026/06/09 09:26:19 Successfully set up Docker network: acb_default_network
+2026/06/09 09:26:19 Setting up Docker configuration...
+2026/06/09 09:26:20 Successfully set up Docker configuration
+2026/06/09 09:26:20 Logging in to registry: clamsacr8ca7.azurecr.io
+2026/06/09 09:26:20 Successfully logged into clamsacr8ca7.azurecr.io
+2026/06/09 09:26:20 Executing step ID: acb_step_0. Timeout(sec): 600, Working directory: '', Network: 'acb_default_network'
+2026/06/09 09:26:20 Launching container with name: acb_step_0
+Unable to find image 'clamsacr8ca7.azurecr.io/clams-api@sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392' locally
+clamsacr8ca7.azurecr.io/clams-api@sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392: Pulling from clams-api
+6a0ac1617861: Pulling fs layer
+4feea04c1543: Pulling fs layer
+b2cbbfe903b0: Pulling fs layer
+fff4e2c1b189: Pulling fs layer
+406d238b1f61: Pulling fs layer
+806c382b3399: Pulling fs layer
+d7c55faa3e47: Pulling fs layer
+9abdf97c88b1: Pulling fs layer
+caa094afefc3: Pulling fs layer
+6894db5b4a71: Pulling fs layer
+fff4e2c1b189: Waiting
+406d238b1f61: Waiting
+806c382b3399: Waiting
+d7c55faa3e47: Waiting
+9abdf97c88b1: Waiting
+caa094afefc3: Waiting
+6894db5b4a71: Waiting
+b2cbbfe903b0: Verifying Checksum
+b2cbbfe903b0: Download complete
+6a0ac1617861: Verifying Checksum
+6a0ac1617861: Download complete
+fff4e2c1b189: Verifying Checksum
+fff4e2c1b189: Download complete
+406d238b1f61: Verifying Checksum
+406d238b1f61: Download complete
+806c382b3399: Verifying Checksum
+806c382b3399: Download complete
+d7c55faa3e47: Verifying Checksum
+d7c55faa3e47: Download complete
+9abdf97c88b1: Verifying Checksum
+9abdf97c88b1: Download complete
+6a0ac1617861: Pull complete
+6894db5b4a71: Verifying Checksum
+6894db5b4a71: Download complete
+4feea04c1543: Verifying Checksum
+4feea04c1543: Download complete
+caa094afefc3: Verifying Checksum
+caa094afefc3: Download complete
+4feea04c1543: Pull complete
+b2cbbfe903b0: Pull complete
+fff4e2c1b189: Pull complete
+406d238b1f61: Pull complete
+806c382b3399: Pull complete
+d7c55faa3e47: Pull complete
+9abdf97c88b1: Pull complete
+caa094afefc3: Pull complete
+6894db5b4a71: Pull complete
+Digest: sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392
+Status: Downloaded newer image for clamsacr8ca7.azurecr.io/clams-api@sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392
+app.module.d.ts
+common
+infra
+main.d.ts
+modules
+worker.d.ts
+2026/06/09 09:26:28 Successfully executed container: acb_step_0
+2026/06/09 09:26:28 Step ID: acb_step_0 marked as successful (elapsed time in seconds: 7.814021)
+
+Run ID: cua was successful after 10s

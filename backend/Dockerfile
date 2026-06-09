@@ -7,7 +7,8 @@ COPY package*.json ./
 COPY prisma ./prisma
 RUN npm ci
 COPY . .
-RUN npx prisma generate && npm run build
+RUN npx prisma generate && npm run build \
+  && (test -f dist/main.js || (echo "BUILD ERROR: dist/main.js missing"; ls -R dist; exit 1))
 
 # ---------- Runtime ----------
 FROM node:20-alpine AS runtime
