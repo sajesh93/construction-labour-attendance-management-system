@@ -1,0 +1,10 @@
+{"TimeStamp": "2026-06-09T08:22:19.07032", "Log": "Connecting to the container 'clams-api'..."}
+{"TimeStamp": "2026-06-09T08:22:19.18736", "Log": "Successfully Connected to container: 'clams-api' [Revision: 'clams-api--fix1', Replica: 'clams-api--fix1-5dd6674679-xgcwr']"}
+{"TimeStamp": "2026-06-09T08:17:51.8061749+00:00", "Log": "F prisma:warn Prisma failed to detect the libssl/openssl version to use, and may not work as expected. Defaulting to \"openssl-1.1.x\"."}
+{"TimeStamp": "2026-06-09T08:17:51.8062151+00:00", "Log": "F Please manually install OpenSSL and try installing Prisma again."}
+{"TimeStamp": "2026-06-09T08:17:52.0230036+00:00", "Log": "F prisma:warn Prisma failed to detect the libssl/openssl version to use, and may not work as expected. Defaulting to \"openssl-1.1.x\"."}
+{"TimeStamp": "2026-06-09T08:17:52.0230431+00:00", "Log": "F Please manually install OpenSSL and try installing Prisma again."}
+{"TimeStamp": "2026-06-09T08:17:52.0254643+00:00", "Log": "F Prisma schema loaded from prisma/schema.prisma"}
+{"TimeStamp": "2026-06-09T08:17:52.0331875+00:00", "Log": "F Datasource \"db\": PostgreSQL database \"clams\", schema \"public\" at \"clams-pg-8ca7.postgres.database.azure.com:5432\""}
+{"TimeStamp": "2026-06-09T08:17:52.0554452+00:00", "Log": "F"}
+{"TimeStamp": "2026-06-09T08:17:52.0557789+00:00", "Log": "F Error: Could not parse schema engine response: SyntaxError: Unexpected token 'E', \"Error load\"... is not valid JSON"}
