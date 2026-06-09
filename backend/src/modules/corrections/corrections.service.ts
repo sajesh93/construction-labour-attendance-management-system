@@ -73,7 +73,8 @@ export class CorrectionsService {
 
   async cancel(user: AuthUser, id: string) {
     const req = await this.get(user, id);
-    if (req.status !== 'PENDING') throw Errors.businessRule('Only pending requests can be cancelled');
+    if (req.status !== 'PENDING')
+      throw Errors.businessRule('Only pending requests can be cancelled');
     const updated = await this.prisma.correctionRequest.update({
       where: { id },
       data: { status: 'CANCELLED' },

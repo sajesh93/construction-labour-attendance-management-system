@@ -39,9 +39,9 @@ export function computeWorkHours(
   // Scheduled shift start anchored to the login's local calendar day.
   const shiftStart = loginLocal.startOf('day').plus({ minutes: shift.startTimeMinutes });
   // For overnight shifts the scheduled end rolls to the next day.
-  const shiftEnd = (shift.isOvernight
+  const shiftEnd = shift.isOvernight
     ? loginLocal.startOf('day').plus({ days: 1, minutes: shift.endTimeMinutes })
-    : loginLocal.startOf('day').plus({ minutes: shift.endTimeMinutes }));
+    : loginLocal.startOf('day').plus({ minutes: shift.endTimeMinutes });
 
   const logoutLocal = DateTime.fromJSDate(logoutAt, { zone: timezone });
 

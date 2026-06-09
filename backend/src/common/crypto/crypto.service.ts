@@ -1,9 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-} from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 
 /**

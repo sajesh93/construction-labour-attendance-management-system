@@ -1,11 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  AttendanceTap,
-  Prisma,
-  SiteSettings,
-  TapSource,
-  Worker,
-} from '@prisma/client';
+import { AttendanceTap, Prisma, SiteSettings, TapSource, Worker } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { RedisService } from '../../infra/redis/redis.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -149,7 +143,9 @@ export class AttendanceService {
       const decision = decideTap(
         tapTime,
         settings.duplicateTapCooldownSeconds,
-        openSession ? { id: openSession.id, loginAt: openSession.loginAt, siteId: openSession.siteId } : null,
+        openSession
+          ? { id: openSession.id, loginAt: openSession.loginAt, siteId: openSession.siteId }
+          : null,
         lastTap ? { clientEventTime: lastTap.clientEventTime, tapType: lastTap.tapType } : null,
       );
 
@@ -160,7 +156,15 @@ export class AttendanceService {
       if (decision.action === 'LOGIN') {
         return await this.doLogin(organizationId, site, settings, worker, dto, ctx, tapTime);
       }
-      return await this.doLogout(organizationId, site, worker, dto, ctx, tapTime, decision.sessionId);
+      return await this.doLogout(
+        organizationId,
+        site,
+        worker,
+        dto,
+        ctx,
+        tapTime,
+        decision.sessionId,
+      );
     } finally {
       await this.redis.releaseLock(lockKey, lockToken);
     }
@@ -197,7 +201,11 @@ export class AttendanceService {
     if (stale) {
       await this.prisma.attendanceSession.update({
         where: { id: stale.id },
-        data: { state: 'AUTO_CLOSED', closedReason: 'auto-closed on next login', logoutAt: tapTime },
+        data: {
+          state: 'AUTO_CLOSED',
+          closedReason: 'auto-closed on next login',
+          logoutAt: tapTime,
+        },
       });
     }
 
@@ -356,7 +364,7 @@ export class AttendanceService {
   }
 
   /** Finalize a MANUAL-mode login after the watchman confirms the face match. */
-  async confirm(organizationId: string, eventId: string, ctx: TapContext) {
+  async confirm(organizationId: string, eventId: string, _ctx: TapContext) {
     const tap = await this.prisma.attendanceTap.findUnique({
       where: { organizationId_eventId: { organizationId, eventId } },
     });
@@ -403,7 +411,9 @@ export class AttendanceService {
   async activeSessions(organizationId: string, siteId: string) {
     return this.prisma.attendanceSession.findMany({
       where: { organizationId, siteId, state: 'OPEN' },
-      include: { worker: { select: { id: true, fullName: true, photoUrl: true, workerCode: true } } },
+      include: {
+        worker: { select: { id: true, fullName: true, photoUrl: true, workerCode: true } },
+      },
       orderBy: { loginAt: 'asc' },
     });
   }

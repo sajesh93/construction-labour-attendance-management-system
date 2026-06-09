@@ -2,7 +2,13 @@ import { minutesToHours, toCsv } from './report.builder';
 
 describe('report.builder', () => {
   it('builds CSV with header and rows', () => {
-    const csv = toCsv(['A', 'B'], [[1, 'x'], [2, 'y']]);
+    const csv = toCsv(
+      ['A', 'B'],
+      [
+        [1, 'x'],
+        [2, 'y'],
+      ],
+    );
     expect(csv).toBe('A,B\n1,x\n2,y');
   });
 

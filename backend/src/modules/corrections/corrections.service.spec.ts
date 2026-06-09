@@ -41,7 +41,9 @@ describe('CorrectionsService.approve (approval gate)', () => {
   it('does not mutate attendance when rejecting', async () => {
     const prisma: any = {
       correctionRequest: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'c1', status: 'PENDING', organizationId: 'org1' }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'c1', status: 'PENDING', organizationId: 'org1' }),
         update: jest.fn().mockResolvedValue({ id: 'c1', status: 'REJECTED' }),
       },
     };

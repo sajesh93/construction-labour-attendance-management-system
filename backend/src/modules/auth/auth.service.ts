@@ -24,7 +24,11 @@ export class AuthService {
   private accessTtl = Number(process.env.JWT_ACCESS_TTL ?? 900);
   private refreshTtl = Number(process.env.JWT_REFRESH_TTL ?? 2592000);
 
-  async login(email: string, password: string, ip?: string): Promise<TokenPair & { user: unknown }> {
+  async login(
+    email: string,
+    password: string,
+    ip?: string,
+  ): Promise<TokenPair & { user: unknown }> {
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { siteScopes: true },
@@ -35,7 +39,13 @@ export class AuthService {
     if (!valid) throw Errors.unauthenticated('Invalid credentials');
 
     const scopes = user.siteScopes.map((s) => s.siteId);
-    const tokens = await this.issueTokens(user.id, user.organizationId, user.role, user.email, scopes);
+    const tokens = await this.issueTokens(
+      user.id,
+      user.organizationId,
+      user.role,
+      user.email,
+      scopes,
+    );
 
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await this.audit.record({

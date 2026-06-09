@@ -23,11 +23,7 @@ export class DevicesService {
     });
   }
 
-  async update(
-    user: AuthUser,
-    id: string,
-    data: { status?: DeviceStatus; siteId?: string },
-  ) {
+  async update(user: AuthUser, id: string, data: { status?: DeviceStatus; siteId?: string }) {
     const device = await this.prisma.device.findFirst({
       where: { id, organizationId: user.organizationId },
     });

@@ -9,10 +9,15 @@ describe('decideTap', () => {
   });
 
   it('closes via LOGOUT when an open session exists', () => {
-    const d = decideTap(t('2026-06-09T17:00:00Z'), 30, { id: 's1', loginAt: t('2026-06-09T08:00:00Z'), siteId: 'site1' }, {
-      clientEventTime: t('2026-06-09T08:00:00Z'),
-      tapType: 'LOGIN',
-    });
+    const d = decideTap(
+      t('2026-06-09T17:00:00Z'),
+      30,
+      { id: 's1', loginAt: t('2026-06-09T08:00:00Z'), siteId: 'site1' },
+      {
+        clientEventTime: t('2026-06-09T08:00:00Z'),
+        tapType: 'LOGIN',
+      },
+    );
     expect(d).toEqual({ action: 'LOGOUT', sessionId: 's1' });
   });
 

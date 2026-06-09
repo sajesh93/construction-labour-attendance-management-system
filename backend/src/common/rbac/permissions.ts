@@ -47,11 +47,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.EMERGENCY_VIEW,
   ],
 
-  WATCHMAN: [
-    Permission.WORKER_VIEW_LIMITED,
-    Permission.ATTENDANCE_MARK,
-    Permission.EMERGENCY_VIEW,
-  ],
+  WATCHMAN: [Permission.WORKER_VIEW_LIMITED, Permission.ATTENDANCE_MARK, Permission.EMERGENCY_VIEW],
 
   SUPERVISOR: [
     Permission.WORKER_VIEW_LIMITED,

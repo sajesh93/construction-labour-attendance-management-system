@@ -36,11 +36,7 @@ export class DevicesController {
 
   @Patch(':id')
   @RequirePermissions(Permission.DEVICE_MANAGE)
-  update(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: UpdateDeviceDto,
-  ) {
+  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateDeviceDto) {
     return this.devices.update(user, id, dto);
   }
 }

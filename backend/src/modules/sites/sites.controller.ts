@@ -4,7 +4,6 @@ import { SitesService } from './sites.service';
 import {
   CreateShiftDto,
   CreateSiteDto,
-  UpdateShiftDto,
   UpdateSiteDto,
   UpdateSiteSettingsDto,
 } from './dto/site.dto';
@@ -67,11 +66,7 @@ export class SitesController {
 
   @Post(':id/shifts')
   @RequirePermissions(Permission.SETTINGS_MANAGE)
-  createShift(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: CreateShiftDto,
-  ) {
+  createShift(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CreateShiftDto) {
     return this.sites.createShift(user, id, dto);
   }
 }

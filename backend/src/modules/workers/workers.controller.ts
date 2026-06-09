@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { WorkersService } from './workers.service';
 import {
@@ -76,11 +67,7 @@ export class WorkersController {
 
   @Get(':id')
   @RequirePermissions(Permission.WORKER_MANAGE)
-  get(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Query('reveal') reveal?: string,
-  ) {
+  get(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('reveal') reveal?: string) {
     // Aadhaar reveal additionally requires the sensitive permission.
     const wantsReveal = reveal === 'true';
     if (wantsReveal && user.role !== 'SUPER_ADMIN' && user.role !== 'SITE_ADMIN') {

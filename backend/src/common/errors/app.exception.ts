@@ -34,13 +34,22 @@ export const Errors = {
   validation: (meta: Record<string, unknown>) =>
     new AppException({ status: 400, code: 'VALIDATION_ERROR', title: 'Validation failed', meta }),
   unauthenticated: (detail?: string) =>
-    new AppException({ status: 401, code: 'UNAUTHENTICATED', title: 'Authentication required', detail }),
+    new AppException({
+      status: 401,
+      code: 'UNAUTHENTICATED',
+      title: 'Authentication required',
+      detail,
+    }),
   refreshReuse: () =>
     new AppException({ status: 401, code: 'REFRESH_REUSE', title: 'Refresh token reuse detected' }),
   forbidden: (detail?: string) =>
     new AppException({ status: 403, code: 'FORBIDDEN', title: 'Access denied', detail }),
   deviceNotAuthorized: () =>
-    new AppException({ status: 403, code: 'DEVICE_NOT_AUTHORIZED', title: 'Device not authorized' }),
+    new AppException({
+      status: 403,
+      code: 'DEVICE_NOT_AUTHORIZED',
+      title: 'Device not authorized',
+    }),
   notFound: (entity = 'Resource') =>
     new AppException({ status: 404, code: 'NOT_FOUND', title: `${entity} not found` }),
   workerNotFound: (detail?: string) =>
@@ -54,7 +63,12 @@ export const Errors = {
       meta: { cooldownRemainingSeconds },
     }),
   alreadyOpen: (sessionId: string) =>
-    new AppException({ status: 409, code: 'ALREADY_OPEN', title: 'Worker already has an open session', meta: { sessionId } }),
+    new AppException({
+      status: 409,
+      code: 'ALREADY_OPEN',
+      title: 'Worker already has an open session',
+      meta: { sessionId },
+    }),
   conflict: (detail?: string) =>
     new AppException({ status: 409, code: 'CONFLICT', title: 'Conflict', detail }),
   geoOutOfRange: (distanceM: number, radiusM: number) =>
@@ -65,7 +79,12 @@ export const Errors = {
       meta: { distanceM, radiusM },
     }),
   businessRule: (detail: string) =>
-    new AppException({ status: 422, code: 'BUSINESS_RULE', title: 'Business rule violation', detail }),
+    new AppException({
+      status: 422,
+      code: 'BUSINESS_RULE',
+      title: 'Business rule violation',
+      detail,
+    }),
   rateLimited: () =>
     new AppException({ status: 429, code: 'RATE_LIMITED', title: 'Too many requests' }),
 };

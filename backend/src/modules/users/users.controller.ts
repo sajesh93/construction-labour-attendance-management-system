@@ -35,11 +35,7 @@ export class UsersController {
   }
 
   @Put(':id/site-scopes')
-  setScopes(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: SetSiteScopesDto,
-  ) {
+  setScopes(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: SetSiteScopesDto) {
     return this.users.setSiteScopes(user, id, dto);
   }
 }

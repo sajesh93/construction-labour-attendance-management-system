@@ -3,13 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { DeviceAuthService } from '../devices/device-auth.service';
-import {
-  DeviceRegisterDto,
-  DeviceTokenDto,
-  LoginDto,
-  LogoutDto,
-  RefreshDto,
-} from './dto/auth.dto';
+import { DeviceRegisterDto, DeviceTokenDto, LoginDto, LogoutDto, RefreshDto } from './dto/auth.dto';
 import { Public } from '../../common/rbac/rbac.decorators';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { AuthUser } from '../../common/auth/auth-user.interface';

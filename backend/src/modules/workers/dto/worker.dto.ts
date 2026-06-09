@@ -61,7 +61,10 @@ export class CreateWorkerDto {
   @IsString()
   esiNumber?: string;
 
-  @ApiProperty({ required: false, description: '12-digit Aadhaar; encrypted at rest, never returned' })
+  @ApiProperty({
+    required: false,
+    description: '12-digit Aadhaar; encrypted at rest, never returned',
+  })
   @IsOptional()
   @Matches(/^\d{12}$/, { message: 'aadhaar must be 12 digits' })
   aadhaar?: string;

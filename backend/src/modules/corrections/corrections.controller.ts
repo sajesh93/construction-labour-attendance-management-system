@@ -49,11 +49,7 @@ export class CorrectionsController {
 
   @Post(':id/reject')
   @RequirePermissions(Permission.CORRECTION_APPROVE)
-  reject(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: ReviewCorrectionDto,
-  ) {
+  reject(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ReviewCorrectionDto) {
     return this.corrections.reject(user, id, dto);
   }
 

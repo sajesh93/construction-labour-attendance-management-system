@@ -36,7 +36,9 @@ export class ReportsService {
       jobId: job.id,
       status: job.status,
       // CSV returned inline; XLSX/PDF will be available via GET /reports/:id once rendered.
-      ...(dto.format === 'CSV' ? { contentType: 'text/csv', content: csv, rowCount: rows.length } : {}),
+      ...(dto.format === 'CSV'
+        ? { contentType: 'text/csv', content: csv, rowCount: rows.length }
+        : {}),
     };
   }
 
@@ -92,7 +94,9 @@ export class ReportsService {
       where.workDate = new Date(String(params.date));
     }
     if (type === ReportType.MONTHLY && params.month) {
-      const [y, m] = String(params.month).split('-').map((n) => parseInt(n, 10));
+      const [y, m] = String(params.month)
+        .split('-')
+        .map((n) => parseInt(n, 10));
       where.workDate = { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
     }
     if ((params.from || params.to) && !where.workDate) {

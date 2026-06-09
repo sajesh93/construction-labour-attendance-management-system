@@ -46,7 +46,14 @@ export class WorkersService {
   // ---- Queries -------------------------------------------------------------
   async list(
     user: AuthUser,
-    opts: { siteId?: string; vendorId?: string; status?: string; q?: string; limit?: number; cursor?: string },
+    opts: {
+      siteId?: string;
+      vendorId?: string;
+      status?: string;
+      q?: string;
+      limit?: number;
+      cursor?: string;
+    },
   ) {
     const limit = Math.min(opts.limit ?? 50, 200);
     const where: Prisma.WorkerWhereInput = {
@@ -54,9 +61,7 @@ export class WorkersService {
       deletedAt: null,
       ...(opts.vendorId ? { vendorId: opts.vendorId } : {}),
       ...(opts.status ? { status: opts.status as Prisma.EnumWorkerStatusFilter['equals'] } : {}),
-      ...(opts.siteId
-        ? { assignments: { some: { siteId: opts.siteId, endDate: null } } }
-        : {}),
+      ...(opts.siteId ? { assignments: { some: { siteId: opts.siteId, endDate: null } } } : {}),
       ...(opts.q
         ? {
             OR: [
@@ -269,9 +274,7 @@ export class WorkersService {
       await tx.worker.update({
         where: { id },
         data:
-          dto.kind === CredentialKind.NFC_UID
-            ? { nfcUid: dto.value }
-            : { qrIdentifier: dto.value },
+          dto.kind === CredentialKind.NFC_UID ? { nfcUid: dto.value } : { qrIdentifier: dto.value },
       });
     });
 
