@@ -19,5 +19,6 @@ COPY prisma ./prisma
 RUN npm ci --omit=dev && npx prisma generate
 COPY --from=builder /app/dist ./dist
 EXPOSE 3000
-# Run migrations then start the API
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+# Migrations are applied as a separate deploy step (not per-replica on startup,
+# which causes advisory-lock contention). Just run the API here.
+CMD ["node", "dist/main.js"]

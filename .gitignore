@@ -34,3 +34,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+acrlog.txt
+calog.txt
