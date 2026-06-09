@@ -1,20 +1,20 @@
 WARNING: Packing source code into tar to upload...
-WARNING: Uploading archived source code from 'C:\Users\DURAI_~1\AppData\Local\Temp\build_archive_c801274ed17c44678beaabbaea6b8c4c.tar.gz'...
-WARNING: Sending context (147.913 KiB) to registry: clamsacr8ca7...
-WARNING: Queued a build with ID: cug
+WARNING: Uploading archived source code from 'C:\Users\DURAI_~1\AppData\Local\Temp\build_archive_d76a389645a8468495741c13aa8ffe84.tar.gz'...
+WARNING: Sending context (149.470 KiB) to registry: clamsacr8ca7...
+WARNING: Queued a build with ID: cuj
 WARNING: Waiting for an agent...
-2026/06/09 15:39:09 Downloading source code...
-2026/06/09 15:39:10 Finished downloading source code
-2026/06/09 15:39:10 Using acb_vol_a5665c2e-1b1c-4f3b-9e13-cebe9d81c1bd as the home volume
-2026/06/09 15:39:10 Setting up Docker configuration...
-2026/06/09 15:39:11 Successfully set up Docker configuration
-2026/06/09 15:39:11 Logging in to registry: clamsacr8ca7.azurecr.io
-2026/06/09 15:39:11 Successfully logged into clamsacr8ca7.azurecr.io
-2026/06/09 15:39:11 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
-2026/06/09 15:39:11 Scanning for dependencies...
-2026/06/09 15:39:12 Successfully scanned dependencies
-2026/06/09 15:39:12 Launching container with name: build
-Sending build context to Docker daemon  631.8kB
+2026/06/09 17:53:44 Downloading source code...
+2026/06/09 17:53:44 Finished downloading source code
+2026/06/09 17:53:45 Using acb_vol_8369df63-9a56-45d0-8c15-aaf0e275e41c as the home volume
+2026/06/09 17:53:45 Setting up Docker configuration...
+2026/06/09 17:53:45 Successfully set up Docker configuration
+2026/06/09 17:53:45 Logging in to registry: clamsacr8ca7.azurecr.io
+2026/06/09 17:53:46 Successfully logged into clamsacr8ca7.azurecr.io
+2026/06/09 17:53:46 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
+2026/06/09 17:53:46 Scanning for dependencies...
+2026/06/09 17:53:46 Successfully scanned dependencies
+2026/06/09 17:53:46 Launching container with name: build
+Sending build context to Docker daemon  640.5kB
 Step 1/14 : FROM node:20-alpine AS builder
 20-alpine: Pulling from library/node
 6a0ac1617861: Pulling fs layer
@@ -26,25 +26,25 @@ b2cbbfe903b0: Verifying Checksum
 b2cbbfe903b0: Download complete
 6a0ac1617861: Verifying Checksum
 6a0ac1617861: Download complete
-6a0ac1617861: Pull complete
 4feea04c1543: Verifying Checksum
 4feea04c1543: Download complete
+6a0ac1617861: Pull complete
 fff4e2c1b189: Verifying Checksum
-fff4e2c1b189: Download complete
-4feea04c1543: Pull complete
+fff4e2c1b189: Download complete
+4feea04c1543: Pull complete
 b2cbbfe903b0: Pull complete
 fff4e2c1b189: Pull complete
 Digest: sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
 Status: Downloaded newer image for node:20-alpine
  ---> 11cedc39e663
 Step 2/14 : WORKDIR /app
- ---> Running in d7770f90796a
-Removing intermediate container d7770f90796a
- ---> 07cdb3d5fff2
-Step 3/14 : COPY package*.json ./
- ---> 1da22df919b4
+ ---> Running in f982cd68e807
+Removing intermediate container f982cd68e807
+ ---> 21efb2cc87f7
+Step 3/14 : COPY package*.json ./
+ ---> 5c63c93da20b
 Step 4/14 : RUN npm ci
- ---> Running in 01f648f4d3f6
+ ---> Running in db8a2ad260d6
 npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
 npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
 npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
@@ -54,7 +54,7 @@ npm warn deprecated glob@10.3.10: Old versions of glob are not supported, and co
 npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
 
 
-added 445 packages, and audited 446 packages in 27s
+added 446 packages, and audited 447 packages in 26s
 
 172 packages are looking for funding
   run `npm fund` for details
@@ -70,14 +70,18 @@ npm notice New major version of npm available! 10.8.2 -> 11.16.0
 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.16.0
 npm notice To update run: npm install -g npm@11.16.0
 npm notice
+Removing intermediate container db8a2ad260d6
+ ---> 3741e650436d
+Step 5/14 : COPY . .
+ ---> cbbb669f8146
+Step 6/14 : RUN npm run build
+ ---> Running in 2faa4562b2c7
+
+> clams-admin@0.1.0 build
+> next build
 
-Removing intermediate container 01f648f4d3f6
- ---> 5795a9dfc2f7
-Step 5/14 : COPY . .
- ---> b0de3c072c49
-Step 6/14 : RUN npm run build
 ERROR: The command failed with an unexpected error. Here is the traceback:
-ERROR: 'charmap' codec can't encode character '\u25b2' in position 405: character maps to <undefined>
+ERROR: 'charmap' codec can't encode character '\u25b2' in position 329: character maps to <undefined>
 Traceback (most recent call last):
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\knack/cli.py", line 233, in invoke
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 669, in execute
@@ -93,5 +97,5 @@ Traceback (most recent call last):
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 205, in write_and_convert
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 210, in write_plain_text
   File "encodings\cp1252.py", line 19, in encode
-UnicodeEncodeError: 'charmap' codec can't encode character '\u25b2' in position 405: character maps to <undefined>
+UnicodeEncodeError: 'charmap' codec can't encode character '\u25b2' in position 329: character maps to <undefined>
 To check existing issues, please visit: https://github.com/Azure/azure-cli/issues

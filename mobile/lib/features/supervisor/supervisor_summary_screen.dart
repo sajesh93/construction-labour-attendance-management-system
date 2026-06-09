@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
 import '../attendance/domain/models.dart';
+import 'correction_request_screen.dart';
 
 /// Monthly attendance summary for one worker (supervisor read-only view).
 class SupervisorSummaryScreen extends ConsumerStatefulWidget {
@@ -57,7 +58,20 @@ class _SupervisorSummaryScreenState extends ConsumerState<SupervisorSummaryScree
   Widget build(BuildContext context) {
     final daily = (_data?['daily'] as List?)?.cast<Map<String, dynamic>>() ?? [];
     return Scaffold(
-      appBar: AppBar(title: Text(widget.worker.fullName)),
+      appBar: AppBar(
+        title: Text(widget.worker.fullName),
+        actions: [
+          IconButton(
+            tooltip: 'Request correction',
+            icon: const Icon(Icons.edit_calendar),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CorrectionRequestScreen(worker: widget.worker),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
