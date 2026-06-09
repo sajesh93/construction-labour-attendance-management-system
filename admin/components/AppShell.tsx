@@ -1,0 +1,80 @@
+'use client';
+
+import * as React from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import {
+  AppBar,
+  Box,
+  Drawer,
+  List,
+  ListItemButton,
+  ListItemText,
+  Toolbar,
+  Typography,
+  Button,
+  Chip,
+} from '@mui/material';
+import { Me } from '@/lib/types';
+import { navForRole } from '@/lib/rbac';
+
+const DRAWER_WIDTH = 240;
+
+export function AppShell({ me, children }: { me: Me; children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const items = navForRole(me.role);
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/login');
+    router.refresh();
+  }
+
+  return (
+    <Box sx={{ display: 'flex' }}>
+      <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }} color="default" elevation={1}>
+        <Toolbar>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            CLAMS Admin
+          </Typography>
+          <Chip label={me.role} size="small" sx={{ mr: 2 }} />
+          <Typography variant="body2" sx={{ mr: 2 }}>
+            {me.fullName}
+          </Typography>
+          <Button onClick={logout} variant="outlined" size="small">
+            Logout
+          </Button>
+        </Toolbar>
+      </AppBar>
+
+      <Drawer
+        variant="permanent"
+        sx={{
+          width: DRAWER_WIDTH,
+          flexShrink: 0,
+          [`& .MuiDrawer-paper`]: { width: DRAWER_WIDTH, boxSizing: 'border-box' },
+        }}
+      >
+        <Toolbar />
+        <List>
+          {items.map((item) => {
+            const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+            return (
+              <ListItemButton
+                key={item.href}
+                selected={active}
+                onClick={() => router.push(item.href)}
+              >
+                <ListItemText primary={item.label} />
+              </ListItemButton>
+            );
+          })}
+        </List>
+      </Drawer>
+
+      <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+        {children}
+      </Box>
+    </Box>
+  );
+}

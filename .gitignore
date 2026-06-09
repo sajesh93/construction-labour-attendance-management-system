@@ -1,0 +1,36 @@
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.next/
+out/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+infra/.env
+
+# Prisma
+backend/prisma/*.db
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/.packages
+mobile/ios/Pods/
+mobile/android/.gradle/
+mobile/android/app/google-services.json
+*.g.dart
+*.freezed.dart
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
