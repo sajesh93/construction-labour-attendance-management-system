@@ -1,72 +1,102 @@
-WARNING: Queued a run with ID: cua
+WARNING: Packing source code into tar to upload...
+WARNING: Uploading archived source code from 'C:\Users\DURAI_~1\AppData\Local\Temp\build_archive_19b717ffa4514256919ebd30ff255b71.tar.gz'...
+WARNING: Sending context (146.718 KiB) to registry: clamsacr8ca7...
+WARNING: Queued a build with ID: cue
 WARNING: Waiting for an agent...
-2026/06/09 09:26:19 Alias support enabled for version >= 1.1.0, please see https://aka.ms/acr/tasks/task-aliases for more information.
-2026/06/09 09:26:19 Creating Docker network: acb_default_network, driver: 'bridge'
-2026/06/09 09:26:19 Successfully set up Docker network: acb_default_network
-2026/06/09 09:26:19 Setting up Docker configuration...
-2026/06/09 09:26:20 Successfully set up Docker configuration
-2026/06/09 09:26:20 Logging in to registry: clamsacr8ca7.azurecr.io
-2026/06/09 09:26:20 Successfully logged into clamsacr8ca7.azurecr.io
-2026/06/09 09:26:20 Executing step ID: acb_step_0. Timeout(sec): 600, Working directory: '', Network: 'acb_default_network'
-2026/06/09 09:26:20 Launching container with name: acb_step_0
-Unable to find image 'clamsacr8ca7.azurecr.io/clams-api@sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392' locally
-clamsacr8ca7.azurecr.io/clams-api@sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392: Pulling from clams-api
+2026/06/09 14:04:04 Downloading source code...
+2026/06/09 14:04:05 Finished downloading source code
+2026/06/09 14:04:05 Using acb_vol_5d0f4fa4-a38e-48df-bea3-bbbc9afeb5a8 as the home volume
+2026/06/09 14:04:05 Setting up Docker configuration...
+2026/06/09 14:04:06 Successfully set up Docker configuration
+2026/06/09 14:04:06 Logging in to registry: clamsacr8ca7.azurecr.io
+2026/06/09 14:04:06 Successfully logged into clamsacr8ca7.azurecr.io
+2026/06/09 14:04:06 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
+2026/06/09 14:04:06 Scanning for dependencies...
+2026/06/09 14:04:07 Successfully scanned dependencies
+2026/06/09 14:04:07 Launching container with name: build
+Sending build context to Docker daemon  626.7kB
+Step 1/14 : FROM node:20-alpine AS builder
+20-alpine: Pulling from library/node
 6a0ac1617861: Pulling fs layer
 4feea04c1543: Pulling fs layer
 b2cbbfe903b0: Pulling fs layer
 fff4e2c1b189: Pulling fs layer
-406d238b1f61: Pulling fs layer
-806c382b3399: Pulling fs layer
-d7c55faa3e47: Pulling fs layer
-9abdf97c88b1: Pulling fs layer
-caa094afefc3: Pulling fs layer
-6894db5b4a71: Pulling fs layer
 fff4e2c1b189: Waiting
-406d238b1f61: Waiting
-806c382b3399: Waiting
-d7c55faa3e47: Waiting
-9abdf97c88b1: Waiting
-caa094afefc3: Waiting
-6894db5b4a71: Waiting
 b2cbbfe903b0: Verifying Checksum
 b2cbbfe903b0: Download complete
 6a0ac1617861: Verifying Checksum
 6a0ac1617861: Download complete
-fff4e2c1b189: Verifying Checksum
-fff4e2c1b189: Download complete
-406d238b1f61: Verifying Checksum
-406d238b1f61: Download complete
-806c382b3399: Verifying Checksum
-806c382b3399: Download complete
-d7c55faa3e47: Verifying Checksum
-d7c55faa3e47: Download complete
-9abdf97c88b1: Verifying Checksum
-9abdf97c88b1: Download complete
-6a0ac1617861: Pull complete
-6894db5b4a71: Verifying Checksum
-6894db5b4a71: Download complete
 4feea04c1543: Verifying Checksum
 4feea04c1543: Download complete
-caa094afefc3: Verifying Checksum
-caa094afefc3: Download complete
-4feea04c1543: Pull complete
+6a0ac1617861: Pull complete
+fff4e2c1b189: Verifying Checksum
+fff4e2c1b189: Download complete
+4feea04c1543: Pull complete
 b2cbbfe903b0: Pull complete
 fff4e2c1b189: Pull complete
-406d238b1f61: Pull complete
-806c382b3399: Pull complete
-d7c55faa3e47: Pull complete
-9abdf97c88b1: Pull complete
-caa094afefc3: Pull complete
-6894db5b4a71: Pull complete
-Digest: sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392
-Status: Downloaded newer image for clamsacr8ca7.azurecr.io/clams-api@sha256:9fd3bff206d2d596f7d2e316580c4721478d0d8905374bbc692417194359d392
-app.module.d.ts
-common
-infra
-main.d.ts
-modules
-worker.d.ts
-2026/06/09 09:26:28 Successfully executed container: acb_step_0
-2026/06/09 09:26:28 Step ID: acb_step_0 marked as successful (elapsed time in seconds: 7.814021)
+Digest: sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+Status: Downloaded newer image for node:20-alpine
+ ---> 11cedc39e663
+Step 2/14 : WORKDIR /app
+ ---> Running in ad703317d72f
+Removing intermediate container ad703317d72f
+ ---> d3dbdf7ecb7d
+Step 3/14 : COPY package*.json ./
+ ---> fdb34d860471
+Step 4/14 : RUN npm ci
+ ---> Running in 6361f8b136f0
+npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.3.10: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
 
-Run ID: cua was successful after 10s
+
+added 445 packages, and audited 446 packages in 27s
+
+172 packages are looking for funding
+  run `npm fund` for details
+
+10 vulnerabilities (5 moderate, 4 high, 1 critical)
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 11.16.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.16.0
+npm notice To update run: npm install -g npm@11.16.0
+npm notice
+
+Removing intermediate container 6361f8b136f0
+ ---> 0339e71f8ba9
+Step 5/14 : COPY . .
+ ---> a39e3765401e
+Step 6/14 : RUN npm run build
+ ---> Running in 9bcae28b3747
+
+> clams-admin@0.1.0 build
+> next build
+
+ERROR: The command failed with an unexpected error. Here is the traceback:
+ERROR: 'charmap' codec can't encode character '\u25b2' in position 329: character maps to <undefined>
+Traceback (most recent call last):
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\knack/cli.py", line 233, in invoke
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 669, in execute
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 737, in _run_jobs_serially
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 706, in _run_job
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 336, in __call__
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/command_operation.py", line 120, in handler
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/build.py", line 149, in acr_build
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 56, in stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 126, in _stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 47, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 177, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 205, in write_and_convert
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 210, in write_plain_text
+  File "encodings\cp1252.py", line 19, in encode
+UnicodeEncodeError: 'charmap' codec can't encode character '\u25b2' in position 329: character maps to <undefined>
+To check existing issues, please visit: https://github.com/Azure/azure-cli/issues

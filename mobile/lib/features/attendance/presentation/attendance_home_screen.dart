@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers.dart';
 import '../attendance_providers.dart';
+import '../../auth/auth_controller.dart';
 import '../../device/device_service.dart';
 import '../domain/models.dart';
 import '../domain/tap_decision.dart';
@@ -178,6 +179,11 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
                 error: (_, __) => const SizedBox.shrink(),
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Logout',
+            icon: const Icon(Icons.logout),
+            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
           ),
         ],
       ),

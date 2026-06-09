@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../attendance/attendance_providers.dart';
 import '../attendance/domain/models.dart';
+import '../auth/auth_controller.dart';
 
 /// Watchman selects the active site. Worker cards for that site are cached
 /// locally so the attendance flow works fully offline afterwards.
@@ -61,7 +62,9 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
       // Offline or empty — proceed; sync will refresh later.
     }
 
-    if (mounted) context.go('/attendance');
+    if (!mounted) return;
+    final role = ref.read(authControllerProvider).role;
+    context.go(role == 'SUPERVISOR' ? '/supervisor' : '/attendance');
   }
 
   @override
