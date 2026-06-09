@@ -9,6 +9,7 @@ import '../domain/models.dart';
 import '../domain/tap_decision.dart';
 import 'worker_card_sheet.dart';
 import 'manual_search_sheet.dart';
+import 'qr_scan_screen.dart';
 
 class AttendanceHomeScreen extends ConsumerStatefulWidget {
   const AttendanceHomeScreen({super.key});
@@ -28,6 +29,7 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
 
   DeviceState? _deviceState;
   String? _deviceId;
+  bool _nfcAvailable = true;
 
   @override
   void initState() {
@@ -39,9 +41,12 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
     final db = ref.read(localDbProvider);
     final siteId = await db.getMeta('active_site');
     final name = await db.getMeta('active_site_name') ?? '';
+    final nfcOk = await ref.read(nfcReaderProvider).isAvailable();
     setState(() {
       _siteId = siteId;
       _siteName = name;
+      _nfcAvailable = nfcOk;
+      if (!nfcOk) _status = 'No NFC on this device — scan the worker QR code';
     });
     await _ensureDevice();
     // Kick a sync on entry.
@@ -115,6 +120,16 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _onQr() async {
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    );
+    if (code == null || !mounted) return;
+    // QR badges are "CLAMS:<EMP-ID>"; accept a bare code too.
+    final value = code.startsWith('CLAMS:') ? code.substring(6) : code;
+    await _handleTap(TapSource.qr, value.trim());
   }
 
   Future<void> _handleTap(
@@ -234,11 +249,26 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
             Text(_status, textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: _busy ? null : _onNfc,
-              icon: const Icon(Icons.nfc),
-              label: const Text('Tap NFC card'),
-            ),
+            if (_nfcAvailable) ...[
+              FilledButton.icon(
+                onPressed: _busy ? null : _onNfc,
+                icon: const Icon(Icons.nfc),
+                label: const Text('Tap NFC card'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // QR is the primary action when there is no NFC.
+            _nfcAvailable
+                ? OutlinedButton.icon(
+                    onPressed: _busy ? null : _onQr,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Scan QR code'),
+                  )
+                : FilledButton.icon(
+                    onPressed: _busy ? null : _onQr,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Scan QR code'),
+                  ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _busy ? null : _onManual,

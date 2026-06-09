@@ -33,12 +33,17 @@ class AttendanceRepository {
   final _uuid = const Uuid();
 
   /// Resolve a worker from cached data for the given identifier/source.
-  Future<WorkerCard?> resolve(TapSource source, String identifier) {
-    return switch (source) {
-      TapSource.nfcUid => _db.findByUid(identifier),
-      TapSource.qr => _db.findByQr(identifier),
-      _ => _db.findByCode(identifier),
-    };
+  /// QR badges encode the EMP-ID (worker code); fall back to the opaque
+  /// qr identifier for legacy codes.
+  Future<WorkerCard?> resolve(TapSource source, String identifier) async {
+    switch (source) {
+      case TapSource.nfcUid:
+        return _db.findByUid(identifier);
+      case TapSource.qr:
+        return (await _db.findByCode(identifier)) ?? (await _db.findByQr(identifier));
+      default:
+        return _db.findByCode(identifier);
+    }
   }
 
   /// Core offline-first tap: resolve locally → decide → persist to outbox →

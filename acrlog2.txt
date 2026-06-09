@@ -1,20 +1,20 @@
 WARNING: Packing source code into tar to upload...
-WARNING: Uploading archived source code from 'C:\Users\DURAI_~1\AppData\Local\Temp\build_archive_19b717ffa4514256919ebd30ff255b71.tar.gz'...
-WARNING: Sending context (146.718 KiB) to registry: clamsacr8ca7...
-WARNING: Queued a build with ID: cue
+WARNING: Uploading archived source code from 'C:\Users\DURAI_~1\AppData\Local\Temp\build_archive_c801274ed17c44678beaabbaea6b8c4c.tar.gz'...
+WARNING: Sending context (147.913 KiB) to registry: clamsacr8ca7...
+WARNING: Queued a build with ID: cug
 WARNING: Waiting for an agent...
-2026/06/09 14:04:04 Downloading source code...
-2026/06/09 14:04:05 Finished downloading source code
-2026/06/09 14:04:05 Using acb_vol_5d0f4fa4-a38e-48df-bea3-bbbc9afeb5a8 as the home volume
-2026/06/09 14:04:05 Setting up Docker configuration...
-2026/06/09 14:04:06 Successfully set up Docker configuration
-2026/06/09 14:04:06 Logging in to registry: clamsacr8ca7.azurecr.io
-2026/06/09 14:04:06 Successfully logged into clamsacr8ca7.azurecr.io
-2026/06/09 14:04:06 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
-2026/06/09 14:04:06 Scanning for dependencies...
-2026/06/09 14:04:07 Successfully scanned dependencies
-2026/06/09 14:04:07 Launching container with name: build
-Sending build context to Docker daemon  626.7kB
+2026/06/09 15:39:09 Downloading source code...
+2026/06/09 15:39:10 Finished downloading source code
+2026/06/09 15:39:10 Using acb_vol_a5665c2e-1b1c-4f3b-9e13-cebe9d81c1bd as the home volume
+2026/06/09 15:39:10 Setting up Docker configuration...
+2026/06/09 15:39:11 Successfully set up Docker configuration
+2026/06/09 15:39:11 Logging in to registry: clamsacr8ca7.azurecr.io
+2026/06/09 15:39:11 Successfully logged into clamsacr8ca7.azurecr.io
+2026/06/09 15:39:11 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
+2026/06/09 15:39:11 Scanning for dependencies...
+2026/06/09 15:39:12 Successfully scanned dependencies
+2026/06/09 15:39:12 Launching container with name: build
+Sending build context to Docker daemon  631.8kB
 Step 1/14 : FROM node:20-alpine AS builder
 20-alpine: Pulling from library/node
 6a0ac1617861: Pulling fs layer
@@ -26,9 +26,9 @@ b2cbbfe903b0: Verifying Checksum
 b2cbbfe903b0: Download complete
 6a0ac1617861: Verifying Checksum
 6a0ac1617861: Download complete
+6a0ac1617861: Pull complete
 4feea04c1543: Verifying Checksum
 4feea04c1543: Download complete
-6a0ac1617861: Pull complete
 fff4e2c1b189: Verifying Checksum
 fff4e2c1b189: Download complete
 4feea04c1543: Pull complete
@@ -38,13 +38,13 @@ Digest: sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
 Status: Downloaded newer image for node:20-alpine
  ---> 11cedc39e663
 Step 2/14 : WORKDIR /app
- ---> Running in ad703317d72f
-Removing intermediate container ad703317d72f
- ---> d3dbdf7ecb7d
+ ---> Running in d7770f90796a
+Removing intermediate container d7770f90796a
+ ---> 07cdb3d5fff2
 Step 3/14 : COPY package*.json ./
- ---> fdb34d860471
+ ---> 1da22df919b4
 Step 4/14 : RUN npm ci
- ---> Running in 6361f8b136f0
+ ---> Running in 01f648f4d3f6
 npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
 npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
 npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
@@ -71,18 +71,13 @@ npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.16.0
 npm notice To update run: npm install -g npm@11.16.0
 npm notice
 
-Removing intermediate container 6361f8b136f0
- ---> 0339e71f8ba9
+Removing intermediate container 01f648f4d3f6
+ ---> 5795a9dfc2f7
 Step 5/14 : COPY . .
- ---> a39e3765401e
-Step 6/14 : RUN npm run build
- ---> Running in 9bcae28b3747
-
-> clams-admin@0.1.0 build
-> next build
-
+ ---> b0de3c072c49
+Step 6/14 : RUN npm run build
 ERROR: The command failed with an unexpected error. Here is the traceback:
-ERROR: 'charmap' codec can't encode character '\u25b2' in position 329: character maps to <undefined>
+ERROR: 'charmap' codec can't encode character '\u25b2' in position 405: character maps to <undefined>
 Traceback (most recent call last):
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\knack/cli.py", line 233, in invoke
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 669, in execute
@@ -98,5 +93,5 @@ Traceback (most recent call last):
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 205, in write_and_convert
   File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 210, in write_plain_text
   File "encodings\cp1252.py", line 19, in encode
-UnicodeEncodeError: 'charmap' codec can't encode character '\u25b2' in position 329: character maps to <undefined>
+UnicodeEncodeError: 'charmap' codec can't encode character '\u25b2' in position 405: character maps to <undefined>
 To check existing issues, please visit: https://github.com/Azure/azure-cli/issues

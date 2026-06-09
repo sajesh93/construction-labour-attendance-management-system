@@ -13,6 +13,7 @@ import {
   DialogTitle,
   Divider,
   Grid,
+  IconButton,
   MenuItem,
   Stack,
   Table,
@@ -24,8 +25,11 @@ import {
   Typography,
 } from '@mui/material';
 import { useForm } from 'react-hook-form';
+import { useRouter } from 'next/navigation';
+import QrCode2Icon from '@mui/icons-material/QrCode2';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { QrBadge } from '@/components/QrBadge';
 import { Paginated, Site, Vendor, Worker } from '@/lib/types';
 
 interface WorkerForm {
@@ -59,9 +63,11 @@ interface WorkerForm {
 
 export default function WorkersPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
+  const [qrWorker, setQrWorker] = React.useState<Worker | null>(null);
   const { register, handleSubmit, reset } = useForm<WorkerForm>();
 
   const workers = useQuery({
@@ -105,9 +111,14 @@ export default function WorkersPage() {
         title="Workers"
         subtitle="Worker master — profiles, contractor, bank, statutory & ID details"
         action={
-          <Button variant="contained" onClick={() => setOpen(true)}>
-            New worker
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" onClick={() => router.push('/workers/badges')}>
+              Print QR badges
+            </Button>
+            <Button variant="contained" onClick={() => setOpen(true)}>
+              New worker
+            </Button>
+          </Stack>
         }
       />
       <Stack direction="row" sx={{ mb: 2 }}>
@@ -132,6 +143,7 @@ export default function WorkersPage() {
               <TableCell>PF / ESI</TableCell>
               <TableCell>Gov ID</TableCell>
               <TableCell>Status</TableCell>
+              <TableCell align="right">QR</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -155,6 +167,11 @@ export default function WorkersPage() {
                     color={w.status === 'ACTIVE' ? 'success' : 'default'}
                     label={w.status}
                   />
+                </TableCell>
+                <TableCell align="right">
+                  <IconButton size="small" title="Show QR" onClick={() => setQrWorker(w)}>
+                    <QrCode2Icon />
+                  </IconButton>
                 </TableCell>
               </TableRow>
             ))}
@@ -263,6 +280,27 @@ export default function WorkersPage() {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      <Dialog open={!!qrWorker} onClose={() => setQrWorker(null)}>
+        <DialogTitle>Worker QR badge</DialogTitle>
+        <DialogContent>
+          <Stack alignItems="center" sx={{ py: 1 }}>
+            {qrWorker && (
+              <QrBadge
+                fullName={qrWorker.fullName}
+                workerCode={qrWorker.workerCode}
+                size={180}
+              />
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQrWorker(null)}>Close</Button>
+          <Button variant="contained" onClick={() => window.print()}>
+            Print
+          </Button>
+        </DialogActions>
       </Dialog>
     </>
   );

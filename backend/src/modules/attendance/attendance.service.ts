@@ -45,7 +45,11 @@ export class AttendanceService {
       return this.prisma.worker.findFirst({ where: { ...base, nfcUid: identifier } });
     }
     if (source === TapSource.QR) {
-      return this.prisma.worker.findFirst({ where: { ...base, qrIdentifier: identifier } });
+      // QR badges encode the EMP-ID (worker code); fall back to the opaque
+      // qrIdentifier for legacy/secure codes.
+      return this.prisma.worker.findFirst({
+        where: { ...base, OR: [{ workerCode: identifier }, { qrIdentifier: identifier }] },
+      });
     }
     // NFC_NDEF and MANUAL resolve by worker code.
     return this.prisma.worker.findFirst({ where: { ...base, workerCode: identifier } });
