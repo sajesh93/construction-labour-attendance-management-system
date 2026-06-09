@@ -6,8 +6,8 @@ plugins {
 
 android {
     namespace = "com.clamsapp.clams_mobile"
-    // Pinned: plugins (nfc_manager/mobile_scanner) need compileSdk 34+.
-    compileSdk = 35
+    // Pinned: plugins (geolocator/sqflite) need compileSdk 36+.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
