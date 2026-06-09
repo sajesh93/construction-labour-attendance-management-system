@@ -37,11 +37,28 @@ export interface Worker {
   id: string;
   workerCode: string;
   fullName: string;
+  fatherName?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  language?: string | null;
   photoUrl?: string | null;
   mobileNumber?: string | null;
+  pincode?: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'EXITED' | 'SUSPENDED';
   bloodGroup?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactNumber?: string | null;
+  nomineeName?: string | null;
+  nomineeRelation?: string | null;
   vendorId?: string | null;
+  natureOfContractor?: string | null;
+  bankName?: string | null;
+  bankAccountNumber?: string | null;
+  ifscCode?: string | null;
+  pfNumber?: string | null;
+  esiNumber?: string | null;
+  govIdType?: string | null;
+  aadhaarLast4?: string | null;
 }
 
 export interface Vendor {

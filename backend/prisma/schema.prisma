@@ -220,14 +220,26 @@ model Worker {
   nfcUid                 String?      @map("nfc_uid")
   qrIdentifier           String?      @map("qr_identifier")
   fullName               String       @map("full_name")
+  fatherName             String?      @map("father_name")
+  gender                 String?
+  dateOfBirth            DateTime?    @map("date_of_birth") @db.Date
+  language               String?
   photoUrl               String?      @map("photo_url")
   mobileNumber           String?      @map("mobile_number")
+  pincode                String?
   bloodGroup             String?      @map("blood_group")
   emergencyContactName   String?      @map("emergency_contact_name")
   emergencyContactNumber String?      @map("emergency_contact_number")
+  nomineeName            String?      @map("nominee_name")
+  nomineeRelation        String?      @map("nominee_relation")
   vendorId               String?      @map("vendor_id") @db.Uuid
+  natureOfContractor     String?      @map("nature_of_contractor")
+  bankName               String?      @map("bank_name")
+  bankAccountNumber      String?      @map("bank_account_number")
+  ifscCode               String?      @map("ifsc_code")
   pfNumber               String?      @map("pf_number")
   esiNumber              String?      @map("esi_number")
+  govIdType              String?      @map("gov_id_type")
   aadhaarCiphertext      Bytes?       @map("aadhaar_ciphertext")
   aadhaarLast4           String?      @map("aadhaar_last4")
   status                 WorkerStatus @default(ACTIVE)

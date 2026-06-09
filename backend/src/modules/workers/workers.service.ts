@@ -128,7 +128,7 @@ export class WorkersService {
   // ---- Mutations -----------------------------------------------------------
   async create(user: AuthUser, dto: CreateWorkerDto) {
     const aadhaarCiphertext = dto.aadhaar ? this.crypto.encrypt(dto.aadhaar) : undefined;
-    const aadhaarLast4 = dto.aadhaar ? dto.aadhaar.slice(-4) : undefined;
+    const aadhaarLast4 = dto.aadhaar ? dto.aadhaar.replace(/\s/g, '').slice(-4) : undefined;
 
     const worker = await this.prisma.$transaction(async (tx) => {
       const w = await tx.worker.create({
@@ -136,13 +136,25 @@ export class WorkersService {
           organizationId: user.organizationId,
           workerCode: dto.workerCode,
           fullName: dto.fullName,
+          fatherName: dto.fatherName,
+          gender: dto.gender,
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+          language: dto.language,
+          pincode: dto.pincode,
           mobileNumber: dto.mobileNumber,
           bloodGroup: dto.bloodGroup,
           emergencyContactName: dto.emergencyContactName,
           emergencyContactNumber: dto.emergencyContactNumber,
+          nomineeName: dto.nomineeName,
+          nomineeRelation: dto.nomineeRelation,
           vendorId: dto.vendorId,
+          natureOfContractor: dto.natureOfContractor,
+          bankName: dto.bankName,
+          bankAccountNumber: dto.bankAccountNumber,
+          ifscCode: dto.ifscCode,
           pfNumber: dto.pfNumber,
           esiNumber: dto.esiNumber,
+          govIdType: dto.govIdType,
           aadhaarCiphertext,
           aadhaarLast4,
           joinDate: dto.joinDate ? new Date(dto.joinDate) : undefined,
@@ -196,12 +208,24 @@ export class WorkersService {
 
     const data: Prisma.WorkerUpdateInput = {
       fullName: dto.fullName,
+      fatherName: dto.fatherName,
+      gender: dto.gender,
+      dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+      language: dto.language,
+      pincode: dto.pincode,
       mobileNumber: dto.mobileNumber,
       bloodGroup: dto.bloodGroup,
       emergencyContactName: dto.emergencyContactName,
       emergencyContactNumber: dto.emergencyContactNumber,
+      nomineeName: dto.nomineeName,
+      nomineeRelation: dto.nomineeRelation,
+      natureOfContractor: dto.natureOfContractor,
+      bankName: dto.bankName,
+      bankAccountNumber: dto.bankAccountNumber,
+      ifscCode: dto.ifscCode,
       pfNumber: dto.pfNumber,
       esiNumber: dto.esiNumber,
+      govIdType: dto.govIdType,
       notes: dto.notes,
       photoUrl: dto.photoUrl,
       status: dto.status,
@@ -209,7 +233,7 @@ export class WorkersService {
     };
     if (dto.aadhaar) {
       data.aadhaarCiphertext = this.crypto.encrypt(dto.aadhaar);
-      data.aadhaarLast4 = dto.aadhaar.slice(-4);
+      data.aadhaarLast4 = dto.aadhaar.replace(/\s/g, '').slice(-4);
     }
 
     await this.prisma.worker.update({ where: { id }, data });

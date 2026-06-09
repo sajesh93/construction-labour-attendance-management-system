@@ -24,6 +24,66 @@ export class CreateWorkerDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  fatherName?: string;
+
+  @ApiProperty({ required: false, description: 'M / F / OTHER' })
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  pincode?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  nomineeName?: string;
+
+  @ApiProperty({ required: false, description: 'Relation to nominee, e.g. Wife' })
+  @IsOptional()
+  @IsString()
+  nomineeRelation?: string;
+
+  @ApiProperty({ required: false, description: 'Nature of contractor / work, e.g. D&B' })
+  @IsOptional()
+  @IsString()
+  natureOfContractor?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  bankName?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  bankAccountNumber?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  ifscCode?: string;
+
+  @ApiProperty({ required: false, description: 'Government ID type, e.g. Aadhaar' })
+  @IsOptional()
+  @IsString()
+  govIdType?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   mobileNumber?: string;
 
   @ApiProperty({ required: false })
@@ -63,10 +123,10 @@ export class CreateWorkerDto {
 
   @ApiProperty({
     required: false,
-    description: '12-digit Aadhaar; encrypted at rest, never returned',
+    description: 'Government ID number (e.g. Aadhaar); encrypted at rest, never returned',
   })
   @IsOptional()
-  @Matches(/^\d{12}$/, { message: 'aadhaar must be 12 digits' })
+  @Matches(/^[0-9 ]{6,24}$/, { message: 'ID number must be 6-24 digits/spaces' })
   aadhaar?: string;
 
   @ApiProperty({ required: false })
