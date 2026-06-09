@@ -28,9 +28,12 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Disable R8 code shrinking: it strips/renames ML Kit + camera
+            // classes used by mobile_scanner, which caused a runtime
+            // "null object reference" (genericError) when scanning QR codes.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
@@ -43,17 +46,4 @@ kotlin {
 
 flutter {
     source = "../.."
-}
-
-dependencies {
-    // Bundle the ML Kit barcode model into the app so QR scanning works on
-    // devices with missing/old Google Play Services (fixes mobile_scanner
-    // genericError / null-object-reference). Adds ~2.5 MB to the APK.
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
-}
-
-configurations.all {
-    // Remove the Play-Services (unbundled) model that mobile_scanner pulls in,
-    // so only the bundled model above is used.
-    exclude(group = "com.google.android.gms", module = "play-services-mlkit-barcode-scanning")
 }
