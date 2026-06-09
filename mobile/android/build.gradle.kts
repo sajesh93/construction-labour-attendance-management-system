@@ -16,20 +16,16 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
-    project.evaluationDependsOn(":app")
-}
-
-// Force every Android subproject (Flutter plugins) to a recent compileSdk so
-// transitive AndroidX deps (fragment 1.7.1, geolocator, sqflite) pass the
-// checkReleaseAarMetadata gate. Plugins otherwise use the older default.
-subprojects {
+    // Force every Android subproject (Flutter plugins) to a recent compileSdk so
+    // transitive AndroidX deps (fragment 1.7.1, geolocator, sqflite) pass the
+    // checkReleaseAarMetadata gate. Registered before evaluationDependsOn so the
+    // callback is attached before the project is evaluated.
     afterEvaluate {
         extensions.findByName("android")?.let { ext ->
-            (ext as com.android.build.gradle.BaseExtension).apply {
-                compileSdkVersion(36)
-            }
+            (ext as com.android.build.gradle.BaseExtension).compileSdkVersion(36)
         }
     }
+    project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
