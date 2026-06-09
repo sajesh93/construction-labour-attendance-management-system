@@ -52,9 +52,9 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
     await db.setMeta('active_site_name', site['name'] as String);
     ref.read(activeSiteProvider.notifier).state = siteId;
 
-    // Warm the offline worker cache for this site.
+    // Warm the offline worker cache for this site (watchman-accessible endpoint).
     try {
-      final res = await dio.get('/workers', queryParameters: {'siteId': siteId, 'limit': '500'});
+      final res = await dio.get('/workers/by-site', queryParameters: {'siteId': siteId});
       final data = (res.data['data'] as List).cast<Map<String, dynamic>>();
       await db.cacheWorkers(data.map(WorkerCard.fromMap).toList());
     } catch (_) {

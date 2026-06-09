@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers.dart';
 import '../attendance_providers.dart';
+import '../../device/device_service.dart';
 import '../domain/models.dart';
 import '../domain/tap_decision.dart';
 import 'worker_card_sheet.dart';
@@ -24,6 +25,9 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
   // Site cooldown — refreshed from cached settings; default 30s.
   final int _cooldownSeconds = 30;
 
+  DeviceState? _deviceState;
+  String? _deviceId;
+
   @override
   void initState() {
     super.initState();
@@ -38,8 +42,18 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       _siteId = siteId;
       _siteName = name;
     });
+    await _ensureDevice();
     // Kick a sync on entry.
     ref.read(syncEngineProvider).syncNow();
+  }
+
+  Future<void> _ensureDevice() async {
+    final st = await ref.read(deviceServiceProvider).ensureRegisteredAndAuthorized();
+    if (!mounted) return;
+    setState(() {
+      _deviceState = st.state;
+      _deviceId = st.deviceId;
+    });
   }
 
   Future<void> _onNfc() async {
@@ -173,6 +187,42 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_deviceState == DeviceState.pending || _deviceState == DeviceState.error)
+              Card(
+                color: Colors.orange.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.warning_amber, color: Colors.orange.shade800),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _deviceState == DeviceState.pending
+                                  ? 'Device awaiting authorization'
+                                  : 'Could not reach server',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (_deviceState == DeviceState.pending && _deviceId != null)
+                        Text('Ask an admin to authorize this device in Admin → Devices, '
+                            'then tap Retry.\nDevice ID: $_deviceId'),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(onPressed: _ensureDevice, child: const Text('Retry')),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
             Icon(Icons.contactless, size: 96, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 24),
             Text(_status, textAlign: TextAlign.center,

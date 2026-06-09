@@ -12,6 +12,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Sites', href: '/sites', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },
   { label: 'Vendors', href: '/vendors', roles: ['SUPER_ADMIN'] },
   { label: 'Workers', href: '/workers', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },
+  { label: 'Devices', href: '/devices', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },
   { label: 'Attendance', href: '/attendance', roles: ['SUPER_ADMIN', 'SITE_ADMIN', 'SUPERVISOR'] },
   { label: 'Corrections', href: '/corrections', roles: ['SUPER_ADMIN', 'SITE_ADMIN', 'SUPERVISOR'] },
   { label: 'Reports', href: '/reports', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },

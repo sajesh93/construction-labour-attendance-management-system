@@ -51,6 +51,17 @@ export interface Vendor {
   isActive: boolean;
 }
 
+export interface Device {
+  id: string;
+  deviceUid: string;
+  label?: string | null;
+  platform?: string | null;
+  status: 'PENDING' | 'AUTHORIZED' | 'REVOKED';
+  siteId?: string | null;
+  lastSeenAt?: string | null;
+  createdAt: string;
+}
+
 export interface CorrectionRequest {
   id: string;
   workerId: string;

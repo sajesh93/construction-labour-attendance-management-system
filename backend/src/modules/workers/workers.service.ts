@@ -414,6 +414,36 @@ export class WorkersService {
     return this.limitedCard(worker);
   }
 
+  /**
+   * Limited worker list for a site, accessible to WATCHMAN/SUPERVISOR so the
+   * device can warm its offline cache. Includes nfcUid/qrIdentifier (not PII)
+   * for local tap resolution; excludes Aadhaar/PF/ESI.
+   */
+  async listBySite(user: AuthUser, siteId: string) {
+    if (!siteId) throw Errors.validation({ message: 'siteId is required' });
+    const rows = await this.prisma.worker.findMany({
+      where: {
+        organizationId: user.organizationId,
+        deletedAt: null,
+        status: 'ACTIVE',
+        assignments: { some: { siteId, endDate: null } },
+      },
+      select: {
+        id: true,
+        workerCode: true,
+        fullName: true,
+        photoUrl: true,
+        bloodGroup: true,
+        emergencyContactName: true,
+        emergencyContactNumber: true,
+        nfcUid: true,
+        qrIdentifier: true,
+      },
+      take: 1000,
+    });
+    return { data: rows };
+  }
+
   async search(user: AuthUser, q: string) {
     if (!q || q.length < 2) throw Errors.validation({ message: 'q must be at least 2 chars' });
     const rows = await this.prisma.worker.findMany({

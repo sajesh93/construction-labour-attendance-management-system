@@ -38,6 +38,13 @@ export class WorkersController {
     return this.workers.search(user, q);
   }
 
+  // Watchman/supervisor warm their offline cache from this scoped, limited list.
+  @Get('by-site')
+  @RequirePermissions(Permission.WORKER_VIEW_LIMITED)
+  bySite(@CurrentUser() user: AuthUser, @Query('siteId') siteId: string) {
+    return this.workers.listBySite(user, siteId);
+  }
+
   @Get(':id/emergency')
   @RequirePermissions(Permission.EMERGENCY_VIEW)
   emergency(@CurrentUser() user: AuthUser, @Param('id') id: string) {

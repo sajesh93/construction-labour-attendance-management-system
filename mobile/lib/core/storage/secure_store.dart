@@ -25,6 +25,12 @@ class SecureStore {
     await _storage.write(key: _deviceTokenKey, value: deviceToken);
   }
 
+  Future<void> saveDeviceId(String deviceId) =>
+      _storage.write(key: _deviceIdKey, value: deviceId);
+
+  Future<void> saveDeviceToken(String token) =>
+      _storage.write(key: _deviceTokenKey, value: token);
+
   Future<String?> get deviceId => _storage.read(key: _deviceIdKey);
   Future<String?> get deviceToken => _storage.read(key: _deviceTokenKey);
 
