@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { CorrectionReason, CorrectionType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  Allow,
   IsArray,
   IsDateString,
   IsEnum,
@@ -16,7 +17,10 @@ export class CorrectionItemDto {
   @IsString()
   field!: string;
 
+  // Free-form value (string/number/json) — whitelisted but not validated,
+  // otherwise the global forbidNonWhitelisted pipe rejects the request.
   @ApiProperty({ description: 'Proposed new value (typed JSON)' })
+  @Allow()
   proposedValue!: unknown;
 }
 

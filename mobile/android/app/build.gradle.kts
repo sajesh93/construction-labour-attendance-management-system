@@ -44,3 +44,16 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Bundle the ML Kit barcode model into the app so QR scanning works on
+    // devices with missing/old Google Play Services (fixes mobile_scanner
+    // genericError / null-object-reference). Adds ~2.5 MB to the APK.
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+}
+
+configurations.all {
+    // Remove the Play-Services (unbundled) model that mobile_scanner pulls in,
+    // so only the bundled model above is used.
+    exclude(group = "com.google.android.gms", module = "play-services-mlkit-barcode-scanning")
+}
