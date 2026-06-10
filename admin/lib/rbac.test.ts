@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { navForRole } from './rbac';
 
 describe('navForRole', () => {
-  it('gives super admin every nav item incl. organizations', () => {
+  it('gives super admin every nav item', () => {
     const labels = navForRole('SUPER_ADMIN').map((i) => i.label);
-    expect(labels).toContain('Organizations');
+    expect(labels).not.toContain('Organizations');
     expect(labels).toContain('Workers');
     expect(labels).toContain('Audit');
   });
 
-  it('hides organizations and vendors from site admin', () => {
+  it('hides vendors from site admin', () => {
     const labels = navForRole('SITE_ADMIN').map((i) => i.label);
     expect(labels).not.toContain('Organizations');
     expect(labels).not.toContain('Vendors');

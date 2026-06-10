@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthUser } from '../../common/auth/auth-user.interface';
-import { assertSiteInScope, siteScopeFilter } from '../../common/auth/scope.util';
+import { assertSiteInScope } from '../../common/auth/scope.util';
 import { Errors } from '../../common/errors/app.exception';
 import { isOvernight, parseTimeOfDay } from '../../common/time/time.util';
 import {
@@ -20,15 +20,29 @@ export class SitesService {
     private readonly audit: AuditService,
   ) {}
 
-  list(user: AuthUser, active?: boolean) {
+  async list(user: AuthUser, active?: boolean) {
+    // Read scopes fresh from the DB (not the JWT, which is stale for up to the
+    // access-token TTL) so assignment changes show up in the app immediately.
+    const scopeFilter = await this.freshSiteScopeFilter(user);
     return this.prisma.site.findMany({
       where: {
         organizationId: user.organizationId,
-        ...siteScopeFilter(user),
+        ...scopeFilter,
         ...(active === undefined ? {} : { isActive: active }),
       },
       orderBy: { name: 'asc' },
     });
+  }
+
+  /** Like siteScopeFilter, but from current DB state. Empty scopes = all sites. */
+  private async freshSiteScopeFilter(user: AuthUser): Promise<{ id?: { in: string[] } }> {
+    if (user.role === 'SUPER_ADMIN') return {};
+    const scopes = await this.prisma.userSiteScope.findMany({
+      where: { userId: user.userId },
+      select: { siteId: true },
+    });
+    if (scopes.length === 0) return {};
+    return { id: { in: scopes.map((s) => s.siteId) } };
   }
 
   async get(user: AuthUser, id: string) {
