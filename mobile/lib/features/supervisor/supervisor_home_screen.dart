@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
 import '../attendance/domain/models.dart';
@@ -72,6 +73,11 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
       appBar: AppBar(
         title: Text(_siteName.isEmpty ? 'Supervisor' : 'Supervisor · $_siteName'),
         actions: [
+          IconButton(
+            tooltip: 'Change site',
+            icon: const Icon(Icons.location_city),
+            onPressed: () => context.go('/site'),
+          ),
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout),

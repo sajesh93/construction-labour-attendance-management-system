@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
-import { CreateReportDto } from './dto/report.dto';
+import { CreateReportDto, PreviewReportDto } from './dto/report.dto';
 import { RequirePermissions } from '../../common/rbac/rbac.decorators';
 import { Permission } from '../../common/rbac/permissions';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
@@ -17,6 +17,14 @@ export class ReportsController {
   @RequirePermissions(Permission.REPORTS_ALL)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateReportDto) {
     return this.reports.create(user, dto);
+  }
+
+  // Runs the report and returns rows as JSON without persisting a job, so the
+  // admin can review the output before downloading.
+  @Post('preview')
+  @RequirePermissions(Permission.REPORTS_ALL)
+  preview(@CurrentUser() user: AuthUser, @Body() dto: PreviewReportDto) {
+    return this.reports.preview(user, dto.reportType, dto.params ?? {});
   }
 
   @Get()

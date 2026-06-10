@@ -42,6 +42,12 @@ export class ReportsService {
     };
   }
 
+  /** Build the report rows without persisting a job — powers the admin preview. */
+  async preview(user: AuthUser, reportType: ReportType, params: Record<string, unknown> = {}) {
+    const { headers, rows } = await this.buildRows(user, reportType, params);
+    return { headers, rows, rowCount: rows.length };
+  }
+
   async get(user: AuthUser, id: string) {
     const job = await this.prisma.reportJob.findFirst({
       where: { id, organizationId: user.organizationId },
@@ -99,8 +105,10 @@ export class ReportsService {
         .map((n) => parseInt(n, 10));
       where.workDate = { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
     }
+    // from/to carry full date-times — filter on the actual login timestamp so
+    // time-of-day selections in the admin panel are honoured.
     if ((params.from || params.to) && !where.workDate) {
-      where.workDate = {
+      where.loginAt = {
         ...(params.from ? { gte: new Date(String(params.from)) } : {}),
         ...(params.to ? { lte: new Date(String(params.to)) } : {}),
       };

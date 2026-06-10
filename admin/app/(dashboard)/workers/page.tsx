@@ -24,9 +24,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import QrCode2Icon from '@mui/icons-material/QrCode2';
+import EditIcon from '@mui/icons-material/Edit';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { QrBadge } from '@/components/QrBadge';
@@ -59,6 +60,49 @@ interface WorkerForm {
   nfcUid?: string;
   qrIdentifier?: string;
   joinDate?: string;
+  status?: string;
+}
+
+/** Full profile returned by GET /workers/:id (superset of the list row). */
+type WorkerDetail = Worker & {
+  nfcUid?: string | null;
+  qrIdentifier?: string | null;
+  joinDate?: string | null;
+  assignments?: { siteId: string }[];
+};
+
+const EMPTY_FORM: WorkerForm = { workerCode: '', fullName: '' };
+
+function toForm(w: WorkerDetail): WorkerForm {
+  return {
+    workerCode: w.workerCode,
+    fullName: w.fullName,
+    fatherName: w.fatherName ?? '',
+    gender: w.gender ?? '',
+    dateOfBirth: w.dateOfBirth ? w.dateOfBirth.slice(0, 10) : '',
+    language: w.language ?? '',
+    mobileNumber: w.mobileNumber ?? '',
+    pincode: w.pincode ?? '',
+    bloodGroup: w.bloodGroup ?? '',
+    emergencyContactName: w.emergencyContactName ?? '',
+    emergencyContactNumber: w.emergencyContactNumber ?? '',
+    nomineeName: w.nomineeName ?? '',
+    nomineeRelation: w.nomineeRelation ?? '',
+    vendorId: w.vendorId ?? '',
+    siteId: w.assignments?.[0]?.siteId ?? '',
+    natureOfContractor: w.natureOfContractor ?? '',
+    bankName: w.bankName ?? '',
+    bankAccountNumber: w.bankAccountNumber ?? '',
+    ifscCode: w.ifscCode ?? '',
+    pfNumber: w.pfNumber ?? '',
+    esiNumber: w.esiNumber ?? '',
+    govIdType: w.govIdType ?? '',
+    aadhaar: '',
+    nfcUid: w.nfcUid ?? '',
+    qrIdentifier: w.qrIdentifier ?? '',
+    joinDate: w.joinDate ? w.joinDate.slice(0, 10) : '',
+    status: w.status,
+  };
 }
 
 export default function WorkersPage() {
@@ -68,7 +112,10 @@ export default function WorkersPage() {
   const [q, setQ] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [qrWorker, setQrWorker] = React.useState<Worker | null>(null);
-  const { register, handleSubmit, reset } = useForm<WorkerForm>();
+  const [editing, setEditing] = React.useState<WorkerDetail | null>(null);
+  const { register, handleSubmit, reset, control } = useForm<WorkerForm>({
+    defaultValues: EMPTY_FORM,
+  });
 
   const workers = useQuery({
     queryKey: ['workers', q],
@@ -77,31 +124,134 @@ export default function WorkersPage() {
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
 
-  const create = useMutation({
-    mutationFn: (v: WorkerForm) => {
+  const closeDialog = () => {
+    setOpen(false);
+    setEditing(null);
+    setError(null);
+    reset(EMPTY_FORM);
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setError(null);
+    reset(EMPTY_FORM);
+    setOpen(true);
+  };
+
+  const openEdit = async (w: Worker) => {
+    try {
+      const full = await api.get<WorkerDetail>(`/workers/${w.id}`);
+      setEditing(full);
+      setError(null);
+      reset(toForm(full));
+      setOpen(true);
+    } catch (e) {
+      const err = e as BrowserApiError;
+      setError(err.body?.detail ?? err.body?.title ?? 'Failed to load worker');
+    }
+  };
+
+  const save = useMutation({
+    mutationFn: async (v: WorkerForm) => {
       // strip empty strings so optional fields don't fail validation
       const body: Record<string, unknown> = {};
       Object.entries(v).forEach(([k, val]) => {
         if (val !== undefined && val !== '') body[k] = val;
       });
-      return api.post('/workers', body);
+
+      if (!editing) {
+        delete body.status;
+        return api.post('/workers', body);
+      }
+
+      // Fields handled by dedicated endpoints (or immutable) are not PATCHable.
+      const { siteId, nfcUid, qrIdentifier, ...patch } = body;
+      delete patch.workerCode;
+      delete patch.joinDate;
+      const updated = await api.patch(`/workers/${editing.id}`, patch);
+
+      const currentSiteId = editing.assignments?.[0]?.siteId ?? '';
+      if (siteId && siteId !== currentSiteId) {
+        await api.post(`/workers/${editing.id}/assign-site`, {
+          siteId,
+          vendorId: patch.vendorId,
+          startDate: new Date().toISOString().slice(0, 10),
+        });
+      }
+      if (nfcUid && nfcUid !== (editing.nfcUid ?? '')) {
+        await api.post(`/workers/${editing.id}/credentials`, {
+          kind: 'NFC_UID',
+          value: nfcUid,
+          reason: 'updated from admin panel',
+        });
+      }
+      if (qrIdentifier && qrIdentifier !== (editing.qrIdentifier ?? '')) {
+        await api.post(`/workers/${editing.id}/credentials`, {
+          kind: 'QR',
+          value: qrIdentifier,
+          reason: 'updated from admin panel',
+        });
+      }
+      return updated;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workers'] });
-      setOpen(false);
-      setError(null);
-      reset();
+      closeDialog();
     },
     onError: (e) => {
       const err = e as BrowserApiError;
       const meta = (err.body as { meta?: { message?: string } })?.meta;
-      setError(meta?.message ?? err.body?.detail ?? err.body?.title ?? 'Failed to create worker');
+      setError(
+        meta?.message ??
+          err.body?.detail ??
+          err.body?.title ??
+          (editing ? 'Failed to update worker' : 'Failed to create worker'),
+      );
     },
   });
 
-  const field = (name: keyof WorkerForm, label: string, opts: { type?: string } = {}) => (
+  const field = (name: keyof WorkerForm, label: string, opts: { type?: string; disabled?: boolean } = {}) => (
     <Grid item xs={12} sm={6} md={4}>
-      <TextField label={label} type={opts.type ?? 'text'} fullWidth size="small" {...register(name)} />
+      <TextField
+        label={label}
+        type={opts.type ?? 'text'}
+        fullWidth
+        size="small"
+        disabled={opts.disabled}
+        InputLabelProps={{ shrink: true }}
+        {...register(name)}
+      />
+    </Grid>
+  );
+
+  const selectField = (
+    name: keyof WorkerForm,
+    label: string,
+    options: { value: string; label: string }[],
+  ) => (
+    <Grid item xs={12} sm={6} md={4}>
+      <Controller
+        name={name}
+        control={control}
+        render={({ field: f }) => (
+          <TextField
+            select
+            label={label}
+            fullWidth
+            size="small"
+            value={f.value ?? ''}
+            onChange={f.onChange}
+            InputLabelProps={{ shrink: true }}
+          >
+            <MenuItem value="">—</MenuItem>
+            {options.map((o) => (
+              <MenuItem key={o.value} value={o.value}>
+                {o.label}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+      />
     </Grid>
   );
 
@@ -115,7 +265,7 @@ export default function WorkersPage() {
             <Button variant="outlined" onClick={() => router.push('/workers/badges')}>
               Print QR badges
             </Button>
-            <Button variant="contained" onClick={() => setOpen(true)}>
+            <Button variant="contained" onClick={openCreate}>
               New worker
             </Button>
           </Stack>
@@ -130,6 +280,11 @@ export default function WorkersPage() {
           sx={{ width: 320 }}
         />
       </Stack>
+      {error && !open && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
       <Card sx={{ overflowX: 'auto' }}>
         <Table size="small">
           <TableHead>
@@ -143,7 +298,7 @@ export default function WorkersPage() {
               <TableCell>PF / ESI</TableCell>
               <TableCell>Gov ID</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell align="right">QR</TableCell>
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -169,6 +324,9 @@ export default function WorkersPage() {
                   />
                 </TableCell>
                 <TableCell align="right">
+                  <IconButton size="small" title="Edit worker" onClick={() => openEdit(w)}>
+                    <EditIcon />
+                  </IconButton>
                   <IconButton size="small" title="Show QR" onClick={() => setQrWorker(w)}>
                     <QrCode2Icon />
                   </IconButton>
@@ -179,9 +337,9 @@ export default function WorkersPage() {
         </Table>
       </Card>
 
-      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>New worker</DialogTitle>
-        <form onSubmit={handleSubmit((v) => create.mutate(v))}>
+      <Dialog open={open} onClose={closeDialog} fullWidth maxWidth="md">
+        <DialogTitle>{editing ? `Edit worker — ${editing.fullName}` : 'New worker'}</DialogTitle>
+        <form onSubmit={handleSubmit((v) => save.mutate(v))}>
           <DialogContent dividers>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
@@ -192,22 +350,26 @@ export default function WorkersPage() {
               Identity
             </Typography>
             <Grid container spacing={2}>
-              {field('workerCode', 'Emp ID No *')}
+              {field('workerCode', 'Emp ID No *', { disabled: !!editing })}
               {field('fullName', 'Worker name *')}
               {field('fatherName', "Father's name")}
-              <Grid item xs={12} sm={6} md={4}>
-                <TextField select label="Gender" defaultValue="" fullWidth size="small" {...register('gender')}>
-                  <MenuItem value="">—</MenuItem>
-                  <MenuItem value="M">Male</MenuItem>
-                  <MenuItem value="F">Female</MenuItem>
-                  <MenuItem value="OTHER">Other</MenuItem>
-                </TextField>
-              </Grid>
+              {selectField('gender', 'Gender', [
+                { value: 'M', label: 'Male' },
+                { value: 'F', label: 'Female' },
+                { value: 'OTHER', label: 'Other' },
+              ])}
               {field('dateOfBirth', 'Date of birth', { type: 'date' })}
               {field('language', 'Language')}
               {field('mobileNumber', 'Mobile number')}
               {field('pincode', 'Zipcode / pincode')}
               {field('bloodGroup', 'Blood group')}
+              {editing &&
+                selectField('status', 'Status', [
+                  { value: 'ACTIVE', label: 'Active' },
+                  { value: 'INACTIVE', label: 'Inactive' },
+                  { value: 'SUSPENDED', label: 'Suspended' },
+                  { value: 'EXITED', label: 'Exited' },
+                ])}
             </Grid>
 
             <Divider sx={{ my: 2 }} />
@@ -215,28 +377,18 @@ export default function WorkersPage() {
               Contractor & assignment
             </Typography>
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6} md={4}>
-                <TextField select label="Contractor (vendor)" defaultValue="" fullWidth size="small" {...register('vendorId')}>
-                  <MenuItem value="">—</MenuItem>
-                  {vendors.data?.map((v) => (
-                    <MenuItem key={v.id} value={v.id}>
-                      {v.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
+              {selectField(
+                'vendorId',
+                'Contractor (vendor)',
+                (vendors.data ?? []).map((v) => ({ value: v.id, label: v.name })),
+              )}
               {field('natureOfContractor', 'Nature of contractor')}
-              <Grid item xs={12} sm={6} md={4}>
-                <TextField select label="Site" defaultValue="" fullWidth size="small" {...register('siteId')}>
-                  <MenuItem value="">—</MenuItem>
-                  {sites.data?.map((s) => (
-                    <MenuItem key={s.id} value={s.id}>
-                      {s.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-              {field('joinDate', 'Date of joining', { type: 'date' })}
+              {selectField(
+                'siteId',
+                'Site',
+                (sites.data ?? []).map((s) => ({ value: s.id, label: s.name })),
+              )}
+              {field('joinDate', 'Date of joining', { type: 'date', disabled: !!editing })}
             </Grid>
 
             <Divider sx={{ my: 2 }} />
@@ -261,7 +413,7 @@ export default function WorkersPage() {
               {field('pfNumber', 'PF number')}
               {field('esiNumber', 'ESI number')}
               {field('govIdType', 'Gov ID type (e.g. Aadhaar)')}
-              {field('aadhaar', 'Gov ID number (encrypted)')}
+              {field('aadhaar', editing ? 'Gov ID number (leave blank to keep)' : 'Gov ID number (encrypted)')}
             </Grid>
 
             <Divider sx={{ my: 2 }} />
@@ -274,9 +426,9 @@ export default function WorkersPage() {
             </Grid>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="contained" disabled={create.isPending}>
-              Create worker
+            <Button onClick={closeDialog}>Cancel</Button>
+            <Button type="submit" variant="contained" disabled={save.isPending}>
+              {editing ? 'Save changes' : 'Create worker'}
             </Button>
           </DialogActions>
         </form>

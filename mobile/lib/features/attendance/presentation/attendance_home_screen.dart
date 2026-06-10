@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/providers.dart';
 import '../attendance_providers.dart';
@@ -30,11 +33,26 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
   DeviceState? _deviceState;
   String? _deviceId;
   bool _nfcAvailable = true;
+  Timer? _syncTimer;
 
   @override
   void initState() {
     super.initState();
     Future.microtask(_init);
+    // Drain the outbox in the background so punches reach the server even if
+    // the immediate push failed (network blip, server briefly down).
+    _syncTimer = Timer.periodic(const Duration(seconds: 60), (_) => _backgroundSync());
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _backgroundSync() async {
+    await ref.read(syncEngineProvider).syncNow();
+    if (mounted) ref.invalidate(pendingCountProvider);
   }
 
   Future<void> _init() async {
@@ -186,14 +204,21 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
             padding: const EdgeInsets.only(right: 12),
             child: Center(
               child: pending.when(
-                data: (n) => Chip(
+                data: (n) => ActionChip(
                   label: Text('$n queued'),
                   backgroundColor: n == 0 ? Colors.green.shade100 : Colors.orange.shade100,
+                  tooltip: 'Tap to sync now',
+                  onPressed: _backgroundSync,
                 ),
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Change site',
+            icon: const Icon(Icons.location_city),
+            onPressed: () => context.go('/site'),
           ),
           IconButton(
             tooltip: 'Logout',

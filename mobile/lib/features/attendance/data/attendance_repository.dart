@@ -114,9 +114,18 @@ class AttendanceRepository {
 
     // 2) Best-effort immediate push; failures are fine — the sync engine retries.
     try {
-      await _api.dio.post('/attendance/tap', data: event.toJson());
+      final res = await _api.dio.post('/attendance/tap', data: event.toJson());
+      // MANUAL verification sites defer the session until the device confirms.
+      // Scanning the badge IS the verification here, so confirm right away —
+      // otherwise the login never becomes a session on the server.
+      final data = res.data;
+      if (data is Map && data['result'] == 'LOGIN_PENDING_CONFIRM') {
+        await _api.dio.post('/attendance/confirm', data: {'eventId': event.eventId});
+      }
       await _db.markSynced(event.eventId);
     } on DioException catch (e) {
+      // Stays pending — the sync engine retries and the server auto-confirms
+      // offline-ingested logins.
       await _db.recordFailure(event.eventId, e.message ?? 'network');
     }
 

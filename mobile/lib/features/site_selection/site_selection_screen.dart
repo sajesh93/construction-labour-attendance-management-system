@@ -32,11 +32,14 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
     try {
       final dio = ref.read(apiClientProvider).dio;
       final res = await dio.get('/sites', queryParameters: {'active': 'true'});
+      if (!mounted) return;
       setState(() {
         _sites = (res.data as List).cast<Map<String, dynamic>>();
+        _error = null;
         _loading = false;
       });
     } on DioException catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.message ?? 'Could not load sites';
         _loading = false;
@@ -70,25 +73,43 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Select site')),
+      appBar: AppBar(
+        title: const Text('Select site'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh sites',
+            icon: const Icon(Icons.refresh),
+            onPressed: _load,
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              : ListView.separated(
-                  itemCount: _sites.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (_, i) {
-                    final s = _sites[i];
-                    return ListTile(
-                      leading: const Icon(Icons.location_city),
-                      title: Text(s['name'] as String),
-                      subtitle: Text(s['code'] as String),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _select(s),
-                    );
-                  },
-                ),
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: _error != null
+                  ? ListView(children: [
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Center(child: Text(_error!)),
+                      ),
+                    ])
+                  : ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: _sites.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final s = _sites[i];
+                        return ListTile(
+                          leading: const Icon(Icons.location_city),
+                          title: Text(s['name'] as String),
+                          subtitle: Text(s['code'] as String),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _select(s),
+                        );
+                      },
+                    ),
+            ),
     );
   }
 }

@@ -17,6 +17,19 @@ export enum ReportFormat {
   PDF = 'PDF',
 }
 
+export class PreviewReportDto {
+  @ApiProperty({ enum: ReportType })
+  @IsEnum(ReportType)
+  reportType!: ReportType;
+
+  @ApiProperty({
+    description: 'Report params, e.g. { date, month, siteId, vendorId, workerId, from, to }',
+  })
+  @IsObject()
+  @IsOptional()
+  params?: Record<string, unknown>;
+}
+
 export class CreateReportDto {
   @ApiProperty({ enum: ReportType })
   @IsEnum(ReportType)
