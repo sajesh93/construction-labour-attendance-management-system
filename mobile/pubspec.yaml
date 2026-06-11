@@ -44,6 +44,9 @@ dependencies:
   flutter_zxing: ^2.3.0
   camera: ">=0.10.5 <0.13.0"
 
+  # SOS alarm sound (system ringtone/alarm, loops until acknowledged)
+  flutter_ringtone_player: ^4.0.0
+
   # Utils
   uuid: ^4.5.0
   intl: ^0.19.0

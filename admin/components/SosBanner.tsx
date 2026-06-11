@@ -37,6 +37,44 @@ export function SosBanner() {
   const sos = unread.filter((n) => n.type === 'SOS');
   const forgot = unread.filter((n) => n.type === 'FORGOT_LOGOUT');
 
+  // Siren loop while an unacknowledged SOS is on screen; stops on Acknowledge.
+  const sosActive = sos.length > 0;
+  React.useEffect(() => {
+    if (!sosActive) return;
+    type AudioCtor = typeof AudioContext;
+    const Ctor: AudioCtor | undefined =
+      window.AudioContext ?? (window as { webkitAudioContext?: AudioCtor }).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx = new Ctor();
+    let stopped = false;
+    const beep = () => {
+      if (stopped) return;
+      try {
+        void ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(620, ctx.currentTime + 0.22);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.44);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.66);
+      } catch {
+        // Audio blocked until the user interacts with the page — banner still shows.
+      }
+    };
+    beep();
+    const interval = setInterval(beep, 1600);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+      void ctx.close();
+    };
+  }, [sosActive]);
+
   if (sos.length === 0 && forgot.length === 0) return null;
 
   return (

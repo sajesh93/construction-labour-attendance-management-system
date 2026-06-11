@@ -21,20 +21,14 @@ export class SosService {
 
   /**
    * PUBLIC endpoint — works without login so the SOS button is usable from the
-   * app's login screen. Site is resolved from (1) the provided siteId, then
-   * (2) GPS proximity to site coordinates, then (3) the device's registered site.
+   * app's login screen. Site is resolved from (1) GPS proximity to site
+   * coordinates (the phone is physically there), then (2) the phone's
+   * last-selected siteId, then (3) the device's registered site.
    */
   async trigger(dto: TriggerSosDto) {
     let site: { id: string; name: string; organizationId: string } | null = null;
 
-    if (dto.siteId) {
-      site = await this.prisma.site.findFirst({
-        where: { id: dto.siteId, isActive: true },
-        select: { id: true, name: true, organizationId: true },
-      });
-    }
-
-    if (!site && dto.latitude != null && dto.longitude != null) {
+    if (dto.latitude != null && dto.longitude != null) {
       const candidates = await this.prisma.site.findMany({
         where: { isActive: true, latitude: { not: null }, longitude: { not: null } },
         select: { id: true, name: true, organizationId: true, latitude: true, longitude: true },
@@ -45,6 +39,13 @@ export class SosService {
         if (dist <= MAX_SITE_MATCH_METERS && (!best || dist < best.dist)) best = { site: c, dist };
       }
       if (best) site = best.site;
+    }
+
+    if (!site && dto.siteId) {
+      site = await this.prisma.site.findFirst({
+        where: { id: dto.siteId, isActive: true },
+        select: { id: true, name: true, organizationId: true },
+      });
     }
 
     let device: { organizationId: string; siteId: string | null } | null = null;
