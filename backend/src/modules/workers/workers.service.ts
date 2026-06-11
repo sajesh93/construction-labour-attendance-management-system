@@ -162,14 +162,55 @@ export class WorkersService {
 
   // ---- Mutations -----------------------------------------------------------
   async create(user: AuthUser, dto: CreateWorkerDto) {
+    const category = dto.category ?? 'WORKER';
+    // Visitors are day passes — default the visit date to today so the pass
+    // can auto-expire at end of day.
+    const joinDate = dto.joinDate
+      ? new Date(dto.joinDate)
+      : category === 'VISITOR'
+        ? new Date()
+        : undefined;
+
+    // Retry on the (rare) auto-ID race: two simultaneous creates can pick the
+    // same next number; regenerate and try again.
+    let worker: { id: string; workerCode: string; fullName: string } | null = null;
+    for (let attempt = 0; worker === null; attempt++) {
+      const workerCode =
+        dto.workerCode?.trim() || (await this.generateWorkerCode(user.organizationId, category));
+      try {
+        worker = await this.createWithCode(user, dto, category, workerCode, joinDate);
+      } catch (e) {
+        const isUnique =
+          e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
+        if (isUnique && !dto.workerCode && attempt < 3) continue;
+        if (isUnique) throw Errors.conflict(`ID "${workerCode}" is already in use`);
+        throw e;
+      }
+    }
+
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.userId,
+      actorRole: user.role,
+      action: 'WORKER_CREATE',
+      entityType: 'Worker',
+      entityId: worker.id,
+      newValue: { workerCode: worker.workerCode, fullName: worker.fullName },
+    });
+    return this.get(user, worker.id);
+  }
+
+  private async createWithCode(
+    user: AuthUser,
+    dto: CreateWorkerDto,
+    category: PersonCategory,
+    workerCode: string,
+    joinDate: Date | undefined,
+  ) {
     const aadhaarCiphertext = dto.aadhaar ? this.crypto.encrypt(dto.aadhaar) : undefined;
     const aadhaarLast4 = dto.aadhaar ? dto.aadhaar.replace(/\s/g, '').slice(-4) : undefined;
 
-    const category = dto.category ?? 'WORKER';
-    const workerCode =
-      dto.workerCode?.trim() || (await this.generateWorkerCode(user.organizationId, category));
-
-    const worker = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const w = await tx.worker.create({
         data: {
           organizationId: user.organizationId,
@@ -200,7 +241,7 @@ export class WorkersService {
           govIdType: dto.govIdType,
           aadhaarCiphertext,
           aadhaarLast4,
-          joinDate: dto.joinDate ? new Date(dto.joinDate) : undefined,
+          joinDate,
           notes: dto.notes,
           nfcUid: dto.nfcUid,
           qrIdentifier: dto.qrIdentifier,
@@ -224,23 +265,12 @@ export class WorkersService {
             workerId: w.id,
             siteId: dto.siteId,
             vendorId: dto.vendorId,
-            startDate: dto.joinDate ? new Date(dto.joinDate) : new Date(),
+            startDate: joinDate ?? new Date(),
           },
         });
       }
       return w;
     });
-
-    await this.audit.record({
-      organizationId: user.organizationId,
-      actorUserId: user.userId,
-      actorRole: user.role,
-      action: 'WORKER_CREATE',
-      entityType: 'Worker',
-      entityId: worker.id,
-      newValue: { workerCode: worker.workerCode, fullName: worker.fullName },
-    });
-    return this.get(user, worker.id);
   }
 
   async update(user: AuthUser, id: string, dto: UpdateWorkerDto) {
@@ -287,6 +317,10 @@ export class WorkersService {
     }
 
     await this.prisma.worker.update({ where: { id }, data });
+    // Drop the previous photo blob when the photo changed (avoids DB bloat).
+    if (dto.photoUrl !== undefined && before.photoUrl && before.photoUrl !== dto.photoUrl) {
+      await this.deletePhotoBlobIfOrphan(user.organizationId, before.photoUrl);
+    }
     await this.audit.record({
       organizationId: user.organizationId,
       actorUserId: user.userId,
@@ -318,6 +352,8 @@ export class WorkersService {
       }),
     ]);
 
+    await this.deletePhotoBlobIfOrphan(user.organizationId, worker.photoUrl);
+
     await this.audit.record({
       organizationId: user.organizationId,
       actorUserId: user.userId,
@@ -328,6 +364,18 @@ export class WorkersService {
       oldValue: { status: worker.status },
     });
     return { deleted: true };
+  }
+
+  /** Deletes a /files/<id> photo blob once no worker references it anymore. */
+  private async deletePhotoBlobIfOrphan(organizationId: string, url: string | null) {
+    if (!url || !url.startsWith('/files/')) return;
+    const blobId = url.slice('/files/'.length);
+    const stillUsed = await this.prisma.worker.count({ where: { photoUrl: url } });
+    if (stillUsed === 0) {
+      await this.prisma.photoBlob
+        .deleteMany({ where: { id: blobId, organizationId } })
+        .catch(() => undefined);
+    }
   }
 
   /** Bind a credential (UID/QR), revoking any prior active of the same kind. */

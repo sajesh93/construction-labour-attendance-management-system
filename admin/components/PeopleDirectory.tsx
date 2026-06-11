@@ -189,6 +189,29 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200`,
       ),
   });
+
+  // Cursor pagination beyond the first 200 rows.
+  const [extraRows, setExtraRows] = React.useState<Worker[]>([]);
+  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  React.useEffect(() => {
+    setExtraRows([]);
+    setNextCursor(workers.data?.nextCursor ?? null);
+  }, [workers.data]);
+  const allRows = [...(workers.data?.data ?? []), ...extraRows];
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.get<Paginated<Worker>>(
+        `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200&cursor=${nextCursor}`,
+      );
+      setExtraRows((prev) => [...prev, ...page.data]);
+      setNextCursor(page.nextCursor);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
   const designations = useQuery({
@@ -229,8 +252,14 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     mutationFn: async (v: PersonForm) => {
       const body: Record<string, unknown> = {};
       Object.entries(v).forEach(([k, val]) => {
+        if (k === 'photoUrl') return; // handled below — '' must clear, not skip
         if (val !== undefined && val !== '') body[k] = val;
       });
+      if (editing) {
+        body.photoUrl = v.photoUrl ? v.photoUrl : null;
+      } else if (v.photoUrl) {
+        body.photoUrl = v.photoUrl;
+      }
 
       if (!editing) {
         delete body.status;
@@ -408,7 +437,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {workers.data?.data.map((w) => (
+            {allRows.map((w) => (
               <TableRow key={w.id} hover>
                 <TableCell sx={{ width: 48 }}>
                   <Avatar src={photoSrc(w.photoUrl)} sx={{ width: 32, height: 32 }}>
@@ -458,6 +487,13 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
             ))}
           </TableBody>
         </Table>
+        {nextCursor && (
+          <Stack alignItems="center" sx={{ p: 1.5 }}>
+            <Button size="small" onClick={loadMore} disabled={loadingMore}>
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </Button>
+          </Stack>
+        )}
       </Card>
 
       <Dialog open={open} onClose={closeDialog} fullWidth maxWidth="md">
@@ -615,9 +651,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       <Dialog open={!!qrWorker} onClose={() => setQrWorker(null)}>
         <DialogTitle>QR badge</DialogTitle>
         <DialogContent>
-          <Stack alignItems="center" sx={{ py: 1 }}>
+          <Stack alignItems="center" sx={{ py: 1 }} className="print-area">
             {qrWorker && (
-              <QrBadge fullName={qrWorker.fullName} workerCode={qrWorker.workerCode} size={180} />
+              <QrBadge fullName={qrWorker.fullName} workerCode={qrWorker.workerCode} size={140} />
             )}
           </Stack>
         </DialogContent>

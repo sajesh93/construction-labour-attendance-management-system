@@ -4,6 +4,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
 import { minutesToHours, toCsv } from './report.builder';
+import { renderPdf, renderXlsx } from './report.renderer';
 import { CreateReportDto, ReportType } from './dto/report.dto';
 
 @Injectable()
@@ -11,14 +12,12 @@ export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Generate a report. CSV is produced inline (dependency-free). XLSX/PDF jobs
-   * are queued for a worker to render from the same row data (see worker.ts);
-   * here we persist the job and return CSV content immediately for CSV requests.
+   * Generate a report. All formats render inline in the API process — CSV as
+   * text, XLSX/PDF as base64 — so no separate worker deployment is required.
    */
   async create(user: AuthUser, dto: CreateReportDto) {
     const params = dto.params ?? {};
     const { headers, rows } = await this.buildRows(user, dto.reportType, params);
-    const csv = toCsv(headers, rows);
 
     const job = await this.prisma.reportJob.create({
       data: {
@@ -27,18 +26,41 @@ export class ReportsService {
         reportType: dto.reportType,
         format: dto.format,
         params: params as Prisma.InputJsonValue,
-        status: dto.format === 'CSV' ? 'DONE' : 'QUEUED',
-        completedAt: dto.format === 'CSV' ? new Date() : null,
+        status: 'DONE',
+        completedAt: new Date(),
       },
     });
 
-    return {
+    const title = `${dto.reportType} report`;
+    const base = {
       jobId: job.id,
       status: job.status,
-      // CSV returned inline; XLSX/PDF will be available via GET /reports/:id once rendered.
-      ...(dto.format === 'CSV'
-        ? { contentType: 'text/csv', content: csv, rowCount: rows.length }
-        : {}),
+      rowCount: rows.length,
+    };
+
+    if (dto.format === 'XLSX') {
+      const buffer = await renderXlsx(title, headers, rows);
+      return {
+        ...base,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        contentBase64: buffer.toString('base64'),
+        filename: `report-${dto.reportType.toLowerCase()}-${job.id}.xlsx`,
+      };
+    }
+    if (dto.format === 'PDF') {
+      const buffer = await renderPdf(title, headers, rows);
+      return {
+        ...base,
+        contentType: 'application/pdf',
+        contentBase64: buffer.toString('base64'),
+        filename: `report-${dto.reportType.toLowerCase()}-${job.id}.pdf`,
+      };
+    }
+    return {
+      ...base,
+      contentType: 'text/csv',
+      content: toCsv(headers, rows),
+      filename: `report-${dto.reportType.toLowerCase()}-${job.id}.csv`,
     };
   }
 

@@ -78,11 +78,12 @@ export default function BadgesPage() {
       </Stack>
 
       <Box
+        className="print-area"
         sx={{
           display: 'flex',
           flexWrap: 'wrap',
           gap: 2,
-          '@media print': { gap: '10px' },
+          '@media print': { gap: '6px' },
         }}
       >
         {list.map((w) => (

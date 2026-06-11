@@ -54,10 +54,10 @@ export class NotificationsService {
     });
   }
 
-  /** Emails of active admins + safety officers in an org (for alert emails). */
-  async alertEmails(organizationId: string): Promise<string[]> {
+  /** Emails of active users in the given roles (defaults to admins + safety officers). */
+  async alertEmails(organizationId: string, roles: UserRole[] = ALERT_ROLES): Promise<string[]> {
     const users = await this.prisma.user.findMany({
-      where: { organizationId, isActive: true, email: { not: null }, role: { in: ALERT_ROLES } },
+      where: { organizationId, isActive: true, email: { not: null }, role: { in: roles } },
       select: { email: true },
     });
     return users.map((u) => u.email).filter((e): e is string => !!e);

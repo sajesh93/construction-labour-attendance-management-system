@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers.dart';
+import '../../../core/time/clock_guard.dart';
 import '../attendance_providers.dart';
 import '../../auth/auth_controller.dart';
 import '../../device/device_service.dart';
@@ -36,6 +37,9 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
   String? _deviceId;
   bool _nfcAvailable = true;
   Timer? _syncTimer;
+  DateTime _lastCacheRefresh = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static const _cacheRefreshEvery = Duration(hours: 4);
 
   @override
   void initState() {
@@ -55,6 +59,25 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
   Future<void> _backgroundSync() async {
     await ref.read(syncEngineProvider).syncNow();
     if (mounted) ref.invalidate(pendingCountProvider);
+    // Periodic worker-cache refresh so deleted/edited workers don't go stale.
+    if (DateTime.now().difference(_lastCacheRefresh) > _cacheRefreshEvery) {
+      await _refreshWorkerCache();
+    }
+  }
+
+  /// Re-pulls the site's worker list and replaces the offline cache, dropping
+  /// entries for deleted/exited people.
+  Future<void> _refreshWorkerCache() async {
+    if (_siteId == null) return;
+    try {
+      final dio = ref.read(apiClientProvider).dio;
+      final res = await dio.get('/workers/by-site', queryParameters: {'siteId': _siteId});
+      final data = (res.data['data'] as List).cast<Map<String, dynamic>>();
+      await ref.read(localDbProvider).replaceWorkers(data.map(WorkerCard.fromMap).toList());
+      _lastCacheRefresh = DateTime.now();
+    } catch (_) {
+      // Offline — keep the existing cache; retried on the next cycle.
+    }
   }
 
   Future<void> _init() async {
@@ -69,8 +92,9 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       if (!nfcOk) _status = 'No NFC on this device — scan the worker QR code';
     });
     await _ensureDevice();
-    // Kick a sync on entry.
+    // Kick a sync + fresh worker cache on entry (app start).
     ref.read(syncEngineProvider).syncNow();
+    unawaited(_refreshWorkerCache());
   }
 
   Future<void> _ensureDevice() async {
@@ -159,6 +183,30 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
     String? manualReason,
   }) async {
     if (_siteId == null) return;
+
+    // A wrong phone clock would record punches at the wrong time — refuse the
+    // scan while online with >10 min skew. (Offline punches are allowed.)
+    if (await ref.read(clockGuardProvider).clockIsWrong()) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.schedule, color: Colors.red, size: 40),
+          title: const Text('Phone clock is wrong'),
+          content: const Text(
+            'This phone\'s time differs from the server by more than 10 minutes, '
+            'so punches would be recorded at the wrong time.\n\n'
+            'Open Settings → Date & time and enable "Automatic date & time", '
+            'then try again.',
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+          ],
+        ),
+      );
+      return;
+    }
+
     setState(() => _busy = true);
     final repo = ref.read(attendanceRepositoryProvider);
     final outcome = await repo.tap(

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { Metadata } from 'next';
 import { Providers } from './providers';
+import './print.css';
 
 export const metadata: Metadata = {
   title: 'CLAMS Admin',

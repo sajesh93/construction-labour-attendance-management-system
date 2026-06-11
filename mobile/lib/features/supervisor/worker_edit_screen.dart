@@ -298,7 +298,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (text(_natureOfContractor) != null) 'natureOfContractor': text(_natureOfContractor),
       if (_designationId != null) 'designationId': _designationId,
       if (_vendorId != null) 'vendorId': _vendorId,
-      if (_photoUrl != null) 'photoUrl': _photoUrl,
+      // On edit, always send photoUrl: null clears a removed photo.
+      if (_isEdit) 'photoUrl': _photoUrl else if (_photoUrl != null) 'photoUrl': _photoUrl,
       if (text(_aadhaar) != null) ...{
         'govIdType': 'Aadhaar',
         'aadhaar': text(_aadhaar),

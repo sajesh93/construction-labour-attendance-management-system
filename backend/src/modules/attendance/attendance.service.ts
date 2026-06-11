@@ -50,7 +50,9 @@ export class AttendanceService {
     source: TapSource,
     identifier: string,
   ): Promise<ResolvedWorker | null> {
-    const base = { organizationId, deletedAt: null };
+    // Only ACTIVE people can punch: deleted workers, exited/expired visitor
+    // passes and suspended workers are rejected (offline replays included).
+    const base = { organizationId, deletedAt: null, status: 'ACTIVE' as const };
     const include = {
       vendor: { select: { name: true } },
       designation: { select: { name: true } },
@@ -333,6 +335,9 @@ export class AttendanceService {
 
     const shiftConfig = session.shift ? this.toShiftConfig(session.shift) : undefined;
     const hours = computeWorkHours(session.loginAt, tapTime, site.timezone, shiftConfig);
+    // Visitors are unpaid — login/logout is recorded purely for the register,
+    // so overtime never applies to them.
+    if (worker.category === 'VISITOR') hours.overtimeMinutes = 0;
     const isCrossSite = dto.siteId !== session.siteId;
 
     const updated = await this.prisma.attendanceSession.update({

@@ -116,6 +116,20 @@ class LocalDb {
     await batch.commit(noResult: true);
   }
 
+  /// Full cache refresh: clears stale entries (deleted/edited workers) and
+  /// replaces them with the fresh server list, atomically.
+  Future<void> replaceWorkers(List<WorkerCard> workers) async {
+    await _db.transaction((txn) async {
+      await txn.delete('cached_workers');
+      final batch = txn.batch();
+      for (final w in workers) {
+        batch.insert('cached_workers', w.toCacheRow(),
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<WorkerCard?> findByUid(String uid) =>
       _findOne('nfc_uid = ?', [uid]);
   Future<WorkerCard?> findByQr(String qr) =>

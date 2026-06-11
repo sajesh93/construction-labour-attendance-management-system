@@ -44,6 +44,9 @@ interface ReportResult {
   jobId: string;
   status: string;
   content?: string;
+  contentBase64?: string;
+  contentType?: string;
+  filename?: string;
   rowCount?: number;
 }
 
@@ -103,15 +106,24 @@ export default function ReportsPage() {
       api.post<ReportResult>('/reports', { reportType, format, params: buildParams() }),
     onSuccess: (res) => {
       setError(null);
+      let blob: Blob | null = null;
       if (res.content) {
-        const blob = new Blob([res.content], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `report-${reportType.toLowerCase()}-${res.jobId}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+        blob = new Blob([res.content], { type: res.contentType ?? 'text/csv' });
+      } else if (res.contentBase64) {
+        const bytes = Uint8Array.from(atob(res.contentBase64), (c) => c.charCodeAt(0));
+        blob = new Blob([bytes], { type: res.contentType ?? 'application/octet-stream' });
       }
+      if (!blob) {
+        setError('Report generated but no content was returned.');
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download =
+        res.filename ?? `report-${reportType.toLowerCase()}-${res.jobId}.${format.toLowerCase()}`;
+      a.click();
+      URL.revokeObjectURL(url);
     },
     onError: (e) => {
       const err = e as BrowserApiError;
@@ -275,13 +287,6 @@ export default function ReportsPage() {
                 </Button>
               </Stack>
             </Stack>
-            {download.data && !download.data.content && (
-              <Alert severity="info" sx={{ mb: 2 }}>
-                {download.data.status === 'QUEUED'
-                  ? `${format} report queued (job ${download.data.jobId}) — it will be available shortly.`
-                  : `Job ${download.data.jobId} — ${download.data.status}`}
-              </Alert>
-            )}
             {data.rowCount === 0 ? (
               <Typography color="text.secondary">
                 No rows matched the selected period — nothing to download.

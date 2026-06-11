@@ -60,7 +60,7 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
     try {
       final res = await dio.get('/workers/by-site', queryParameters: {'siteId': siteId});
       final data = (res.data['data'] as List).cast<Map<String, dynamic>>();
-      await db.cacheWorkers(data.map(WorkerCard.fromMap).toList());
+      await db.replaceWorkers(data.map(WorkerCard.fromMap).toList());
     } catch (_) {
       // Offline or empty — proceed; sync will refresh later.
     }

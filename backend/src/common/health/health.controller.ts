@@ -8,6 +8,13 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Server time — the app compares this with the phone clock before punches. */
+  @Public()
+  @Get('time')
+  time() {
+    return { now: new Date().toISOString() };
+  }
+
   @Public()
   @Get()
   async check() {
