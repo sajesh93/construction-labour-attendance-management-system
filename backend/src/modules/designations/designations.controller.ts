@@ -28,7 +28,11 @@ export class DesignationsController {
 
   @Patch(':id')
   @RequirePermissions(Permission.WORKER_MANAGE)
-  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateDesignationDto) {
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateDesignationDto,
+  ) {
     return this.designations.update(user, id, dto);
   }
 

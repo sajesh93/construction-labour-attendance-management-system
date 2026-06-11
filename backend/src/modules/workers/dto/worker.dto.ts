@@ -17,7 +17,11 @@ export class CreateWorkerDto {
   @Length(1, 40)
   workerCode?: string;
 
-  @ApiProperty({ required: false, enum: PersonCategory, description: 'WORKER (default) | STAFF | VISITOR' })
+  @ApiProperty({
+    required: false,
+    enum: PersonCategory,
+    description: 'WORKER (default) | STAFF | VISITOR',
+  })
   @IsOptional()
   @IsEnum(PersonCategory)
   category?: PersonCategory;

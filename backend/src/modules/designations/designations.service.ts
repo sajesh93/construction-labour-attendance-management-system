@@ -24,7 +24,10 @@ export class DesignationsService {
 
   async create(user: AuthUser, dto: CreateDesignationDto) {
     const existing = await this.prisma.designation.findFirst({
-      where: { organizationId: user.organizationId, name: { equals: dto.name, mode: 'insensitive' } },
+      where: {
+        organizationId: user.organizationId,
+        name: { equals: dto.name, mode: 'insensitive' },
+      },
     });
     if (existing) throw Errors.conflict(`Designation "${dto.name}" already exists`);
 

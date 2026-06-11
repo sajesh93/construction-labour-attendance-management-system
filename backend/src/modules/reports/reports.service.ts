@@ -127,7 +127,9 @@ export class ReportsService {
         { worker: { category: 'asc' } },
         ...(vendorSort
           ? [
-              { worker: { vendor: { name: 'asc' } } } as Prisma.AttendanceSessionOrderByWithRelationInput,
+              {
+                worker: { vendor: { name: 'asc' } },
+              } as Prisma.AttendanceSessionOrderByWithRelationInput,
             ]
           : []),
         { workDate: 'asc' },
