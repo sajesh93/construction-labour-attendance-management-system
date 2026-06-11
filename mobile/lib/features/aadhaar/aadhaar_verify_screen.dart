@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../attendance/presentation/qr_scan_screen.dart';
 import 'aadhaar_decoder.dart';
+import 'aadhaar_scan_screen.dart';
 
 /// Scans an Aadhaar QR and shows the decoded details so the safety officer can
 /// cross-verify them against the printed card (suspected tampering check).
@@ -28,14 +28,7 @@ class _AadhaarVerifyScreenState extends State<AadhaarVerifyScreen> {
 
   Future<void> _scan() async {
     final raw = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => const QrScanScreen(
-          title: 'Scan Aadhaar QR',
-          hint: 'Tap "Take photo" below and fill the frame with the QR — '
-              'fastest and most reliable for Aadhaar.',
-          highDensity: true,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const AadhaarScanScreen()),
     );
     if (!mounted) return;
     if (raw == null) {
