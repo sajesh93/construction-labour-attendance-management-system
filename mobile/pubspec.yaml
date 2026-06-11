@@ -39,8 +39,10 @@ dependencies:
   printing: ^5.13.2
   pdf: ^3.11.1
 
-  # Aadhaar Secure QR decoding (gzip inflate)
+  # Aadhaar Secure QR decoding (gzip inflate + native zxing-cpp photo decode)
   archive: ^3.6.1
+  flutter_zxing: ^2.3.0
+  cross_file: ^0.3.4
 
   # Utils
   uuid: ^4.5.0

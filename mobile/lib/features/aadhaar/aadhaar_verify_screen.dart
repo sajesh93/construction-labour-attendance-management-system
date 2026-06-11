@@ -31,8 +31,8 @@ class _AadhaarVerifyScreenState extends State<AadhaarVerifyScreen> {
       MaterialPageRoute(
         builder: (_) => const QrScanScreen(
           title: 'Scan Aadhaar QR',
-          hint: 'Hold steady ~15 cm from the Aadhaar QR.\n'
-              'It is very dense — give it a few seconds; use the torch in low light.',
+          hint: 'Tap "Take photo" below and fill the frame with the QR — '
+              'fastest and most reliable for Aadhaar.',
           highDensity: true,
         ),
       ),

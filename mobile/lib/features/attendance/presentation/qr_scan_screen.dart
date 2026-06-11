@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../core/qr/qr_image_decoder.dart';
+
 /// Full-screen QR scanner. Pops with the decoded string (or null if cancelled).
 /// The CLAMS app expects payloads like "CLAMS:W-0001".
 ///
-/// [highDensity] runs the camera at 1920×1080 — required for very dense codes
-/// like the Aadhaar Secure QR (thousands of characters), which the default
-/// preview resolution cannot resolve.
+/// [highDensity] is for very dense codes (Aadhaar Secure QR, ~3000 chars):
+/// the live stream rarely resolves those, so this mode leads with a
+/// photo-capture pipeline — full-resolution still → ML Kit → ZXing fallback —
+/// which is deterministic and immune to camera-stream quirks.
 class QrScanScreen extends StatefulWidget {
   const QrScanScreen({
     super.key,
@@ -26,13 +29,16 @@ class QrScanScreen extends StatefulWidget {
 }
 
 class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver {
-  late final MobileScannerController _controller = MobileScannerController(
+  // Default stream resolution on purpose: forcing 1920x1080 made several
+  // devices deliver stretched frames after a camera restart, killing
+  // detection entirely. Dense codes go through the photo pipeline instead.
+  final MobileScannerController _controller = MobileScannerController(
     autoStart: false,
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [BarcodeFormat.qrCode],
-    cameraResolution: widget.highDensity ? const Size(1920, 1080) : null,
   );
   bool _handled = false;
+  bool _decodingPhoto = false;
 
   @override
   void initState() {
@@ -71,9 +77,10 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
     Navigator.of(context).pop(code);
   }
 
-  /// Fallback for very dense codes: capture a full-resolution still and run
-  /// the detector on it. Immune to camera-stream resolution/stretching quirks.
+  /// The reliable path for dense codes: capture a full-resolution still, try
+  /// ML Kit on it, then ZXing (better at dense QRs). No camera-stream quirks.
   Future<void> _scanFromPhoto() async {
+    if (_decodingPhoto) return;
     await _controller.stop();
     try {
       final shot = await ImagePicker().pickImage(
@@ -84,11 +91,21 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
         if (mounted) unawaited(_controller.start());
         return;
       }
-      final capture = await _controller.analyzeImage(shot.path);
-      final code = (capture != null && capture.barcodes.isNotEmpty)
-          ? capture.barcodes.first.rawValue
-          : null;
+
+      setState(() => _decodingPhoto = true);
+      String? code;
+      try {
+        final capture = await _controller.analyzeImage(shot.path);
+        if (capture != null && capture.barcodes.isNotEmpty) {
+          code = capture.barcodes.first.rawValue;
+        }
+      } catch (_) {
+        // ML Kit unavailable for stills on this device — ZXing handles it.
+      }
+      code ??= await decodeQrFromFile(shot.path);
+
       if (!mounted) return;
+      setState(() => _decodingPhoto = false);
       if (code != null && code.isNotEmpty) {
         _handled = true;
         Navigator.of(context).pop(code);
@@ -97,13 +114,16 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No QR found in the photo. Fill the frame with the QR, keep it flat and avoid glare.',
+            'No QR found in the photo. Fill the frame with the QR, keep the card flat and avoid glare, then retake.',
           ),
         ),
       );
       unawaited(_controller.start());
     } catch (_) {
-      if (mounted) unawaited(_controller.start());
+      if (mounted) {
+        setState(() => _decodingPhoto = false);
+        unawaited(_controller.start());
+      }
     }
   }
 
@@ -126,9 +146,6 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
-            // contain = no cropping/stretching of the preview, so what you see
-            // is exactly what the detector analyses (important for dense QRs).
-            fit: widget.highDensity ? BoxFit.contain : BoxFit.cover,
             errorBuilder: (context, error, child) {
               return Container(
                 color: Colors.black,
@@ -187,10 +204,16 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
                 ),
                 if (widget.highDensity) ...[
                   const SizedBox(height: 12),
-                  FilledButton.tonalIcon(
-                    onPressed: _scanFromPhoto,
-                    icon: const Icon(Icons.photo_camera),
-                    label: const Text('Take photo instead'),
+                  FilledButton.icon(
+                    onPressed: _decodingPhoto ? null : _scanFromPhoto,
+                    icon: _decodingPhoto
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.photo_camera),
+                    label: Text(_decodingPhoto ? 'Reading QR…' : 'Take photo (recommended)'),
                   ),
                 ],
               ],
