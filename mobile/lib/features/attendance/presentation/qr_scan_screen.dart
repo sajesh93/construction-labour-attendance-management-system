@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 /// Full-screen QR scanner. Pops with the decoded string (or null if cancelled).
@@ -70,6 +71,42 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
     Navigator.of(context).pop(code);
   }
 
+  /// Fallback for very dense codes: capture a full-resolution still and run
+  /// the detector on it. Immune to camera-stream resolution/stretching quirks.
+  Future<void> _scanFromPhoto() async {
+    await _controller.stop();
+    try {
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 100,
+      );
+      if (shot == null) {
+        if (mounted) unawaited(_controller.start());
+        return;
+      }
+      final capture = await _controller.analyzeImage(shot.path);
+      final code = (capture != null && capture.barcodes.isNotEmpty)
+          ? capture.barcodes.first.rawValue
+          : null;
+      if (!mounted) return;
+      if (code != null && code.isNotEmpty) {
+        _handled = true;
+        Navigator.of(context).pop(code);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No QR found in the photo. Fill the frame with the QR, keep it flat and avoid glare.',
+          ),
+        ),
+      );
+      unawaited(_controller.start());
+    } catch (_) {
+      if (mounted) unawaited(_controller.start());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -89,6 +126,9 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
+            // contain = no cropping/stretching of the preview, so what you see
+            // is exactly what the detector analyses (important for dense QRs).
+            fit: widget.highDensity ? BoxFit.contain : BoxFit.cover,
             errorBuilder: (context, error, child) {
               return Container(
                 color: Colors.black,
@@ -133,13 +173,27 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
           ),
           Positioned(
             bottom: 40,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                widget.hint,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, backgroundColor: Colors.black54),
-              ),
+            left: 0,
+            right: 0,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    widget.hint,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, backgroundColor: Colors.black54),
+                  ),
+                ),
+                if (widget.highDensity) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.tonalIcon(
+                    onPressed: _scanFromPhoto,
+                    icon: const Icon(Icons.photo_camera),
+                    label: const Text('Take photo instead'),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
