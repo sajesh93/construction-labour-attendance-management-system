@@ -16,6 +16,9 @@ export interface WorkHoursResult {
   earlyLeaveMinutes: number;
 }
 
+/** Standard working day when a site has no shift configured: 8 hours. */
+export const DEFAULT_WORKDAY_MINUTES = 8 * 60;
+
 /**
  * Compute worked/overtime/late/early-leave for one session.
  * All math is anchored to the site's IANA timezone so DST transitions and
@@ -31,7 +34,13 @@ export function computeWorkHours(
   const workedMinutes = Math.max(0, Math.round((logoutAt.getTime() - loginAt.getTime()) / 60000));
 
   if (!shift) {
-    return { workedMinutes, overtimeMinutes: 0, lateMinutes: 0, earlyLeaveMinutes: 0 };
+    // No shift configured: anything beyond the standard 8-hour day counts as OT.
+    return {
+      workedMinutes,
+      overtimeMinutes: Math.max(0, workedMinutes - DEFAULT_WORKDAY_MINUTES),
+      lateMinutes: 0,
+      earlyLeaveMinutes: 0,
+    };
   }
 
   const loginLocal = DateTime.fromJSDate(loginAt, { zone: timezone });

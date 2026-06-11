@@ -58,4 +58,41 @@ export class VendorsService {
     });
     return vendor;
   }
+
+  /** Hard-delete when unreferenced; otherwise deactivate so history stays intact. */
+  async remove(user: AuthUser, id: string) {
+    const vendor = await this.get(user, id);
+
+    const [workers, assignments] = await Promise.all([
+      this.prisma.worker.count({ where: { vendorId: id, deletedAt: null } }),
+      this.prisma.workerSiteAssignment.count({ where: { vendorId: id } }),
+    ]);
+
+    if (workers > 0 || assignments > 0) {
+      await this.prisma.vendor.update({ where: { id }, data: { isActive: false } });
+      await this.audit.record({
+        organizationId: user.organizationId,
+        actorUserId: user.userId,
+        actorRole: user.role,
+        action: 'VENDOR_DEACTIVATE',
+        entityType: 'Vendor',
+        entityId: id,
+        oldValue: vendor,
+        reason: `${workers} worker(s) / ${assignments} assignment(s) still reference this vendor`,
+      });
+      return { deleted: false, deactivated: true, workersAssigned: workers };
+    }
+
+    await this.prisma.vendor.delete({ where: { id } });
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.userId,
+      actorRole: user.role,
+      action: 'VENDOR_DELETE',
+      entityType: 'Vendor',
+      entityId: id,
+      oldValue: vendor,
+    });
+    return { deleted: true };
+  }
 }

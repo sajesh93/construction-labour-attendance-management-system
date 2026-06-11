@@ -1,5 +1,5 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
-import { CredentialKind, WorkerStatus } from '@prisma/client';
+import { CredentialKind, PersonCategory, WorkerStatus } from '@prisma/client';
 import {
   IsDateString,
   IsEnum,
@@ -11,10 +11,21 @@ import {
 } from 'class-validator';
 
 export class CreateWorkerDto {
-  @ApiProperty()
+  @ApiProperty({ required: false, description: 'Auto-generated when omitted (W-/S-/V- prefix)' })
+  @IsOptional()
   @IsString()
   @Length(1, 40)
-  workerCode!: string;
+  workerCode?: string;
+
+  @ApiProperty({ required: false, enum: PersonCategory, description: 'WORKER (default) | STAFF | VISITOR' })
+  @IsOptional()
+  @IsEnum(PersonCategory)
+  category?: PersonCategory;
+
+  @ApiProperty({ required: false, description: 'Designation id (see /designations)' })
+  @IsOptional()
+  @IsString()
+  designationId?: string;
 
   @ApiProperty()
   @IsString()

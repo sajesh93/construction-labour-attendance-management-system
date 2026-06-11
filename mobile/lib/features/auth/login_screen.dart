@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../sos/sos_button.dart';
 import 'auth_controller.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -71,6 +72,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onPressed: state.loading ? null : _submit,
                     child: Text(state.loading ? 'Signing in…' : 'Sign in'),
                   ),
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  // Works without signing in — site resolved via GPS.
+                  const SosButton(),
                 ],
               ),
             ),

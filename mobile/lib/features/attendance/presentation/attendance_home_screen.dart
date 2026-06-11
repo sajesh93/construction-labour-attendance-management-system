@@ -10,6 +10,8 @@ import '../../auth/auth_controller.dart';
 import '../../device/device_service.dart';
 import '../domain/models.dart';
 import '../domain/tap_decision.dart';
+import '../../sos/notification_watcher.dart';
+import '../../sos/sos_button.dart';
 import 'worker_card_sheet.dart';
 import 'manual_search_sheet.dart';
 import 'qr_scan_screen.dart';
@@ -200,6 +202,7 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       appBar: AppBar(
         title: Text(_siteName.isEmpty ? 'Attendance' : _siteName),
         actions: [
+          const SosButton(compact: true),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Center(
@@ -227,7 +230,8 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
           ),
         ],
       ),
-      body: Padding(
+      body: NotificationWatcher(
+        child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -301,6 +305,7 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
               label: const Text('Manual / lost card'),
             ),
           ],
+        ),
         ),
       ),
     );

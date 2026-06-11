@@ -45,6 +45,13 @@ export class WorkersController {
     return this.workers.listBySite(user, siteId);
   }
 
+  // Safety officer bulk badge printing: records I touched today.
+  @Get('my-recent')
+  @RequirePermissions(Permission.WORKER_MANAGE)
+  myRecent(@CurrentUser() user: AuthUser) {
+    return this.workers.myRecent(user);
+  }
+
   @Get(':id/emergency')
   @RequirePermissions(Permission.EMERGENCY_VIEW)
   emergency(@CurrentUser() user: AuthUser, @Param('id') id: string) {
@@ -61,6 +68,7 @@ export class WorkersController {
     @Query('q') q?: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
+    @Query('category') category?: string,
   ) {
     return this.workers.list(user, {
       siteId,
@@ -69,6 +77,7 @@ export class WorkersController {
       q,
       limit: limit ? parseInt(limit, 10) : undefined,
       cursor,
+      category,
     });
   }
 

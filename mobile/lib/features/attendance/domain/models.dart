@@ -23,6 +23,9 @@ class WorkerCard {
     this.emergencyContactNumber,
     this.nfcUid,
     this.qrIdentifier,
+    this.vendorName,
+    this.designationName,
+    this.category,
   });
 
   final String id;
@@ -34,6 +37,9 @@ class WorkerCard {
   final String? emergencyContactNumber;
   final String? nfcUid;
   final String? qrIdentifier;
+  final String? vendorName;
+  final String? designationName;
+  final String? category; // WORKER | STAFF | VISITOR
 
   factory WorkerCard.fromMap(Map<String, dynamic> m) => WorkerCard(
         id: m['id'] as String,
@@ -47,6 +53,9 @@ class WorkerCard {
             (m['emergencyContactNumber'] ?? m['emergency_contact_number']) as String?,
         nfcUid: (m['nfcUid'] ?? m['nfc_uid']) as String?,
         qrIdentifier: (m['qrIdentifier'] ?? m['qr_identifier']) as String?,
+        vendorName: (m['vendorName'] ?? m['vendor_name']) as String?,
+        designationName: (m['designationName'] ?? m['designation_name']) as String?,
+        category: m['category'] as String?,
       );
 
   Map<String, dynamic> toCacheRow() => {
@@ -59,6 +68,9 @@ class WorkerCard {
         'emergency_contact_number': emergencyContactNumber,
         'nfc_uid': nfcUid,
         'qr_identifier': qrIdentifier,
+        'vendor_name': vendorName,
+        'designation_name': designationName,
+        'category': category,
       };
 }
 

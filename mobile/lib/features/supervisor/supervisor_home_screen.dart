@@ -4,12 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
+import '../../core/widgets/api_image.dart';
+import '../aadhaar/aadhaar_verify_screen.dart';
 import '../attendance/domain/models.dart';
 import '../auth/auth_controller.dart';
+import '../printing/badge_printer.dart';
+import '../printing/bulk_print_screen.dart';
+import '../sos/notification_watcher.dart';
+import '../sos/sos_button.dart';
 import 'supervisor_summary_screen.dart';
+import 'worker_edit_screen.dart';
 
-/// Supervisor view: pick a worker at the active site to see their monthly
-/// attendance summary (hours, overtime, absences, late arrivals, daily log).
+/// Safety Officer view: manage workers at the active site — register new
+/// workers/staff/visitors (with photo + QR badge), check monthly summaries,
+/// print badges (single or bulk for today's entries) and verify Aadhaar QRs.
 class SupervisorHomeScreen extends ConsumerStatefulWidget {
   const SupervisorHomeScreen({super.key});
 
@@ -43,6 +51,7 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
       setState(() {
         _workers = data.map(WorkerCard.fromMap).toList();
         _loading = false;
+        _error = null;
       });
     } on DioException catch (e) {
       if (!mounted) return;
@@ -59,6 +68,32 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
     );
   }
 
+  Future<void> _addWorker() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const WorkerEditScreen()),
+    );
+    if (created == true) _load();
+  }
+
+  Future<void> _editWorker(WorkerCard w) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => WorkerEditScreen(workerId: w.id)),
+    );
+    if (changed == true) _load();
+  }
+
+  Future<void> _printBadge(WorkerCard w) async {
+    await printBadges([
+      BadgeData(
+        fullName: w.fullName,
+        workerCode: w.workerCode,
+        designation: w.designationName,
+        vendor: w.vendorName,
+        siteName: _siteName.isEmpty ? null : _siteName,
+      ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _q.isEmpty
@@ -71,59 +106,147 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_siteName.isEmpty ? 'Supervisor' : 'Supervisor · $_siteName'),
+        title: Text(_siteName.isEmpty ? 'Safety Officer' : 'Safety Officer · $_siteName'),
         actions: [
-          IconButton(
-            tooltip: 'Change site',
-            icon: const Icon(Icons.location_city),
-            onPressed: () => context.go('/site'),
-          ),
-          IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+          const SosButton(compact: true),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              switch (v) {
+                case 'bulk-print':
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(builder: (_) => const BulkPrintScreen()));
+                  break;
+                case 'aadhaar':
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(builder: (_) => const AadhaarVerifyScreen()));
+                  break;
+                case 'site':
+                  context.go('/site');
+                  break;
+                case 'logout':
+                  ref.read(authControllerProvider.notifier).logout();
+                  break;
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'bulk-print',
+                child: ListTile(
+                  leading: Icon(Icons.print),
+                  title: Text("Print today's badges"),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'aadhaar',
+                child: ListTile(
+                  leading: Icon(Icons.verified_user),
+                  title: Text('Verify Aadhaar QR'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'site',
+                child: ListTile(
+                  leading: Icon(Icons.location_city),
+                  title: Text('Change site'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'logout',
+                child: ListTile(leading: Icon(Icons.logout), title: Text('Logout')),
+              ),
+            ],
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Search worker',
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (v) => setState(() => _q = v),
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, i) {
-                          final w = filtered[i];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundImage:
-                                  w.photoUrl != null ? NetworkImage(w.photoUrl!) : null,
-                              child: w.photoUrl == null ? const Icon(Icons.person) : null,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addWorker,
+        icon: const Icon(Icons.person_add),
+        label: const Text('Add worker'),
+      ),
+      body: NotificationWatcher(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(child: Text(_error!))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: TextField(
+                            decoration: const InputDecoration(
+                              labelText: 'Search worker',
+                              prefixIcon: Icon(Icons.search),
+                              border: OutlineInputBorder(),
                             ),
-                            title: Text(w.fullName),
-                            subtitle: Text(w.workerCode),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _openSummary(w),
-                          );
-                        },
-                      ),
+                            onChanged: (v) => setState(() => _q = v),
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (_, i) {
+                              final w = filtered[i];
+                              return ListTile(
+                                leading: ApiCircleAvatar(photoUrl: w.photoUrl),
+                                title: Text(w.fullName),
+                                subtitle: Text(
+                                  [
+                                    w.workerCode,
+                                    if (w.designationName != null) w.designationName!,
+                                    if (w.category != null && w.category != 'WORKER') w.category!,
+                                  ].join(' · '),
+                                ),
+                                onTap: () => _openSummary(w),
+                                trailing: PopupMenuButton<String>(
+                                  onSelected: (v) {
+                                    switch (v) {
+                                      case 'summary':
+                                        _openSummary(w);
+                                        break;
+                                      case 'edit':
+                                        _editWorker(w);
+                                        break;
+                                      case 'print':
+                                        _printBadge(w);
+                                        break;
+                                    }
+                                  },
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'summary',
+                                      child: ListTile(
+                                        leading: Icon(Icons.bar_chart),
+                                        title: Text('Attendance summary'),
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'edit',
+                                      child: ListTile(
+                                        leading: Icon(Icons.edit),
+                                        title: Text('Edit details'),
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'print',
+                                      child: ListTile(
+                                        leading: Icon(Icons.print),
+                                        title: Text('Print QR badge'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+      ),
     );
   }
 }

@@ -95,6 +95,12 @@ enum CredentialKind {
   QR
 }
 
+enum PersonCategory {
+  WORKER
+  STAFF
+  VISITOR
+}
+
 // ---------------- Master data ----------------
 model Organization {
   id        String   @id @default(uuid()) @db.Uuid
@@ -156,6 +162,20 @@ model Vendor {
 
   @@unique([organizationId, code])
   @@map("vendors")
+}
+
+model Designation {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  workers Worker[]
+
+  @@unique([organizationId, name])
+  @@map("designations")
 }
 
 model User {
@@ -233,6 +253,8 @@ model Worker {
   nomineeName            String?      @map("nominee_name")
   nomineeRelation        String?      @map("nominee_relation")
   vendorId               String?      @map("vendor_id") @db.Uuid
+  designationId          String?      @map("designation_id") @db.Uuid
+  category               PersonCategory @default(WORKER)
   natureOfContractor     String?      @map("nature_of_contractor")
   bankName               String?      @map("bank_name")
   bankAccountNumber      String?      @map("bank_account_number")
@@ -246,12 +268,15 @@ model Worker {
   joinDate               DateTime?    @map("join_date") @db.Date
   exitDate               DateTime?    @map("exit_date") @db.Date
   notes                  String?
+  createdById            String?      @map("created_by_id") @db.Uuid
+  updatedById            String?      @map("updated_by_id") @db.Uuid
   createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt              DateTime?    @map("deleted_at") @db.Timestamptz
 
   organization Organization           @relation(fields: [organizationId], references: [id])
   vendor       Vendor?                @relation(fields: [vendorId], references: [id])
+  designation  Designation?           @relation(fields: [designationId], references: [id])
   assignments  WorkerSiteAssignment[]
   credentials  WorkerCredential[]
   sessions     AttendanceSession[]
@@ -260,6 +285,7 @@ model Worker {
 
   @@unique([organizationId, workerCode])
   @@index([organizationId, mobileNumber])
+  @@index([organizationId, category])
   @@map("workers")
 }
 
@@ -387,6 +413,7 @@ model AttendanceSession {
   logoutSiteId      String?      @map("logout_site_id") @db.Uuid
   isCrossSite       Boolean      @default(false) @map("is_cross_site")
   closedReason      String?      @map("closed_reason")
+  forgotLogoutNotifiedAt DateTime? @map("forgot_logout_notified_at") @db.Timestamptz
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -508,6 +535,54 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// ---------------- Files (photos stored in Postgres) ----------------
+model PhotoBlob {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  mimeType       String   @map("mime_type")
+  data           Bytes
+  sizeBytes      Int      @map("size_bytes")
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("photo_blobs")
+}
+
+// ---------------- SOS & notifications ----------------
+model SosEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  siteId         String?   @map("site_id") @db.Uuid
+  siteName       String?   @map("site_name")
+  latitude       Float?
+  longitude      Float?
+  geoAccuracyM   Float?    @map("geo_accuracy_m")
+  deviceUid      String?   @map("device_uid")
+  message        String?
+  acknowledgedBy String?   @map("acknowledged_by") @db.Uuid
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("sos_events")
+}
+
+model Notification {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  type           String
+  title          String
+  body           String
+  siteId         String?   @map("site_id") @db.Uuid
+  data           Json?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  readAt         DateTime? @map("read_at") @db.Timestamptz
+  readBy         String?   @map("read_by") @db.Uuid
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("notifications")
 }
 
 // ---------------- Reports ----------------

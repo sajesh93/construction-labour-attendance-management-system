@@ -34,5 +34,13 @@ class SecureStore {
   Future<String?> get deviceId => _storage.read(key: _deviceIdKey);
   Future<String?> get deviceToken => _storage.read(key: _deviceTokenKey);
 
+  /// Clears ONLY the user session (access/refresh tokens). Device credentials
+  /// survive logout so the same phone never needs admin re-authorization.
+  Future<void> clearAuth() async {
+    await _storage.delete(key: _accessKey);
+    await _storage.delete(key: _refreshKey);
+  }
+
+  /// Full wipe — device credentials included. Only for factory-reset flows.
   Future<void> clear() => _storage.deleteAll();
 }

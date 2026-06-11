@@ -1,15 +1,17 @@
 'use client';
 
 import * as React from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Alert,
   Button,
   Card,
   CardContent,
+  FormControlLabel,
   Grid,
   MenuItem,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -27,6 +29,7 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import dayjs, { Dayjs } from 'dayjs';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { Vendor } from '@/lib/types';
 
 const REPORT_TYPES = ['DAILY', 'MONTHLY', 'WORKER', 'VENDOR', 'SITE', 'OVERTIME', 'CORRECTION'];
 const PREVIEW_LIMIT = 500;
@@ -61,11 +64,16 @@ export default function ReportsPage() {
   const [date, setDate] = React.useState<Dayjs | null>(dayjs());
   const [from, setFrom] = React.useState<Dayjs | null>(dayjs().startOf('month'));
   const [to, setTo] = React.useState<Dayjs | null>(dayjs().endOf('day'));
+  const [vendorId, setVendorId] = React.useState('');
+  const [sortByVendor, setSortByVendor] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
 
   const showMonth = reportType === 'MONTHLY';
   const showDate = reportType === 'DAILY';
   const showRange = !showMonth && !showDate && reportType !== 'CORRECTION';
+  const showVendorTools = reportType !== 'CORRECTION';
 
   const buildParams = (): Record<string, unknown> => {
     const params: Record<string, unknown> = {};
@@ -75,6 +83,8 @@ export default function ReportsPage() {
       if (from) params.from = from.toISOString();
       if (to) params.to = to.toISOString();
     }
+    if (showVendorTools && vendorId) params.vendorId = vendorId;
+    if (showVendorTools && sortByVendor) params.sortBy = 'vendor';
     return params;
   };
 
@@ -175,6 +185,37 @@ export default function ReportsPage() {
                   />
                 </Grid>
               </>
+            )}
+            {showVendorTools && (
+              <Grid item xs={12} md={3}>
+                <TextField
+                  select
+                  label="Vendor (optional)"
+                  fullWidth
+                  value={vendorId}
+                  onChange={(e) => setVendorId(e.target.value)}
+                >
+                  <MenuItem value="">All vendors</MenuItem>
+                  {vendors.data?.map((v) => (
+                    <MenuItem key={v.id} value={v.id}>
+                      {v.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+            )}
+            {showVendorTools && (
+              <Grid item xs={12} md={2}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={sortByVendor}
+                      onChange={(e) => setSortByVendor(e.target.checked)}
+                    />
+                  }
+                  label="Sort by vendor"
+                />
+              </Grid>
             )}
             <Grid item xs={12} md={2}>
               <Button

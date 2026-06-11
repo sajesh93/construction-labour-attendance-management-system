@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { CredentialKind, Prisma } from '@prisma/client';
+import { CredentialKind, PersonCategory, Prisma } from '@prisma/client';
+import { DateTime } from 'luxon';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -31,6 +32,9 @@ export class WorkersService {
     emergencyContactName: string | null;
     emergencyContactNumber: string | null;
     workerCode: string;
+    category?: PersonCategory;
+    vendor?: { name: string } | null;
+    designation?: { name: string } | null;
   }) {
     return {
       id: w.id,
@@ -40,7 +44,25 @@ export class WorkersService {
       bloodGroup: w.bloodGroup,
       emergencyContactName: w.emergencyContactName,
       emergencyContactNumber: w.emergencyContactNumber,
+      category: w.category ?? 'WORKER',
+      vendorName: w.vendor?.name ?? null,
+      designationName: w.designation?.name ?? null,
     };
+  }
+
+  /** Auto-generate a unique code: W-0001 (workers), S-0001 (staff), V-0001 (visitors). */
+  private async generateWorkerCode(organizationId: string, category: PersonCategory) {
+    const prefix = category === 'STAFF' ? 'S' : category === 'VISITOR' ? 'V' : 'W';
+    const count = await this.prisma.worker.count({ where: { organizationId, category } });
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const code = `${prefix}-${String(count + 1 + attempt).padStart(4, '0')}`;
+      const exists = await this.prisma.worker.findFirst({
+        where: { organizationId, workerCode: code },
+        select: { id: true },
+      });
+      if (!exists) return code;
+    }
+    return `${prefix}-${Date.now().toString(36).toUpperCase()}`;
   }
 
   // ---- Queries -------------------------------------------------------------
@@ -53,12 +75,14 @@ export class WorkersService {
       q?: string;
       limit?: number;
       cursor?: string;
+      category?: string;
     },
   ) {
     const limit = Math.min(opts.limit ?? 50, 200);
     const where: Prisma.WorkerWhereInput = {
       organizationId: user.organizationId,
       deletedAt: null,
+      ...(opts.category ? { category: opts.category as PersonCategory } : {}),
       ...(opts.vendorId ? { vendorId: opts.vendorId } : {}),
       ...(opts.status ? { status: opts.status as Prisma.EnumWorkerStatusFilter['equals'] } : {}),
       ...(opts.siteId ? { assignments: { some: { siteId: opts.siteId, endDate: null } } } : {}),
@@ -88,6 +112,9 @@ export class WorkersService {
         mobileNumber: true,
         status: true,
         vendorId: true,
+        category: true,
+        designationId: true,
+        designation: { select: { name: true } },
         natureOfContractor: true,
         pfNumber: true,
         esiNumber: true,
@@ -108,6 +135,7 @@ export class WorkersService {
       where: { id, organizationId: user.organizationId, deletedAt: null },
       include: {
         vendor: true,
+        designation: true,
         assignments: { where: { endDate: null }, include: { site: true } },
         credentials: { where: { isActive: true } },
       },
@@ -137,11 +165,19 @@ export class WorkersService {
     const aadhaarCiphertext = dto.aadhaar ? this.crypto.encrypt(dto.aadhaar) : undefined;
     const aadhaarLast4 = dto.aadhaar ? dto.aadhaar.replace(/\s/g, '').slice(-4) : undefined;
 
+    const category = dto.category ?? 'WORKER';
+    const workerCode =
+      dto.workerCode?.trim() || (await this.generateWorkerCode(user.organizationId, category));
+
     const worker = await this.prisma.$transaction(async (tx) => {
       const w = await tx.worker.create({
         data: {
           organizationId: user.organizationId,
-          workerCode: dto.workerCode,
+          workerCode,
+          category,
+          designationId: dto.designationId || undefined,
+          createdById: user.userId,
+          updatedById: user.userId,
           fullName: dto.fullName,
           fatherName: dto.fatherName,
           gender: dto.gender,
@@ -236,7 +272,14 @@ export class WorkersService {
       notes: dto.notes,
       photoUrl: dto.photoUrl,
       status: dto.status,
+      category: dto.category,
+      updatedById: user.userId,
       ...(dto.vendorId ? { vendor: { connect: { id: dto.vendorId } } } : {}),
+      ...(dto.designationId !== undefined
+        ? dto.designationId
+          ? { designation: { connect: { id: dto.designationId } } }
+          : { designation: { disconnect: true } }
+        : {}),
     };
     if (dto.aadhaar) {
       data.aadhaarCiphertext = this.crypto.encrypt(dto.aadhaar);
@@ -440,7 +483,10 @@ export class WorkersService {
     if (!by.uid && !by.qr && !by.code) {
       throw Errors.validation({ message: 'Provide one of uid, qr or code' });
     }
-    const worker = await this.prisma.worker.findFirst({ where });
+    const worker = await this.prisma.worker.findFirst({
+      where,
+      include: { vendor: { select: { name: true } }, designation: { select: { name: true } } },
+    });
     if (!worker) throw Errors.workerNotFound();
     return this.limitedCard(worker);
   }
@@ -469,10 +515,68 @@ export class WorkersService {
         emergencyContactNumber: true,
         nfcUid: true,
         qrIdentifier: true,
+        category: true,
+        vendor: { select: { name: true } },
+        designation: { select: { name: true } },
       },
       take: 1000,
     });
-    return { data: rows };
+    return {
+      data: rows.map(({ vendor, designation, ...rest }) => ({
+        ...rest,
+        vendorName: vendor?.name ?? null,
+        designationName: designation?.name ?? null,
+      })),
+    };
+  }
+
+  /**
+   * Workers/staff created or last updated by the calling user today (org-local
+   * day) — powers the safety officer's "bulk print today's badges".
+   */
+  async myRecent(user: AuthUser) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: user.organizationId },
+      select: { timezone: true },
+    });
+    const startOfDay = DateTime.now()
+      .setZone(org?.timezone ?? 'Asia/Kolkata')
+      .startOf('day')
+      .toJSDate();
+
+    const rows = await this.prisma.worker.findMany({
+      where: {
+        organizationId: user.organizationId,
+        deletedAt: null,
+        updatedAt: { gte: startOfDay },
+        OR: [{ createdById: user.userId }, { updatedById: user.userId }],
+      },
+      select: {
+        id: true,
+        workerCode: true,
+        fullName: true,
+        photoUrl: true,
+        category: true,
+        createdAt: true,
+        vendor: { select: { name: true } },
+        designation: { select: { name: true } },
+        assignments: {
+          where: { endDate: null },
+          select: { site: { select: { name: true } } },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    return {
+      data: rows.map(({ vendor, designation, assignments, ...rest }) => ({
+        ...rest,
+        vendorName: vendor?.name ?? null,
+        designationName: designation?.name ?? null,
+        siteName: assignments[0]?.site.name ?? null,
+      })),
+    };
   }
 
   async search(user: AuthUser, q: string) {
@@ -487,6 +591,7 @@ export class WorkersService {
           { mobileNumber: { contains: q } },
         ],
       },
+      include: { vendor: { select: { name: true } }, designation: { select: { name: true } } },
       take: 25,
     });
     return rows.map((w) => this.limitedCard(w));

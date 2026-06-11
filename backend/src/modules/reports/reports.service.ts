@@ -117,39 +117,77 @@ export class ReportsService {
       where.overtimeMinutes = { gt: 0 };
     }
 
+    // Workers always come first, then staff, then visitors. Within a category,
+    // optional vendor-wise sorting (params.sortBy === 'vendor'), then chronology.
+    const vendorSort = params.sortBy === 'vendor';
     const sessions = await this.prisma.attendanceSession.findMany({
       where,
-      include: { worker: { include: { vendor: true } }, site: true },
-      orderBy: [{ workDate: 'asc' }, { loginAt: 'asc' }],
+      include: { worker: { include: { vendor: true, designation: true } }, site: true },
+      orderBy: [
+        { worker: { category: 'asc' } },
+        ...(vendorSort
+          ? [
+              { worker: { vendor: { name: 'asc' } } } as Prisma.AttendanceSessionOrderByWithRelationInput,
+            ]
+          : []),
+        { workDate: 'asc' },
+        { loginAt: 'asc' },
+      ],
     });
 
-    return {
-      headers: [
-        'Date',
-        'Worker Code',
-        'Worker',
-        'Vendor',
-        'Site',
-        'Login',
-        'Logout',
-        'Worked (h)',
-        'Overtime (h)',
-        'Late (min)',
-        'State',
-      ],
-      rows: sessions.map((s) => [
-        s.workDate.toISOString().slice(0, 10),
-        s.worker.workerCode,
-        s.worker.fullName,
-        s.worker.vendor?.name ?? '',
-        s.site.name,
-        s.loginAt ? s.loginAt.toISOString() : null,
-        s.logoutAt ? s.logoutAt.toISOString() : null,
-        minutesToHours(s.workedMinutes),
-        minutesToHours(s.overtimeMinutes),
-        s.lateMinutes ?? 0,
-        s.state,
-      ]),
+    const headers = [
+      'Date',
+      'Worker Code',
+      'Worker',
+      'Category',
+      'Designation',
+      'Vendor',
+      'Site',
+      'Login',
+      'Logout',
+      'Worked (h)',
+      'Overtime (h)',
+      'Late (min)',
+      'State',
+    ];
+
+    const toRow = (s: (typeof sessions)[number]): (string | number | null)[] => [
+      s.workDate.toISOString().slice(0, 10),
+      s.worker.workerCode,
+      s.worker.fullName,
+      s.worker.category,
+      s.worker.designation?.name ?? '',
+      s.worker.vendor?.name ?? '',
+      s.site.name,
+      s.loginAt ? s.loginAt.toISOString() : null,
+      s.logoutAt ? s.logoutAt.toISOString() : null,
+      minutesToHours(s.workedMinutes),
+      minutesToHours(s.overtimeMinutes),
+      s.lateMinutes ?? 0,
+      s.state,
+    ];
+
+    // Insert a section divider row when the report spans multiple categories
+    // (e.g. "===== WORKERS =====" then "===== STAFF =====").
+    const categories = new Set(sessions.map((s) => s.worker.category));
+    if (categories.size <= 1) {
+      return { headers, rows: sessions.map(toRow) };
+    }
+
+    const sectionLabel: Record<string, string> = {
+      WORKER: '===== WORKERS =====',
+      STAFF: '===== STAFF =====',
+      VISITOR: '===== VISITORS =====',
     };
+    const rows: (string | number | null)[][] = [];
+    let current: string | null = null;
+    for (const s of sessions) {
+      if (s.worker.category !== current) {
+        current = s.worker.category;
+        rows.push([sectionLabel[current] ?? current, ...Array(headers.length - 1).fill('')]);
+      }
+      rows.push(toRow(s));
+    }
+    return { headers, rows };
   }
 }

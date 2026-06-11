@@ -7,6 +7,7 @@ import { PrismaModule } from './infra/prisma/prisma.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { AuditModule } from './common/audit/audit.module';
+import { MailModule } from './common/mail/mail.module';
 import { AuditInterceptor } from './common/audit/audit.interceptor';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
 import { DeviceGuard } from './common/auth/device.guard';
@@ -24,10 +25,16 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
 import { CorrectionsModule } from './modules/corrections/corrections.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { AuditQueryModule } from './modules/audit/audit-query.module';
+import { DesignationsModule } from './modules/designations/designations.module';
+import { FilesModule } from './modules/files/files.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SosModule } from './modules/sos/sos.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // Local dev also picks up the shared infra/.env (gitignored); in Azure the
+    // container app env vars take precedence over any file.
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../infra/.env'] }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
     RedisModule,
@@ -44,6 +51,11 @@ import { AuditQueryModule } from './modules/audit/audit-query.module';
     CorrectionsModule,
     ReportsModule,
     AuditQueryModule,
+    MailModule,
+    DesignationsModule,
+    FilesModule,
+    NotificationsModule,
+    SosModule,
   ],
   controllers: [HealthController],
   providers: [

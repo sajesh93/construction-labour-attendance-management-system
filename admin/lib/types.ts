@@ -33,10 +33,15 @@ export interface SiteSettings {
   defaultShiftId?: string | null;
 }
 
+export type PersonCategory = 'WORKER' | 'STAFF' | 'VISITOR';
+
 export interface Worker {
   id: string;
   workerCode: string;
   fullName: string;
+  category?: PersonCategory;
+  designationId?: string | null;
+  designation?: { name: string } | null;
   fatherName?: string | null;
   gender?: string | null;
   dateOfBirth?: string | null;
@@ -65,7 +70,34 @@ export interface Vendor {
   id: string;
   name: string;
   code: string;
+  contactPerson?: string | null;
+  contactNumber?: string | null;
   isActive: boolean;
+}
+
+export interface Designation {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  siteId?: string | null;
+  data?: Record<string, unknown> | null;
+  createdAt: string;
+  readAt?: string | null;
+}
+
+export interface DaySummary {
+  date: string;
+  total: number;
+  activeNow: number;
+  byDesignation: { designation: string; count: number; active: number }[];
+  byCategory: { category: string; count: number; active: number }[];
 }
 
 export interface Device {

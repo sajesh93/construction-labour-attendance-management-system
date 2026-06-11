@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/api_image.dart';
 import '../domain/models.dart';
 
-/// Shows the worker card after a tap. Emergency info (blood group + contact) is
-/// always visible here regardless of permissions (Emergency Mode).
+/// Shows the person card after a tap: photo, name, vendor and designation.
 class WorkerCardSheet extends StatelessWidget {
   const WorkerCardSheet({super.key, required this.worker, required this.action});
   final WorkerCard worker;
@@ -12,6 +12,7 @@ class WorkerCardSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = action == 'LOGIN' ? Colors.green : Colors.blueGrey;
+    final category = worker.category;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -21,12 +22,7 @@ class WorkerCardSheet extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 36,
-                  backgroundImage:
-                      worker.photoUrl != null ? NetworkImage(worker.photoUrl!) : null,
-                  child: worker.photoUrl == null ? const Icon(Icons.person, size: 36) : null,
-                ),
+                ApiCircleAvatar(photoUrl: worker.photoUrl, radius: 36),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -36,6 +32,15 @@ class WorkerCardSheet extends StatelessWidget {
                           style: Theme.of(context).textTheme.titleLarge),
                       Text(worker.workerCode,
                           style: Theme.of(context).textTheme.bodyMedium),
+                      if (category != null && category != 'WORKER')
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Chip(
+                            label: Text(category),
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: Colors.indigo.withValues(alpha: 0.12),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -43,7 +48,27 @@ class WorkerCardSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            _EmergencyBlock(worker: worker),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _InfoRow(
+                      icon: Icons.engineering,
+                      label: 'Designation',
+                      value: worker.designationName,
+                    ),
+                    const SizedBox(height: 8),
+                    _InfoRow(
+                      icon: Icons.business,
+                      label: 'Vendor',
+                      value: worker.vendorName,
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.pop(context),
@@ -56,33 +81,29 @@ class WorkerCardSheet extends StatelessWidget {
   }
 }
 
-class _EmergencyBlock extends StatelessWidget {
-  const _EmergencyBlock({required this.worker});
-  final WorkerCard worker;
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.icon, required this.label, required this.value});
+  final IconData icon;
+  final String label;
+  final String? value;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: Colors.red.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.medical_services, color: Colors.red.shade700),
-                const SizedBox(width: 8),
-                Text('Emergency', style: Theme.of(context).textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('Blood group: ${worker.bloodGroup ?? '—'}'),
-            Text('Contact: ${worker.emergencyContactName ?? '—'}'),
-            Text('Phone: ${worker.emergencyContactNumber ?? '—'}'),
-          ],
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 10),
+        Text('$label: ', style: Theme.of(context).textTheme.bodyMedium),
+        Expanded(
+          child: Text(
+            value ?? '—',
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
         ),
-      ),
+      ],
     );
   }
 }

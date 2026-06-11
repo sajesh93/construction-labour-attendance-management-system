@@ -49,8 +49,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
   WATCHMAN: [Permission.WORKER_VIEW_LIMITED, Permission.ATTENDANCE_MARK, Permission.EMERGENCY_VIEW],
 
+  // SUPERVISOR is displayed as "Safety Officer" in the apps. They can manage
+  // worker records (add/edit/print badges) in addition to viewing attendance.
   SUPERVISOR: [
     Permission.WORKER_VIEW_LIMITED,
+    Permission.WORKER_MANAGE,
     Permission.ATTENDANCE_VIEW,
     Permission.CORRECTION_REQUEST,
     Permission.REPORTS_SUMMARY,

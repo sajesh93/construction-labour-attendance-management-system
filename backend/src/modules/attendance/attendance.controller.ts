@@ -52,8 +52,18 @@ export class AttendanceController {
 
   @Get('active')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
-  active(@CurrentUser() user: AuthUser, @Query('siteId') siteId: string) {
-    return this.attendance.activeSessions(user.organizationId, siteId);
+  active(@CurrentUser() user: AuthUser, @Query('siteId') siteId?: string) {
+    return this.attendance.activeSessions(user, siteId);
+  }
+
+  @Get('day-summary')
+  @RequirePermissions(Permission.ATTENDANCE_VIEW)
+  daySummary(
+    @CurrentUser() user: AuthUser,
+    @Query('siteId') siteId?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.attendance.daySummary(user, siteId, date);
   }
 
   @Get('worker/:workerId/summary')

@@ -26,6 +26,9 @@ class DeviceService {
   final LocalDb _db;
 
   Future<DeviceStatus> ensureRegisteredAndAuthorized() async {
+    // Credentials from a previous session (they survive logout).
+    final storedId = await _store.deviceId;
+    final storedToken = await _store.deviceToken;
     try {
       var uid = await _db.getMeta('device_uid');
       if (uid == null) {
@@ -54,6 +57,11 @@ class DeviceService {
         rethrow;
       }
     } on DioException catch (e) {
+      // Server unreachable — if this phone already holds device credentials,
+      // keep operating: punches queue offline and sync later anyway.
+      if (storedId != null && storedToken != null) {
+        return DeviceStatus(DeviceState.authorized, deviceId: storedId);
+      }
       return DeviceStatus(DeviceState.error, message: e.message ?? 'network error');
     }
   }

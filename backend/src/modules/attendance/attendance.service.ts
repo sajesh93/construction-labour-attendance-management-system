@@ -3,6 +3,7 @@ import { AttendanceTap, Prisma, SiteSettings, TapSource, Worker } from '@prisma/
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { RedisService } from '../../infra/redis/redis.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
 import { businessDate, minutesOfDay } from '../../common/time/time.util';
 import { computeWorkHours, ShiftConfig } from './engine/work-hours.engine';
@@ -16,6 +17,11 @@ export interface TapContext {
   photoRoll?: number;
 }
 
+type ResolvedWorker = Worker & {
+  vendor: { name: string } | null;
+  designation: { name: string } | null;
+};
+
 @Injectable()
 export class AttendanceService {
   constructor(
@@ -24,11 +30,15 @@ export class AttendanceService {
     private readonly audit: AuditService,
   ) {}
 
-  private workerCard(w: Worker) {
+  private workerCard(w: ResolvedWorker) {
     return {
       id: w.id,
       fullName: w.fullName,
+      workerCode: w.workerCode,
       photoUrl: w.photoUrl,
+      category: w.category,
+      vendorName: w.vendor?.name ?? null,
+      designationName: w.designation?.name ?? null,
       bloodGroup: w.bloodGroup,
       emergencyContactName: w.emergencyContactName,
       emergencyContactNumber: w.emergencyContactNumber,
@@ -39,20 +49,25 @@ export class AttendanceService {
     organizationId: string,
     source: TapSource,
     identifier: string,
-  ): Promise<Worker | null> {
+  ): Promise<ResolvedWorker | null> {
     const base = { organizationId, deletedAt: null };
+    const include = {
+      vendor: { select: { name: true } },
+      designation: { select: { name: true } },
+    } as const;
     if (source === TapSource.NFC_UID) {
-      return this.prisma.worker.findFirst({ where: { ...base, nfcUid: identifier } });
+      return this.prisma.worker.findFirst({ where: { ...base, nfcUid: identifier }, include });
     }
     if (source === TapSource.QR) {
       // QR badges encode the EMP-ID (worker code); fall back to the opaque
       // qrIdentifier for legacy/secure codes.
       return this.prisma.worker.findFirst({
         where: { ...base, OR: [{ workerCode: identifier }, { qrIdentifier: identifier }] },
+        include,
       });
     }
     // NFC_NDEF and MANUAL resolve by worker code.
-    return this.prisma.worker.findFirst({ where: { ...base, workerCode: identifier } });
+    return this.prisma.worker.findFirst({ where: { ...base, workerCode: identifier }, include });
   }
 
   private toShiftConfig(shift: {
@@ -193,7 +208,7 @@ export class AttendanceService {
     organizationId: string,
     site: { id: string; timezone: string; settings: SiteSettings | null },
     settings: SiteSettings,
-    worker: Worker,
+    worker: ResolvedWorker,
     dto: TapDto,
     ctx: TapContext,
     tapTime: Date,
@@ -284,7 +299,7 @@ export class AttendanceService {
   private async doLogout(
     organizationId: string,
     site: { id: string; timezone: string },
-    worker: Worker,
+    worker: ResolvedWorker,
     dto: TapDto,
     ctx: TapContext,
     tapTime: Date,
@@ -412,14 +427,106 @@ export class AttendanceService {
     };
   }
 
-  async activeSessions(organizationId: string, siteId: string) {
+  /** Open sessions; siteId omitted (or 'all') = every site in the caller's scope. */
+  async activeSessions(user: AuthUser, siteId?: string) {
+    const siteFilter =
+      siteId && siteId !== 'all'
+        ? { siteId }
+        : user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
+          ? { siteId: { in: user.siteScopes } }
+          : {};
     return this.prisma.attendanceSession.findMany({
-      where: { organizationId, siteId, state: 'OPEN' },
+      where: { organizationId: user.organizationId, state: 'OPEN', ...siteFilter },
       include: {
-        worker: { select: { id: true, fullName: true, photoUrl: true, workerCode: true } },
+        worker: {
+          select: {
+            id: true,
+            fullName: true,
+            photoUrl: true,
+            workerCode: true,
+            category: true,
+            designation: { select: { name: true } },
+            vendor: { select: { name: true } },
+          },
+        },
+        site: { select: { id: true, name: true } },
       },
       orderBy: { loginAt: 'asc' },
     });
+  }
+
+  /**
+   * Day summary for the attendance dashboard: how many people logged in today,
+   * broken down by designation and by category. siteId omitted/'all' = all
+   * sites in the caller's scope.
+   */
+  async daySummary(user: AuthUser, siteId?: string, dateStr?: string) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: user.organizationId },
+      select: { timezone: true },
+    });
+    const date = dateStr
+      ? new Date(dateStr)
+      : businessDate(new Date(), org?.timezone ?? 'Asia/Kolkata');
+
+    const siteFilter =
+      siteId && siteId !== 'all'
+        ? { siteId }
+        : user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
+          ? { siteId: { in: user.siteScopes } }
+          : {};
+
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        workDate: date,
+        state: { not: 'VOID' },
+        ...siteFilter,
+      },
+      select: {
+        workerId: true,
+        state: true,
+        worker: {
+          select: { category: true, designation: { select: { name: true } } },
+        },
+      },
+    });
+
+    // A person may have several sessions in a day — count each once.
+    const seen = new Map<string, { category: string; designation: string; open: boolean }>();
+    for (const s of sessions) {
+      const prev = seen.get(s.workerId);
+      const open = s.state === 'OPEN' || prev?.open === true;
+      seen.set(s.workerId, {
+        category: s.worker.category,
+        designation: s.worker.designation?.name ?? 'Unassigned',
+        open,
+      });
+    }
+
+    const byDesignation = new Map<string, { count: number; active: number }>();
+    const byCategory = new Map<string, { count: number; active: number }>();
+    for (const v of seen.values()) {
+      const d = byDesignation.get(v.designation) ?? { count: 0, active: 0 };
+      d.count += 1;
+      if (v.open) d.active += 1;
+      byDesignation.set(v.designation, d);
+
+      const c = byCategory.get(v.category) ?? { count: 0, active: 0 };
+      c.count += 1;
+      if (v.open) c.active += 1;
+      byCategory.set(v.category, c);
+    }
+
+    return {
+      date: date.toISOString().slice(0, 10),
+      total: seen.size,
+      activeNow: [...seen.values()].filter((v) => v.open).length,
+      byDesignation: [...byDesignation.entries()]
+        .map(([designation, v]) => ({ designation, ...v }))
+        .sort((a, b) => b.count - a.count),
+      byCategory: [...byCategory.entries()].map(([category, v]) => ({ category, ...v })),
+    };
   }
 
   /** Supervisor monthly summary for a worker (docs/03 §5). */

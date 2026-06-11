@@ -15,7 +15,8 @@ import {
   Chip,
 } from '@mui/material';
 import { Me } from '@/lib/types';
-import { navForRole } from '@/lib/rbac';
+import { navForRole, roleLabel } from '@/lib/rbac';
+import { SosBanner } from '@/components/SosBanner';
 
 const DRAWER_WIDTH = 240;
 
@@ -37,7 +38,7 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             CLAMS Admin
           </Typography>
-          <Chip label={me.role} size="small" sx={{ mr: 2 }} />
+          <Chip label={roleLabel(me.role)} size="small" sx={{ mr: 2 }} />
           <Typography variant="body2" sx={{ mr: 2 }}>
             {me.fullName}
           </Typography>
@@ -73,6 +74,7 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
       </Drawer>
 
       <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+        <SosBanner />
         {children}
       </Box>
     </Box>

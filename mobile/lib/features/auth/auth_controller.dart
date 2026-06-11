@@ -64,7 +64,9 @@ class AuthController extends StateNotifier<AuthState> {
         fullName: me.data['fullName'] as String?,
       );
     } catch (_) {
-      await _store.clear();
+      // Session invalid — drop tokens but KEEP device credentials so this
+      // phone stays authorized for attendance after the next login.
+      await _store.clearAuth();
       state = state.copyWith(initialized: true, authenticated: false, role: null);
     }
   }
@@ -95,7 +97,10 @@ class AuthController extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    await _store.clear();
+    // Keep device_id/device_token: the device authorization belongs to the
+    // phone, not the user session. Wiping them forced admins to re-authorize
+    // the device after every logout/login.
+    await _store.clearAuth();
     state = const AuthState(initialized: true, authenticated: false);
   }
 }

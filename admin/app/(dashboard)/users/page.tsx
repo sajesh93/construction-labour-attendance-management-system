@@ -22,6 +22,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { roleLabel } from '@/lib/rbac';
 import { UserRole } from '@/lib/types';
 
 interface UserRow {
@@ -58,7 +59,7 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users"
-        subtitle="Admins, supervisors and watchmen"
+        subtitle="Admins, safety officers and watchmen"
         action={
           <Button variant="contained" onClick={() => setOpen(true)}>
             New user
@@ -81,7 +82,7 @@ export default function UsersPage() {
                 <TableCell>{u.fullName}</TableCell>
                 <TableCell>{u.email ?? '—'}</TableCell>
                 <TableCell>
-                  <Chip size="small" label={u.role} />
+                  <Chip size="small" label={roleLabel(u.role)} />
                 </TableCell>
                 <TableCell>
                   <Chip size="small" color={u.isActive ? 'success' : 'default'} label={u.isActive ? 'Active' : 'Inactive'} />
@@ -101,9 +102,9 @@ export default function UsersPage() {
               <TextField label="Email" type="email" fullWidth {...register('email')} />
               <TextField label="Password" type="password" fullWidth {...register('password')} />
               <TextField select label="Role" defaultValue="WATCHMAN" fullWidth {...register('role')}>
-                {['SUPER_ADMIN', 'SITE_ADMIN', 'WATCHMAN', 'SUPERVISOR'].map((r) => (
+                {(['SUPER_ADMIN', 'SITE_ADMIN', 'WATCHMAN', 'SUPERVISOR'] as UserRole[]).map((r) => (
                   <MenuItem key={r} value={r}>
-                    {r}
+                    {roleLabel(r)}
                   </MenuItem>
                 ))}
               </TextField>

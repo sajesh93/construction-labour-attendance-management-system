@@ -15,7 +15,14 @@ class LocalDb {
     final path = p.join(dir.path, 'clams.db');
     final db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
+      onUpgrade: (db, oldVersion, _) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE cached_workers ADD COLUMN vendor_name TEXT');
+          await db.execute('ALTER TABLE cached_workers ADD COLUMN designation_name TEXT');
+          await db.execute('ALTER TABLE cached_workers ADD COLUMN category TEXT');
+        }
+      },
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE outbox (
@@ -42,7 +49,10 @@ class LocalDb {
             emergency_contact_name TEXT,
             emergency_contact_number TEXT,
             nfc_uid TEXT,
-            qr_identifier TEXT
+            qr_identifier TEXT,
+            vendor_name TEXT,
+            designation_name TEXT,
+            category TEXT
           )''');
         await db.execute(
           'CREATE INDEX ix_cached_uid ON cached_workers(nfc_uid)',
