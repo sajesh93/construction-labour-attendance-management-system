@@ -180,8 +180,7 @@ export class WorkersService {
       try {
         worker = await this.createWithCode(user, dto, category, workerCode, joinDate);
       } catch (e) {
-        const isUnique =
-          e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
+        const isUnique = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
         if (isUnique && !dto.workerCode && attempt < 3) continue;
         if (isUnique) throw Errors.conflict(`ID "${workerCode}" is already in use`);
         throw e;
