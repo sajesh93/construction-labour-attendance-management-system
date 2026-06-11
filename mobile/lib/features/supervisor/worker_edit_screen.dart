@@ -11,9 +11,9 @@ import '../aadhaar/aadhaar_decoder.dart';
 import '../aadhaar/aadhaar_verify_screen.dart';
 import '../printing/badge_printer.dart';
 
-/// Safety-officer worker registration / editing. Creates WORKER / STAFF /
-/// VISITOR records with optional photo (camera or gallery) and Aadhaar-QR
-/// autofill. The badge can be printed straight after saving.
+/// Safety-officer worker registration / editing — full parity with the admin
+/// panel form. IDs (W-/S-/V-####) are always auto-generated and immutable;
+/// the QR badge is derived from the ID, so no credential input is needed.
 class WorkerEditScreen extends ConsumerStatefulWidget {
   const WorkerEditScreen({super.key, this.workerId});
 
@@ -26,21 +26,38 @@ class WorkerEditScreen extends ConsumerStatefulWidget {
 
 class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   final _formKey = GlobalKey<FormState>();
+
+  // Identity
   final _name = TextEditingController();
-  final _code = TextEditingController();
+  final _fatherName = TextEditingController();
+  final _language = TextEditingController();
   final _mobile = TextEditingController();
   final _pincode = TextEditingController();
   final _bloodGroup = TextEditingController();
+  // Emergency & nominee
   final _emergencyName = TextEditingController();
   final _emergencyNumber = TextEditingController();
+  final _nomineeName = TextEditingController();
+  final _nomineeRelation = TextEditingController();
+  // Bank & statutory
+  final _bankName = TextEditingController();
+  final _bankAccount = TextEditingController();
+  final _ifsc = TextEditingController();
+  final _pf = TextEditingController();
+  final _esi = TextEditingController();
+  // Work
+  final _natureOfContractor = TextEditingController();
   final _aadhaar = TextEditingController();
 
   String _category = 'WORKER';
   String? _gender;
+  String? _status;
   DateTime? _dob;
+  DateTime? _joinDate;
   String? _designationId;
   String? _vendorId;
   String? _photoUrl;
+  String _workerCode = '';
   bool _saving = false;
   bool _uploadingPhoto = false;
   bool _loading = true;
@@ -53,6 +70,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   Map<String, dynamic>? _existing;
 
   bool get _isEdit => widget.workerId != null;
+  bool get _isVisitor => _category == 'VISITOR';
 
   @override
   void initState() {
@@ -64,12 +82,21 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   void dispose() {
     for (final c in [
       _name,
-      _code,
+      _fatherName,
+      _language,
       _mobile,
       _pincode,
       _bloodGroup,
       _emergencyName,
       _emergencyNumber,
+      _nomineeName,
+      _nomineeRelation,
+      _bankName,
+      _bankAccount,
+      _ifsc,
+      _pf,
+      _esi,
+      _natureOfContractor,
       _aadhaar,
     ]) {
       c.dispose();
@@ -96,15 +123,26 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (_isEdit) {
         final w = results[2].data as Map<String, dynamic>;
         _existing = w;
+        _workerCode = (w['workerCode'] ?? '') as String;
         _name.text = (w['fullName'] ?? '') as String;
-        _code.text = (w['workerCode'] ?? '') as String;
-        _mobile.text = (w['mobileNumber'] ?? '') as String? ?? '';
-        _pincode.text = (w['pincode'] ?? '') as String? ?? '';
-        _bloodGroup.text = (w['bloodGroup'] ?? '') as String? ?? '';
-        _emergencyName.text = (w['emergencyContactName'] ?? '') as String? ?? '';
-        _emergencyNumber.text = (w['emergencyContactNumber'] ?? '') as String? ?? '';
+        _fatherName.text = (w['fatherName'] as String?) ?? '';
+        _language.text = (w['language'] as String?) ?? '';
+        _mobile.text = (w['mobileNumber'] as String?) ?? '';
+        _pincode.text = (w['pincode'] as String?) ?? '';
+        _bloodGroup.text = (w['bloodGroup'] as String?) ?? '';
+        _emergencyName.text = (w['emergencyContactName'] as String?) ?? '';
+        _emergencyNumber.text = (w['emergencyContactNumber'] as String?) ?? '';
+        _nomineeName.text = (w['nomineeName'] as String?) ?? '';
+        _nomineeRelation.text = (w['nomineeRelation'] as String?) ?? '';
+        _bankName.text = (w['bankName'] as String?) ?? '';
+        _bankAccount.text = (w['bankAccountNumber'] as String?) ?? '';
+        _ifsc.text = (w['ifscCode'] as String?) ?? '';
+        _pf.text = (w['pfNumber'] as String?) ?? '';
+        _esi.text = (w['esiNumber'] as String?) ?? '';
+        _natureOfContractor.text = (w['natureOfContractor'] as String?) ?? '';
         _category = (w['category'] as String?) ?? 'WORKER';
         _gender = w['gender'] as String?;
+        _status = w['status'] as String?;
         _designationId = w['designationId'] as String?;
         _vendorId = w['vendorId'] as String?;
         _photoUrl = w['photoUrl'] as String?;
@@ -204,6 +242,10 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
     if (data == null || !mounted) return;
     setState(() {
       if (data.name != null && _name.text.isEmpty) _name.text = data.name!;
+      if (data.careOf != null && _fatherName.text.isEmpty) {
+        // "S/O Xyz" — strip the relation prefix when present.
+        _fatherName.text = data.careOf!.replaceFirst(RegExp(r'^[SDWC]/O:?\s*'), '');
+      }
       if (data.gender != null) {
         _gender = data.gender == 'M' || data.gender == 'F' ? data.gender : 'OTHER';
       }
@@ -228,27 +270,44 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       _error = null;
     });
     final dio = ref.read(apiClientProvider).dio;
+
+    String? text(TextEditingController c) {
+      final v = c.text.trim();
+      return v.isEmpty ? null : v;
+    }
+
     final body = <String, dynamic>{
       'fullName': _name.text.trim(),
-      if (!_isEdit && _code.text.trim().isNotEmpty) 'workerCode': _code.text.trim(),
       'category': _category,
+      if (text(_fatherName) != null) 'fatherName': text(_fatherName),
       if (_gender != null) 'gender': _gender,
       if (_dob != null) 'dateOfBirth': _dob!.toIso8601String().substring(0, 10),
-      if (_mobile.text.trim().isNotEmpty) 'mobileNumber': _mobile.text.trim(),
-      if (_pincode.text.trim().isNotEmpty) 'pincode': _pincode.text.trim(),
-      if (_bloodGroup.text.trim().isNotEmpty) 'bloodGroup': _bloodGroup.text.trim(),
-      if (_emergencyName.text.trim().isNotEmpty)
-        'emergencyContactName': _emergencyName.text.trim(),
-      if (_emergencyNumber.text.trim().isNotEmpty)
-        'emergencyContactNumber': _emergencyNumber.text.trim(),
+      if (text(_language) != null) 'language': text(_language),
+      if (text(_mobile) != null) 'mobileNumber': text(_mobile),
+      if (text(_pincode) != null) 'pincode': text(_pincode),
+      if (text(_bloodGroup) != null) 'bloodGroup': text(_bloodGroup),
+      if (text(_emergencyName) != null) 'emergencyContactName': text(_emergencyName),
+      if (text(_emergencyNumber) != null) 'emergencyContactNumber': text(_emergencyNumber),
+      if (text(_nomineeName) != null) 'nomineeName': text(_nomineeName),
+      if (text(_nomineeRelation) != null) 'nomineeRelation': text(_nomineeRelation),
+      if (text(_bankName) != null) 'bankName': text(_bankName),
+      if (text(_bankAccount) != null) 'bankAccountNumber': text(_bankAccount),
+      if (text(_ifsc) != null) 'ifscCode': text(_ifsc),
+      if (text(_pf) != null) 'pfNumber': text(_pf),
+      if (text(_esi) != null) 'esiNumber': text(_esi),
+      if (text(_natureOfContractor) != null) 'natureOfContractor': text(_natureOfContractor),
       if (_designationId != null) 'designationId': _designationId,
       if (_vendorId != null) 'vendorId': _vendorId,
       if (_photoUrl != null) 'photoUrl': _photoUrl,
-      if (_aadhaar.text.trim().isNotEmpty) ...{
+      if (text(_aadhaar) != null) ...{
         'govIdType': 'Aadhaar',
-        'aadhaar': _aadhaar.text.trim(),
+        'aadhaar': text(_aadhaar),
       },
+      if (_isEdit && _status != null) 'status': _status,
+      if (!_isEdit && _joinDate != null)
+        'joinDate': _joinDate!.toIso8601String().substring(0, 10),
       if (!_isEdit && _siteId != null) 'siteId': _siteId,
+      // No workerCode: IDs are always auto-generated server-side (W-/S-/V-####).
     };
 
     try {
@@ -264,7 +323,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       final printNow = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text(_isEdit ? 'Saved' : 'Created — ${saved['workerCode']}'),
+          title: Text(_isEdit ? 'Saved' : 'Created — ID ${saved['workerCode']}'),
           content: const Text('Print the QR badge now?'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Later')),
@@ -279,7 +338,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         await printBadges([
           BadgeData(
             fullName: saved['fullName'] as String? ?? _name.text,
-            workerCode: saved['workerCode'] as String? ?? _code.text,
+            workerCode: saved['workerCode'] as String? ?? '',
             designation: _designations
                 .firstWhere((d) => d['id'] == _designationId, orElse: () => {})['name']
                 as String?,
@@ -298,6 +357,45 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         });
       }
     }
+  }
+
+  Widget _text(TextEditingController c, String label,
+      {TextInputType? keyboard, String? Function(String?)? validator}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: c,
+        keyboardType: keyboard,
+        validator: validator,
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      ),
+    );
+  }
+
+  Widget _section(String title, List<Widget> children, {bool initiallyExpanded = false}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ExpansionTile(
+        title: Text(title, style: Theme.of(context).textTheme.titleSmall),
+        initiallyExpanded: initiallyExpanded,
+        childrenPadding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        children: children,
+      ),
+    );
+  }
+
+  Future<void> _pickDate({
+    required DateTime? current,
+    required DateTime first,
+    required ValueChanged<DateTime> onPicked,
+  }) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? DateTime.now(),
+      firstDate: first,
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) onPicked(picked);
   }
 
   @override
@@ -339,18 +437,31 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  if (!_isEdit)
+                  const SizedBox(height: 12),
+                  if (_isEdit)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: TextFormField(
+                        enabled: false,
+                        initialValue: _workerCode,
+                        decoration: const InputDecoration(
+                          labelText: 'ID (auto-generated)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  if (!_isEdit) ...[
                     OutlinedButton.icon(
                       onPressed: _scanAadhaar,
                       icon: const Icon(Icons.qr_code_scanner),
                       label: const Text('Scan Aadhaar QR to autofill'),
                     ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+                  ],
                   DropdownButtonFormField<String>(
                     initialValue: _category,
-                    decoration: const InputDecoration(
-                        labelText: 'Type', border: OutlineInputBorder()),
+                    decoration:
+                        const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),
                     items: const [
                       DropdownMenuItem(value: 'WORKER', child: Text('Worker')),
                       DropdownMenuItem(value: 'STAFF', child: Text('Staff')),
@@ -359,23 +470,10 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     onChanged: _isEdit ? null : (v) => setState(() => _category = v ?? 'WORKER'),
                   ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _name,
-                    decoration: const InputDecoration(
-                        labelText: 'Full name *', border: OutlineInputBorder()),
-                    validator: (v) =>
-                        (v == null || v.trim().length < 2) ? 'Name is required' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _code,
-                    enabled: !_isEdit,
-                    decoration: const InputDecoration(
-                      labelText: 'ID number (leave blank = auto)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                  _text(_name, 'Full name *',
+                      validator: (v) =>
+                          (v == null || v.trim().length < 2) ? 'Name is required' : null),
+                  _text(_fatherName, "Father's name"),
                   Row(
                     children: [
                       Expanded(
@@ -394,105 +492,125 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: _dob ?? DateTime(1995),
-                              firstDate: DateTime(1940),
-                              lastDate: DateTime.now(),
-                            );
-                            if (picked != null) setState(() => _dob = picked);
-                          },
+                          onPressed: () => _pickDate(
+                            current: _dob,
+                            first: DateTime(1940),
+                            onPicked: (d) => setState(() => _dob = d),
+                          ),
                           child: Text(
                             _dob == null
                                 ? 'Date of birth'
-                                : '${_dob!.day}/${_dob!.month}/${_dob!.year}',
+                                : 'DOB: ${_dob!.day}/${_dob!.month}/${_dob!.year}',
                           ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _designationId,
-                    decoration: const InputDecoration(
-                        labelText: 'Designation', border: OutlineInputBorder()),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('—')),
-                      for (final d in _designations)
-                        DropdownMenuItem(
-                            value: d['id'] as String, child: Text(d['name'] as String)),
-                    ],
-                    onChanged: (v) => setState(() => _designationId = v),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _vendorId,
-                    decoration: InputDecoration(
-                      labelText: _category == 'VISITOR' ? 'Company (vendor)' : 'Contractor (vendor)',
-                      border: const OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('—')),
-                      for (final v in _vendors)
-                        DropdownMenuItem(
-                            value: v['id'] as String, child: Text(v['name'] as String)),
-                    ],
-                    onChanged: (v) => setState(() => _vendorId = v),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _mobile,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                        labelText: 'Mobile number', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
+                  _text(_mobile, 'Mobile number', keyboard: TextInputType.phone),
                   Row(
                     children: [
                       Expanded(
-                        child: TextFormField(
-                          controller: _pincode,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                              labelText: 'Pincode', border: OutlineInputBorder()),
-                        ),
-                      ),
+                          child:
+                              _text(_pincode, 'Pincode', keyboard: TextInputType.number)),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _bloodGroup,
-                          decoration: const InputDecoration(
-                              labelText: 'Blood group', border: OutlineInputBorder()),
-                        ),
-                      ),
+                      Expanded(child: _text(_bloodGroup, 'Blood group')),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _emergencyName,
-                    decoration: const InputDecoration(
-                        labelText: 'Emergency contact name', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _emergencyNumber,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                        labelText: 'Emergency contact number', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _aadhaar,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: _isEdit
+                  _text(_language, 'Language'),
+                  if (_isEdit) ...[
+                    DropdownButtonFormField<String>(
+                      initialValue: _status,
+                      decoration: const InputDecoration(
+                          labelText: 'Status', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'ACTIVE', child: Text('Active')),
+                        DropdownMenuItem(value: 'INACTIVE', child: Text('Inactive')),
+                        DropdownMenuItem(value: 'SUSPENDED', child: Text('Suspended')),
+                        DropdownMenuItem(value: 'EXITED', child: Text('Exited')),
+                      ],
+                      onChanged: (v) => setState(() => _status = v),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  _section('Designation & assignment', initiallyExpanded: true, [
+                    DropdownButtonFormField<String>(
+                      initialValue: _designationId,
+                      decoration: const InputDecoration(
+                          labelText: 'Designation', border: OutlineInputBorder()),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('—')),
+                        for (final d in _designations)
+                          DropdownMenuItem(
+                              value: d['id'] as String, child: Text(d['name'] as String)),
+                      ],
+                      onChanged: (v) => setState(() => _designationId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _vendorId,
+                      decoration: InputDecoration(
+                        labelText: _isVisitor ? 'Company (vendor)' : 'Contractor (vendor)',
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('—')),
+                        for (final v in _vendors)
+                          DropdownMenuItem(
+                              value: v['id'] as String, child: Text(v['name'] as String)),
+                      ],
+                      onChanged: (v) => setState(() => _vendorId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_category == 'WORKER') _text(_natureOfContractor, 'Nature of contractor'),
+                    if (!_isEdit)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: OutlinedButton(
+                          onPressed: () => _pickDate(
+                            current: _joinDate,
+                            first: DateTime(2000),
+                            onPicked: (d) => setState(() => _joinDate = d),
+                          ),
+                          child: Text(
+                            _joinDate == null
+                                ? (_isVisitor ? 'Visit date (today)' : 'Joining date (today)')
+                                : 'Joining: ${_joinDate!.day}/${_joinDate!.month}/${_joinDate!.year}',
+                          ),
+                        ),
+                      ),
+                  ]),
+
+                  if (!_isVisitor)
+                    _section('Emergency & nominee', [
+                      _text(_emergencyName, 'Emergency contact name'),
+                      _text(_emergencyNumber, 'Emergency contact number',
+                          keyboard: TextInputType.phone),
+                      _text(_nomineeName, 'Nominee name'),
+                      _text(_nomineeRelation, 'Nominee relation (e.g. Wife)'),
+                    ]),
+
+                  if (!_isVisitor)
+                    _section('Bank & statutory', [
+                      _text(_bankName, 'Bank name'),
+                      _text(_bankAccount, 'Account number', keyboard: TextInputType.number),
+                      _text(_ifsc, 'IFSC code'),
+                      _text(_pf, 'PF number'),
+                      _text(_esi, 'ESI number'),
+                    ]),
+
+                  _section('Gov ID (Aadhaar)', [
+                    _text(
+                      _aadhaar,
+                      _isEdit
                           ? 'Aadhaar number (blank = keep existing)'
                           : 'Aadhaar number (optional, encrypted)',
-                      border: const OutlineInputBorder(),
+                      keyboard: TextInputType.number,
                     ),
-                  ),
-                  const SizedBox(height: 24),
+                  ]),
+
+                  const SizedBox(height: 8),
                   FilledButton(
                     onPressed: _saving ? null : _save,
                     child: Text(_saving

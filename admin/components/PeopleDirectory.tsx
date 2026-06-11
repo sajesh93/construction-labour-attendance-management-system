@@ -497,9 +497,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
               Identity
             </Typography>
             <Grid container spacing={2}>
-              {field('workerCode', editing ? 'ID No' : 'ID No (blank = auto)', {
-                disabled: !!editing,
-              })}
+              {/* IDs are always auto-generated (W-/S-/V-####) and immutable. */}
+              {editing && field('workerCode', 'ID (auto-generated)', { disabled: true })}
               {field('fullName', 'Full name *')}
               {field('fatherName', "Father's name")}
               {selectField('gender', 'Gender', [
