@@ -195,10 +195,26 @@ class _AadhaarScanScreenState extends State<AadhaarScanScreen>
   }
 
   Future<void> _toggleTorch() async {
+    final cam = _cam;
+    if (cam == null) return;
     _torch = !_torch;
     try {
-      await _cam?.setFlashMode(_torch ? FlashMode.torch : FlashMode.off);
-    } catch (_) {}
+      if (_torch) {
+        // Some devices ignore the first torch request while the image stream
+        // is running; an explicit off→torch sequence reliably engages it.
+        await cam.setFlashMode(FlashMode.off);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await cam.setFlashMode(FlashMode.torch);
+      } else {
+        await cam.setFlashMode(FlashMode.off);
+      }
+    } catch (_) {
+      // Retry once — the capture session occasionally rejects the first call.
+      try {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        await cam.setFlashMode(_torch ? FlashMode.torch : FlashMode.off);
+      } catch (_) {}
+    }
     setState(() {});
   }
 
