@@ -4,18 +4,32 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 /// Full-screen QR scanner. Pops with the decoded string (or null if cancelled).
 /// The CLAMS app expects payloads like "CLAMS:W-0001".
+///
+/// [highDensity] runs the camera at 1920×1080 — required for very dense codes
+/// like the Aadhaar Secure QR (thousands of characters), which the default
+/// preview resolution cannot resolve.
 class QrScanScreen extends StatefulWidget {
-  const QrScanScreen({super.key});
+  const QrScanScreen({
+    super.key,
+    this.title = 'Scan worker QR',
+    this.hint = 'Point the camera at the worker QR badge',
+    this.highDensity = false,
+  });
+
+  final String title;
+  final String hint;
+  final bool highDensity;
 
   @override
   State<QrScanScreen> createState() => _QrScanScreenState();
 }
 
 class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver {
-  final MobileScannerController _controller = MobileScannerController(
+  late final MobileScannerController _controller = MobileScannerController(
     autoStart: false,
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [BarcodeFormat.qrCode],
+    cameraResolution: widget.highDensity ? const Size(1920, 1080) : null,
   );
   bool _handled = false;
 
@@ -59,7 +73,16 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan worker QR')),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          IconButton(
+            tooltip: 'Toggle torch',
+            icon: const Icon(Icons.flashlight_on),
+            onPressed: () => unawaited(_controller.toggleTorch()),
+          ),
+        ],
+      ),
       body: Stack(
         alignment: Alignment.center,
         children: [
@@ -100,19 +123,23 @@ class _QrScanScreenState extends State<QrScanScreen> with WidgetsBindingObserver
           ),
           IgnorePointer(
             child: Container(
-              width: 240,
-              height: 240,
+              width: widget.highDensity ? 300 : 240,
+              height: widget.highDensity ? 300 : 240,
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.white, width: 3),
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
           ),
-          const Positioned(
+          Positioned(
             bottom: 40,
-            child: Text(
-              'Point the camera at the worker QR badge',
-              style: TextStyle(color: Colors.white, backgroundColor: Colors.black54),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                widget.hint,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, backgroundColor: Colors.black54),
+              ),
             ),
           ),
         ],

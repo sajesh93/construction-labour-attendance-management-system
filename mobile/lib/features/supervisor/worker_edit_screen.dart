@@ -115,11 +115,21 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
     } on DioException catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.message ?? 'Failed to load form data';
+          _error = _friendlyError(e, 'Failed to load form data');
           _loading = false;
         });
       }
     }
+  }
+
+  String _friendlyError(DioException e, String fallback) {
+    final data = e.response?.data;
+    final detail = data is Map ? (data['detail'] ?? data['title']) : null;
+    if (detail is String && detail.isNotEmpty) return detail;
+    if (e.response?.statusCode == 403) {
+      return 'Your account does not have permission for this — ask an admin to check your role.';
+    }
+    return e.message ?? fallback;
   }
 
   Future<void> _pickPhoto(ImageSource source) async {
@@ -281,13 +291,10 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       }
       if (mounted) Navigator.of(context).pop(true);
     } on DioException catch (e) {
-      final detail = e.response?.data is Map
-          ? (e.response?.data['detail'] ?? e.response?.data['title'])
-          : null;
       if (mounted) {
         setState(() {
           _saving = false;
-          _error = (detail as String?) ?? e.message ?? 'Save failed';
+          _error = _friendlyError(e, 'Save failed');
         });
       }
     }

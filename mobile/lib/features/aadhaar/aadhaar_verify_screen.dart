@@ -28,7 +28,14 @@ class _AadhaarVerifyScreenState extends State<AadhaarVerifyScreen> {
 
   Future<void> _scan() async {
     final raw = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+      MaterialPageRoute(
+        builder: (_) => const QrScanScreen(
+          title: 'Scan Aadhaar QR',
+          hint: 'Hold steady ~15 cm from the Aadhaar QR.\n'
+              'It is very dense — give it a few seconds; use the torch in low light.',
+          highDensity: true,
+        ),
+      ),
     );
     if (!mounted) return;
     if (raw == null) {
