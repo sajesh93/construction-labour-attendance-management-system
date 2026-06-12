@@ -11,6 +11,7 @@ class AuthState {
     this.authenticated = false,
     this.role,
     this.fullName,
+    this.email,
     this.error,
   });
 
@@ -20,6 +21,7 @@ class AuthState {
   final bool authenticated;
   final String? role;
   final String? fullName;
+  final String? email;
   final String? error;
 
   AuthState copyWith({
@@ -28,6 +30,7 @@ class AuthState {
     bool? authenticated,
     String? role,
     String? fullName,
+    String? email,
     String? error,
   }) =>
       AuthState(
@@ -36,6 +39,7 @@ class AuthState {
         authenticated: authenticated ?? this.authenticated,
         role: role ?? this.role,
         fullName: fullName ?? this.fullName,
+        email: email ?? this.email,
         error: error,
       );
 }
@@ -62,6 +66,7 @@ class AuthController extends StateNotifier<AuthState> {
         authenticated: true,
         role: me.data['role'] as String?,
         fullName: me.data['fullName'] as String?,
+        email: me.data['email'] as String?,
       );
     } catch (_) {
       // Session invalid — drop tokens but KEEP device credentials so this
@@ -85,6 +90,7 @@ class AuthController extends StateNotifier<AuthState> {
         authenticated: true,
         role: res.data['user']?['role'] as String?,
         fullName: res.data['user']?['fullName'] as String?,
+        email: (res.data['user']?['email'] as String?) ?? email,
       );
       return true;
     } on DioException catch (e) {

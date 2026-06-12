@@ -92,6 +92,10 @@ export class SosService {
         longitude: dto.longitude,
         geoAccuracyM: dto.accuracyM,
         deviceUid: dto.deviceUid,
+        deviceName: dto.deviceName,
+        senderName: dto.senderName,
+        senderRole: dto.senderRole,
+        senderEmail: dto.senderEmail,
         message: dto.message,
       },
     });
@@ -102,12 +106,25 @@ export class SosService {
         ? `https://maps.google.com/?q=${dto.latitude},${dto.longitude}`
         : null;
 
+    // "Sent by Ramu (Safety Officer, ramu@x.com)" when logged in; otherwise the
+    // phone is all we know.
+    const roleLabel = dto.senderRole === 'SUPERVISOR' ? 'Safety Officer' : dto.senderRole;
+    const senderLine = dto.senderName
+      ? `Sent by: ${dto.senderName}` +
+        (roleLabel || dto.senderEmail
+          ? ` (${[roleLabel, dto.senderEmail].filter(Boolean).join(', ')})`
+          : '')
+      : `Sent from a logged-out device`;
+    const phoneLine = dto.deviceName ? `Phone: ${dto.deviceName}` : null;
+
     await this.notifications.create({
       organizationId,
       type: 'SOS',
       title: `🚨 SOS — ${where}`,
       body: [
         `Emergency reported at ${where}.`,
+        senderLine,
+        phoneLine,
         mapsLink ? `Location: ${mapsLink}` : null,
         dto.message ? `Message: ${dto.message}` : null,
       ]
@@ -126,9 +143,11 @@ export class SosService {
         [
           `An SOS was triggered at ${new Date().toISOString()}.`,
           `Site: ${where}`,
+          senderLine,
+          phoneLine,
           mapsLink ? `Location: ${mapsLink}` : 'Location: not available',
           dto.message ? `Message: ${dto.message}` : null,
-          dto.deviceUid ? `Device: ${dto.deviceUid}` : null,
+          dto.deviceUid ? `Device UID: ${dto.deviceUid}` : null,
         ]
           .filter(Boolean)
           .join('\n'),

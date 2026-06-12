@@ -48,6 +48,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   // Work
   final _natureOfContractor = TextEditingController();
   final _aadhaar = TextEditingController();
+  final _pan = TextEditingController();
 
   String _category = 'WORKER';
   String? _gender;
@@ -98,6 +99,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       _esi,
       _natureOfContractor,
       _aadhaar,
+      _pan,
     ]) {
       c.dispose();
     }
@@ -304,6 +306,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         'govIdType': 'Aadhaar',
         'aadhaar': text(_aadhaar),
       },
+      if (text(_pan) != null) 'pan': text(_pan)!.toUpperCase(),
       if (_isEdit && _status != null) 'status': _status,
       if (!_isEdit && _joinDate != null)
         'joinDate': _joinDate!.toIso8601String().substring(0, 10),
@@ -601,13 +604,19 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       _text(_esi, 'ESI number'),
                     ]),
 
-                  _section('Gov ID (Aadhaar)', [
+                  _section('Gov ID (Aadhaar / PAN)', [
                     _text(
                       _aadhaar,
                       _isEdit
                           ? 'Aadhaar number (blank = keep existing)'
                           : 'Aadhaar number (optional, encrypted)',
                       keyboard: TextInputType.number,
+                    ),
+                    _text(
+                      _pan,
+                      _isEdit
+                          ? 'PAN number (blank = keep existing)'
+                          : 'PAN number (optional, encrypted)',
                     ),
                   ]),
 

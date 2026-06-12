@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, Checkbox, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { api } from '@/lib/api/browser';
 import { Paginated, PersonCategory, Site, Worker } from '@/lib/types';
 import { QrBadge } from '@/components/QrBadge';
@@ -21,17 +21,34 @@ export default function BadgesPage() {
     ['WORKER', 'STAFF', 'VISITOR'].includes(initial) ? initial : 'WORKER',
   );
   const [siteId, setSiteId] = React.useState('');
+  const [q, setQ] = React.useState('');
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
   const workers = useQuery({
-    queryKey: ['workers', 'all-badges', category, siteId],
+    queryKey: ['workers', 'all-badges', category, siteId, q],
     queryFn: () =>
       api.get<Paginated<Worker>>(
-        `/workers?limit=200&category=${category}${siteId ? `&siteId=${siteId}` : ''}`,
+        `/workers?limit=200&category=${category}${siteId ? `&siteId=${siteId}` : ''}${
+          q ? `&q=${encodeURIComponent(q)}` : ''
+        }`,
       ),
   });
 
   const siteName = sites.data?.find((s) => s.id === siteId)?.name;
-  const list = workers.data?.data ?? [];
+  const list = React.useMemo(() => workers.data?.data ?? [], [workers.data]);
+
+  // Everyone in the current filter starts selected; untick to leave them out.
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  React.useEffect(() => {
+    setSelected(new Set(list.map((w) => w.id)));
+  }, [list]);
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const selectedCount = list.filter((w) => selected.has(w.id)).length;
 
   return (
     <Box>
@@ -40,11 +57,20 @@ export default function BadgesPage() {
         direction="row"
         spacing={2}
         alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
         sx={{ mb: 3, '@media print': { display: 'none' } }}
       >
         <Typography variant="h5" sx={{ flexGrow: 1 }}>
           {CATEGORY_TITLES[category]}
         </Typography>
+        <TextField
+          size="small"
+          placeholder="Search name / code / mobile"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          sx={{ width: 240 }}
+        />
         <TextField
           select
           size="small"
@@ -72,8 +98,14 @@ export default function BadgesPage() {
             </MenuItem>
           ))}
         </TextField>
-        <Button variant="contained" onClick={() => window.print()} disabled={list.length === 0}>
-          Print ({list.length})
+        <Button size="small" onClick={() => setSelected(new Set(list.map((w) => w.id)))}>
+          Select all
+        </Button>
+        <Button size="small" onClick={() => setSelected(new Set())}>
+          Clear
+        </Button>
+        <Button variant="contained" onClick={() => window.print()} disabled={selectedCount === 0}>
+          Print selected ({selectedCount})
         </Button>
       </Stack>
 
@@ -86,9 +118,42 @@ export default function BadgesPage() {
           '@media print': { gap: '6px' },
         }}
       >
-        {list.map((w) => (
-          <QrBadge key={w.id} fullName={w.fullName} workerCode={w.workerCode} siteName={siteName} />
-        ))}
+        {list.map((w) => {
+          const isSelected = selected.has(w.id);
+          return (
+            <Box
+              key={w.id}
+              onClick={() => toggle(w.id)}
+              sx={{
+                position: 'relative',
+                cursor: 'pointer',
+                borderRadius: 1,
+                outline: isSelected ? '2px solid' : '2px dashed',
+                outlineColor: isSelected ? 'primary.main' : 'divider',
+                opacity: isSelected ? 1 : 0.45,
+                // Unselected badges vanish from the printout entirely.
+                '@media print': isSelected
+                  ? { outline: 'none', opacity: 1 }
+                  : { display: 'none' },
+              }}
+            >
+              <Checkbox
+                checked={isSelected}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => toggle(w.id)}
+                size="small"
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  zIndex: 1,
+                  '@media print': { display: 'none' },
+                }}
+              />
+              <QrBadge fullName={w.fullName} workerCode={w.workerCode} siteName={siteName} />
+            </Box>
+          );
+        })}
         {list.length === 0 && (
           <Typography color="text.secondary">Nothing to print for this selection.</Typography>
         )}

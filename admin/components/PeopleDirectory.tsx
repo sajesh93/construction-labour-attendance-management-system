@@ -61,6 +61,7 @@ interface PersonForm {
   esiNumber?: string;
   govIdType?: string;
   aadhaar?: string;
+  pan?: string;
   nfcUid?: string;
   qrIdentifier?: string;
   joinDate?: string;
@@ -121,6 +122,7 @@ function toForm(w: WorkerDetail): PersonForm {
     esiNumber: w.esiNumber ?? '',
     govIdType: w.govIdType ?? '',
     aadhaar: '',
+    pan: '',
     nfcUid: w.nfcUid ?? '',
     qrIdentifier: w.qrIdentifier ?? '',
     joinDate: w.joinDate ? w.joinDate.slice(0, 10) : '',
@@ -181,13 +183,14 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   });
   const photoUrl = watch('photoUrl');
 
-  const queryKey = ['workers', category, q];
+  const [sortBy, setSortBy] = React.useState('');
+  const listUrl = `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200${
+    sortBy ? `&sortBy=${sortBy}` : ''
+  }`;
+  const queryKey = ['workers', category, q, sortBy];
   const workers = useQuery({
     queryKey,
-    queryFn: () =>
-      api.get<Paginated<Worker>>(
-        `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200`,
-      ),
+    queryFn: () => api.get<Paginated<Worker>>(listUrl),
   });
 
   // Cursor pagination beyond the first 200 rows.
@@ -203,9 +206,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     if (!nextCursor) return;
     setLoadingMore(true);
     try {
-      const page = await api.get<Paginated<Worker>>(
-        `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200&cursor=${nextCursor}`,
-      );
+      const page = await api.get<Paginated<Worker>>(`${listUrl}&cursor=${nextCursor}`);
       setExtraRows((prev) => [...prev, ...page.data]);
       setNextCursor(page.nextCursor);
     } finally {
@@ -407,7 +408,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           </Stack>
         }
       />
-      <Stack direction="row" sx={{ mb: 2 }}>
+      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
         <TextField
           size="small"
           placeholder="Search name / code / mobile"
@@ -415,6 +416,19 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           onChange={(e) => setQ(e.target.value)}
           sx={{ width: 320 }}
         />
+        <TextField
+          select
+          size="small"
+          label="Sort by"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          sx={{ width: 200 }}
+        >
+          <MenuItem value="">Newest first</MenuItem>
+          <MenuItem value="name">Name (A–Z)</MenuItem>
+          <MenuItem value="designation">Designation</MenuItem>
+          <MenuItem value="vendor">Vendor / contractor</MenuItem>
+        </TextField>
       </Stack>
       {error && !open && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
@@ -429,6 +443,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
               <TableCell>ID</TableCell>
               <TableCell>Name</TableCell>
               <TableCell>Designation</TableCell>
+              <TableCell>Vendor</TableCell>
               <TableCell>Mobile</TableCell>
               {category === 'WORKER' && <TableCell>PF / ESI</TableCell>}
               <TableCell>Gov ID</TableCell>
@@ -447,12 +462,18 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 <TableCell>{w.workerCode}</TableCell>
                 <TableCell>{w.fullName}</TableCell>
                 <TableCell>{w.designation?.name ?? '—'}</TableCell>
+                <TableCell>{w.vendor?.name ?? '—'}</TableCell>
                 <TableCell>{w.mobileNumber ?? '—'}</TableCell>
                 {category === 'WORKER' && (
                   <TableCell>{(w.pfNumber ?? '—') + ' / ' + (w.esiNumber ?? '—')}</TableCell>
                 )}
                 <TableCell>
-                  {w.govIdType ? `${w.govIdType} ••${w.aadhaarLast4 ?? ''}` : '—'}
+                  {[
+                    w.govIdType ? `${w.govIdType} ••${w.aadhaarLast4 ?? ''}` : null,
+                    w.panLast4 ? `PAN ••${w.panLast4}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || '—'}
                 </TableCell>
                 <TableCell>
                   <Chip
@@ -611,6 +632,10 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                     'aadhaar',
                     editing ? 'Gov ID number (leave blank to keep)' : 'Gov ID number (encrypted)',
                   )}
+                  {field(
+                    'pan',
+                    editing ? 'PAN (leave blank to keep)' : 'PAN card number (encrypted)',
+                  )}
                 </Grid>
               </>
             )}
@@ -625,6 +650,10 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   {field(
                     'aadhaar',
                     editing ? 'Gov ID number (leave blank to keep)' : 'Gov ID number (encrypted)',
+                  )}
+                  {field(
+                    'pan',
+                    editing ? 'PAN (leave blank to keep)' : 'PAN card number (encrypted)',
                   )}
                 </Grid>
               </>

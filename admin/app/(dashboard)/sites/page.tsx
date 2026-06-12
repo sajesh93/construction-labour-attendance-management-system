@@ -41,6 +41,11 @@ export default function SitesPage() {
     },
   });
 
+  const toggleActive = useMutation({
+    mutationFn: (s: Site) => api.patch(`/sites/${s.id}`, { isActive: !s.isActive }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sites'] }),
+  });
+
   return (
     <>
       <PageHeader
@@ -79,6 +84,24 @@ export default function SitesPage() {
                 <TableCell align="right">
                   <Button size="small" onClick={() => router.push(`/sites/${s.id}/settings`)}>
                     Settings
+                  </Button>
+                  <Button
+                    size="small"
+                    color={s.isActive ? 'warning' : 'success'}
+                    disabled={toggleActive.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          s.isActive
+                            ? `Disable site "${s.name}"? It will no longer appear in the app for attendance, but all its records are kept.`
+                            : `Enable site "${s.name}"? It will appear in the app again.`,
+                        )
+                      ) {
+                        toggleActive.mutate(s);
+                      }
+                    }}
+                  >
+                    {s.isActive ? 'Disable' : 'Enable'}
                   </Button>
                 </TableCell>
               </TableRow>

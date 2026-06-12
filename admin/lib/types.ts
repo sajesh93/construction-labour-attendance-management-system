@@ -56,6 +56,7 @@ export interface Worker {
   nomineeName?: string | null;
   nomineeRelation?: string | null;
   vendorId?: string | null;
+  vendor?: { name: string } | null;
   natureOfContractor?: string | null;
   bankName?: string | null;
   bankAccountNumber?: string | null;
@@ -64,6 +65,7 @@ export interface Worker {
   esiNumber?: string | null;
   govIdType?: string | null;
   aadhaarLast4?: string | null;
+  panLast4?: string | null;
 }
 
 export interface Vendor {

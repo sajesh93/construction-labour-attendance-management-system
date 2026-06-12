@@ -2,9 +2,33 @@
 
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, AlertTitle, Button, Stack } from '@mui/material';
+import {
+  Alert,
+  AlertTitle,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+} from '@mui/material';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/browser';
 import { AppNotification } from '@/lib/types';
+
+interface MissedSession {
+  sessionId: string;
+  workerName: string;
+  workerCode: string;
+  category: string;
+  siteName: string;
+  loginAt: string;
+}
 
 const POLL_MS = 20_000;
 const WINDOW_HOURS = 24;
@@ -16,6 +40,8 @@ const WINDOW_HOURS = 24;
  */
 export function SosBanner() {
   const qc = useQueryClient();
+  const router = useRouter();
+  const [detail, setDetail] = React.useState<AppNotification | null>(null);
   const since = React.useMemo(
     () => new Date(Date.now() - WINDOW_HOURS * 3600_000).toISOString(),
     [],
@@ -109,16 +135,75 @@ export function SosBanner() {
         <Alert
           key={n.id}
           severity="warning"
+          sx={{ cursor: 'pointer' }}
+          onClick={() => setDetail(n)}
           action={
-            <Button color="inherit" size="small" onClick={() => ack.mutate(n.id)}>
-              Dismiss
-            </Button>
+            <Stack direction="row" spacing={1}>
+              <Button color="inherit" size="small" onClick={(e) => { e.stopPropagation(); setDetail(n); }}>
+                Who?
+              </Button>
+              <Button color="inherit" size="small" onClick={(e) => { e.stopPropagation(); ack.mutate(n.id); }}>
+                Dismiss
+              </Button>
+            </Stack>
           }
         >
           <AlertTitle>{n.title}</AlertTitle>
           {n.body}
         </Alert>
       ))}
+
+      <Dialog open={detail !== null} onClose={() => setDetail(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{detail?.title}</DialogTitle>
+        <DialogContent>
+          {(() => {
+            const sessions = (detail?.data?.sessions as MissedSession[] | undefined) ?? [];
+            if (sessions.length === 0) {
+              return <div>{detail?.body}</div>;
+            }
+            return (
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Code</TableCell>
+                    <TableCell>Category</TableCell>
+                    <TableCell>Site</TableCell>
+                    <TableCell>Logged in at</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {sessions.map((s) => (
+                    <TableRow key={s.sessionId}>
+                      <TableCell>{s.workerName}</TableCell>
+                      <TableCell>{s.workerCode}</TableCell>
+                      <TableCell>{s.category}</TableCell>
+                      <TableCell>{s.siteName}</TableCell>
+                      <TableCell>{new Date(s.loginAt).toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => router.push('/attendance?view=missed')}>
+            Open attendance page
+          </Button>
+          {detail && (
+            <Button
+              onClick={() => {
+                ack.mutate(detail.id);
+                setDetail(null);
+              }}
+            >
+              Dismiss notification
+            </Button>
+          )}
+          <Button onClick={() => setDetail(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

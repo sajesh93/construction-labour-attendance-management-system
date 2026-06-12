@@ -69,6 +69,7 @@ export class WorkersController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
     @Query('category') category?: string,
+    @Query('sortBy') sortBy?: string,
   ) {
     return this.workers.list(user, {
       siteId,
@@ -78,6 +79,7 @@ export class WorkersController {
       limit: limit ? parseInt(limit, 10) : undefined,
       cursor,
       category,
+      sortBy,
     });
   }
 

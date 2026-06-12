@@ -35,9 +35,35 @@ interface ActiveSession {
   site?: { id: string; name: string } | null;
 }
 
+interface StatPerson {
+  fullName: string;
+  workerCode: string;
+  siteName: string | null;
+  loginAt: string;
+}
+
+interface DashboardStats {
+  onSiteNow: { total: number; byCategory: Record<string, { count: number; people: StatPerson[] }> };
+  missedLogout: {
+    date: string;
+    total: number;
+    byCategory: Record<string, { count: number; people: StatPerson[] }>;
+  };
+}
+
 export default function AttendancePage() {
   const [siteId, setSiteId] = React.useState('all');
+  const [missedView, setMissedView] = React.useState(false);
+  React.useEffect(() => {
+    setMissedView(new URLSearchParams(window.location.search).get('view') === 'missed');
+  }, []);
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
+
+  const stats = useQuery({
+    queryKey: ['dashboard-stats'],
+    queryFn: () => api.get<DashboardStats>('/attendance/dashboard-stats'),
+    enabled: missedView,
+  });
 
   const active = useQuery({
     queryKey: ['active', siteId],
@@ -131,6 +157,53 @@ export default function AttendancePage() {
           </Card>
         </Grid>
       </Grid>
+
+      {missedView && (
+        <Card sx={{ mb: 2, borderLeft: '4px solid', borderColor: 'warning.main' }}>
+          <CardContent>
+            <Typography variant="subtitle1" gutterBottom>
+              Missed logouts — {stats.data?.missedLogout.date ?? 'yesterday'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              These people logged in but never logged out; their sessions were auto-closed.
+            </Typography>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Code</TableCell>
+                  <TableCell>Category</TableCell>
+                  <TableCell>Site</TableCell>
+                  <TableCell>Logged in at</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {Object.entries(stats.data?.missedLogout.byCategory ?? {}).flatMap(
+                  ([category, bucket]) =>
+                    bucket.people.map((p) => (
+                      <TableRow key={`${category}-${p.workerCode}`} hover>
+                        <TableCell>{p.fullName}</TableCell>
+                        <TableCell>{p.workerCode}</TableCell>
+                        <TableCell>{category}</TableCell>
+                        <TableCell>{p.siteName ?? '—'}</TableCell>
+                        <TableCell>{new Date(p.loginAt).toLocaleString()}</TableCell>
+                      </TableRow>
+                    )),
+                )}
+                {stats.data && stats.data.missedLogout.total === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5}>
+                      <Typography color="text.secondary">
+                        Everyone logged out properly. 🎉
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <Table>

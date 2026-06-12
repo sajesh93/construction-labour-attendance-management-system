@@ -144,6 +144,14 @@ export class CreateWorkerDto {
   @Matches(/^[0-9 ]{6,24}$/, { message: 'ID number must be 6-24 digits/spaces' })
   aadhaar?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'PAN card number (ABCDE1234F); encrypted at rest, never returned',
+  })
+  @IsOptional()
+  @Matches(/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/, { message: 'PAN must look like ABCDE1234F' })
+  pan?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()

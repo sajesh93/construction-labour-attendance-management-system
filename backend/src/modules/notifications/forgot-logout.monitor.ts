@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { MailService } from '../../common/mail/mail.service';
 import { businessDate } from '../../common/time/time.util';
@@ -60,14 +61,22 @@ export class ForgotLogoutMonitor implements OnModuleInit, OnModuleDestroy {
     const stale = await this.prisma.attendanceSession.findMany({
       where: { state: 'OPEN', loginAt: { lt: cutoff }, forgotLogoutNotifiedAt: null },
       include: {
-        worker: { select: { fullName: true, workerCode: true } },
+        worker: { select: { fullName: true, workerCode: true, category: true } },
         site: { select: { name: true } },
       },
       take: 200,
     });
     if (stale.length === 0) return;
 
-    const byOrg = new Map<string, string[]>();
+    interface MissedSession {
+      sessionId: string;
+      workerName: string;
+      workerCode: string;
+      category: string;
+      siteName: string;
+      loginAt: string;
+    }
+    const byOrg = new Map<string, MissedSession[]>();
     for (const s of stale) {
       // Atomic claim — only the process that flips the flag acts on it.
       const claimed = await this.prisma.attendanceSession.updateMany({
@@ -91,25 +100,49 @@ export class ForgotLogoutMonitor implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      await this.notifications.create({
-        organizationId: s.organizationId,
-        type: 'FORGOT_LOGOUT',
-        title: `${s.worker.fullName} (${s.worker.workerCode}) — no logout`,
-        body:
-          `Logged in at ${s.site.name} on ${s.loginAt.toISOString()} and never logged out. ` +
-          `Auto-logged out with 8h credited (no overtime).`,
-        siteId: s.siteId,
-        data: { sessionId: s.id, workerCode: s.worker.workerCode, autoClosed: true },
-      });
-
-      const line = `${s.worker.fullName} (${s.worker.workerCode}) at ${s.site.name} — login ${s.loginAt.toISOString()}, auto-credited 8h`;
       const list = byOrg.get(s.organizationId) ?? [];
-      list.push(line);
+      list.push({
+        sessionId: s.id,
+        workerName: s.worker.fullName,
+        workerCode: s.worker.workerCode,
+        category: s.worker.category,
+        siteName: s.site.name,
+        loginAt: s.loginAt.toISOString(),
+      });
       byOrg.set(s.organizationId, list);
     }
 
-    for (const [orgId, lines] of byOrg) {
+    for (const [orgId, sessions] of byOrg) {
+      // One summary notification per batch ("5 workers didn't logout") — the
+      // full who-list rides in data.sessions for the admin click-through.
+      const counts = new Map<string, number>();
+      for (const m of sessions) counts.set(m.category, (counts.get(m.category) ?? 0) + 1);
+      const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+      const label = (cat: string) =>
+        cat === 'WORKER' ? 'worker' : cat === 'STAFF' ? 'staff member' : 'visitor';
+      const title =
+        [...counts.entries()].map(([cat, n]) => plural(n, label(cat))).join(' & ') +
+        ` didn't logout`;
+      const preview = sessions
+        .slice(0, 5)
+        .map((m) => `${m.workerName} (${m.workerCode}) at ${m.siteName}`)
+        .join(', ');
+      await this.notifications.create({
+        organizationId: orgId,
+        type: 'FORGOT_LOGOUT',
+        title,
+        body:
+          `${preview}${sessions.length > 5 ? ` and ${sessions.length - 5} more` : ''}. ` +
+          `All were auto-logged out with 8h credited (no overtime).`,
+        siteId: null,
+        data: { sessions, autoClosed: true } as unknown as Prisma.InputJsonValue,
+      });
+
       // Forgot-logout summaries go to SUPER_ADMINs only (per policy).
+      const lines = sessions.map(
+        (m) =>
+          `${m.workerName} (${m.workerCode}) at ${m.siteName} — login ${m.loginAt}, auto-credited 8h`,
+      );
       const emails = await this.notifications.alertEmails(orgId, ['SUPER_ADMIN']);
       await this.mail.send(
         emails,

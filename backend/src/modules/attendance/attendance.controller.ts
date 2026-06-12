@@ -56,6 +56,12 @@ export class AttendanceController {
     return this.attendance.activeSessions(user, siteId);
   }
 
+  @Get('dashboard-stats')
+  @RequirePermissions(Permission.ATTENDANCE_VIEW)
+  dashboardStats(@CurrentUser() user: AuthUser) {
+    return this.attendance.dashboardStats(user);
+  }
+
   @Get('day-summary')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
   daySummary(

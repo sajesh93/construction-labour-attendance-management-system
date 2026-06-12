@@ -31,6 +31,7 @@ dependencies:
   mobile_scanner: ^5.2.3
   geolocator: ^12.0.0
   connectivity_plus: ^6.0.5
+  device_info_plus: ^10.1.2
 
   # Photos (worker registration)
   image_picker: ^1.1.2

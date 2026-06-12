@@ -534,6 +534,86 @@ export class AttendanceService {
     };
   }
 
+  /**
+   * KPIs for the admin dashboard home: who is on site right now (by category,
+   * with names for the hover detail) and who missed logout yesterday — i.e.
+   * sessions the system had to AUTO_CLOSE because no logout tap ever came.
+   */
+  async dashboardStats(user: AuthUser) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: user.organizationId },
+      select: { timezone: true },
+    });
+    const tz = org?.timezone ?? 'Asia/Kolkata';
+    const scopeFilter =
+      user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
+        ? { siteId: { in: user.siteScopes } }
+        : {};
+
+    const select = {
+      loginAt: true,
+      worker: { select: { fullName: true, workerCode: true, category: true } },
+      site: { select: { name: true } },
+    } as const;
+
+    const open = await this.prisma.attendanceSession.findMany({
+      where: { organizationId: user.organizationId, state: 'OPEN', ...scopeFilter },
+      select,
+      orderBy: { loginAt: 'asc' },
+    });
+
+    const yesterday = businessDate(new Date(Date.now() - 24 * 3600 * 1000), tz);
+    const missed = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        state: 'AUTO_CLOSED',
+        workDate: yesterday,
+        ...scopeFilter,
+      },
+      select,
+      orderBy: { loginAt: 'asc' },
+    });
+
+    type Row = (typeof open)[number];
+    const bucket = (rows: Row[]) => {
+      const byCategory: Record<
+        string,
+        {
+          count: number;
+          people: {
+            fullName: string;
+            workerCode: string;
+            siteName: string | null;
+            loginAt: Date;
+          }[];
+        }
+      > = {};
+      for (const s of rows) {
+        const cat = s.worker.category;
+        const b = (byCategory[cat] ??= { count: 0, people: [] });
+        b.count += 1;
+        if (b.people.length < 200) {
+          b.people.push({
+            fullName: s.worker.fullName,
+            workerCode: s.worker.workerCode,
+            siteName: s.site?.name ?? null,
+            loginAt: s.loginAt,
+          });
+        }
+      }
+      return byCategory;
+    };
+
+    return {
+      onSiteNow: { total: open.length, byCategory: bucket(open) },
+      missedLogout: {
+        date: yesterday.toISOString().slice(0, 10),
+        total: missed.length,
+        byCategory: bucket(missed),
+      },
+    };
+  }
+
   /** Supervisor monthly summary for a worker (docs/03 §5). */
   async workerSummary(organizationId: string, workerId: string, month: string) {
     const [year, mon] = month.split('-').map((n) => parseInt(n, 10));

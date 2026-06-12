@@ -38,7 +38,9 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             CLAMS Admin
           </Typography>
-          <Chip label={roleLabel(me.role)} size="small" sx={{ mr: 2 }} />
+          {me.fullName.trim().toLowerCase() !== roleLabel(me.role).trim().toLowerCase() && (
+            <Chip label={roleLabel(me.role)} size="small" sx={{ mr: 2 }} />
+          )}
           <Typography variant="body2" sx={{ mr: 2 }}>
             {me.fullName}
           </Typography>

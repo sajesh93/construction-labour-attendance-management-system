@@ -29,7 +29,7 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import dayjs, { Dayjs } from 'dayjs';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
-import { Vendor } from '@/lib/types';
+import { Site, Vendor } from '@/lib/types';
 
 const REPORT_TYPES = ['DAILY', 'MONTHLY', 'WORKER', 'VENDOR', 'SITE', 'OVERTIME', 'CORRECTION'];
 const PREVIEW_LIMIT = 500;
@@ -68,10 +68,12 @@ export default function ReportsPage() {
   const [from, setFrom] = React.useState<Dayjs | null>(dayjs().startOf('month'));
   const [to, setTo] = React.useState<Dayjs | null>(dayjs().endOf('day'));
   const [vendorId, setVendorId] = React.useState('');
+  const [siteId, setSiteId] = React.useState('');
   const [sortByVendor, setSortByVendor] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
+  const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
 
   const showMonth = reportType === 'MONTHLY';
   const showDate = reportType === 'DAILY';
@@ -87,6 +89,7 @@ export default function ReportsPage() {
       if (to) params.to = to.toISOString();
     }
     if (showVendorTools && vendorId) params.vendorId = vendorId;
+    if (siteId) params.siteId = siteId;
     if (showVendorTools && sortByVendor) params.sortBy = 'vendor';
     return params;
   };
@@ -198,6 +201,23 @@ export default function ReportsPage() {
                 </Grid>
               </>
             )}
+            <Grid item xs={12} md={3}>
+              <TextField
+                select
+                label="Site (optional)"
+                fullWidth
+                value={siteId}
+                onChange={(e) => setSiteId(e.target.value)}
+              >
+                <MenuItem value="">All sites</MenuItem>
+                {sites.data?.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>
+                    {s.name}
+                    {s.isActive ? '' : ' (disabled)'}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
             {showVendorTools && (
               <Grid item xs={12} md={3}>
                 <TextField

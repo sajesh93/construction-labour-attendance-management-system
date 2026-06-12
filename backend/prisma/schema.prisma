@@ -264,6 +264,8 @@ model Worker {
   govIdType              String?      @map("gov_id_type")
   aadhaarCiphertext      Bytes?       @map("aadhaar_ciphertext")
   aadhaarLast4           String?      @map("aadhaar_last4")
+  panCiphertext          Bytes?       @map("pan_ciphertext")
+  panLast4               String?      @map("pan_last4")
   status                 WorkerStatus @default(ACTIVE)
   joinDate               DateTime?    @map("join_date") @db.Date
   exitDate               DateTime?    @map("exit_date") @db.Date
@@ -560,6 +562,10 @@ model SosEvent {
   longitude      Float?
   geoAccuracyM   Float?    @map("geo_accuracy_m")
   deviceUid      String?   @map("device_uid")
+  deviceName     String?   @map("device_name")
+  senderName     String?   @map("sender_name")
+  senderRole     String?   @map("sender_role")
+  senderEmail    String?   @map("sender_email")
   message        String?
   acknowledgedBy String?   @map("acknowledged_by") @db.Uuid
   acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz

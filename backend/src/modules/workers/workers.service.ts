@@ -76,6 +76,7 @@ export class WorkersService {
       limit?: number;
       cursor?: string;
       category?: string;
+      sortBy?: string;
     },
   ) {
     const limit = Math.min(opts.limit ?? 50, 200);
@@ -97,11 +98,21 @@ export class WorkersService {
         : {}),
     };
 
+    // Stable sort orders (id tiebreaker keeps cursor pagination consistent).
+    const orderBy: Prisma.WorkerOrderByWithRelationInput[] =
+      opts.sortBy === 'designation'
+        ? [{ designation: { name: 'asc' } }, { fullName: 'asc' }, { id: 'asc' }]
+        : opts.sortBy === 'vendor'
+          ? [{ vendor: { name: 'asc' } }, { fullName: 'asc' }, { id: 'asc' }]
+          : opts.sortBy === 'name'
+            ? [{ fullName: 'asc' }, { id: 'asc' }]
+            : [{ createdAt: 'desc' }, { id: 'desc' }];
+
     const rows = await this.prisma.worker.findMany({
       where,
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-      orderBy: { createdAt: 'desc' },
+      orderBy,
       select: {
         id: true,
         workerCode: true,
@@ -112,6 +123,7 @@ export class WorkersService {
         mobileNumber: true,
         status: true,
         vendorId: true,
+        vendor: { select: { name: true } },
         category: true,
         designationId: true,
         designation: { select: { name: true } },
@@ -120,6 +132,7 @@ export class WorkersService {
         esiNumber: true,
         govIdType: true,
         aadhaarLast4: true,
+        panLast4: true,
         bloodGroup: true,
         emergencyContactName: true,
         emergencyContactNumber: true,
@@ -143,8 +156,14 @@ export class WorkersService {
     if (!worker) throw Errors.workerNotFound();
 
     let aadhaar: string | undefined;
-    if (reveal && worker.aadhaarCiphertext) {
-      aadhaar = this.crypto.decrypt(Buffer.from(worker.aadhaarCiphertext));
+    let pan: string | undefined;
+    if (reveal && (worker.aadhaarCiphertext || worker.panCiphertext)) {
+      if (worker.aadhaarCiphertext) {
+        aadhaar = this.crypto.decrypt(Buffer.from(worker.aadhaarCiphertext));
+      }
+      if (worker.panCiphertext) {
+        pan = this.crypto.decrypt(Buffer.from(worker.panCiphertext));
+      }
       await this.audit.record({
         organizationId: user.organizationId,
         actorUserId: user.userId,
@@ -155,9 +174,10 @@ export class WorkersService {
       });
     }
 
-    const { aadhaarCiphertext: _omit, ...rest } = worker;
+    const { aadhaarCiphertext: _omit, panCiphertext: _omit2, ...rest } = worker;
     void _omit;
-    return { ...rest, aadhaar };
+    void _omit2;
+    return { ...rest, aadhaar, pan };
   }
 
   // ---- Mutations -----------------------------------------------------------
@@ -208,6 +228,9 @@ export class WorkersService {
   ) {
     const aadhaarCiphertext = dto.aadhaar ? this.crypto.encrypt(dto.aadhaar) : undefined;
     const aadhaarLast4 = dto.aadhaar ? dto.aadhaar.replace(/\s/g, '').slice(-4) : undefined;
+    const pan = dto.pan?.replace(/\s/g, '').toUpperCase();
+    const panCiphertext = pan ? this.crypto.encrypt(pan) : undefined;
+    const panLast4 = pan ? pan.slice(-4) : undefined;
 
     return this.prisma.$transaction(async (tx) => {
       const w = await tx.worker.create({
@@ -240,6 +263,8 @@ export class WorkersService {
           govIdType: dto.govIdType,
           aadhaarCiphertext,
           aadhaarLast4,
+          panCiphertext,
+          panLast4,
           joinDate,
           notes: dto.notes,
           nfcUid: dto.nfcUid,
@@ -313,6 +338,11 @@ export class WorkersService {
     if (dto.aadhaar) {
       data.aadhaarCiphertext = this.crypto.encrypt(dto.aadhaar);
       data.aadhaarLast4 = dto.aadhaar.replace(/\s/g, '').slice(-4);
+    }
+    if (dto.pan) {
+      const pan = dto.pan.replace(/\s/g, '').toUpperCase();
+      data.panCiphertext = this.crypto.encrypt(pan);
+      data.panLast4 = pan.slice(-4);
     }
 
     await this.prisma.worker.update({ where: { id }, data });
