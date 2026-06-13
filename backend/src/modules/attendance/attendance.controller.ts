@@ -52,8 +52,12 @@ export class AttendanceController {
 
   @Get('active')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
-  active(@CurrentUser() user: AuthUser, @Query('siteId') siteId?: string) {
-    return this.attendance.activeSessions(user, siteId);
+  active(
+    @CurrentUser() user: AuthUser,
+    @Query('siteId') siteId?: string,
+    @Query('category') category?: string,
+  ) {
+    return this.attendance.activeSessions(user, siteId, category);
   }
 
   @Get('dashboard-stats')
@@ -68,8 +72,9 @@ export class AttendanceController {
     @CurrentUser() user: AuthUser,
     @Query('siteId') siteId?: string,
     @Query('date') date?: string,
+    @Query('category') category?: string,
   ) {
-    return this.attendance.daySummary(user, siteId, date);
+    return this.attendance.daySummary(user, siteId, date, category);
   }
 
   @Get('worker/:workerId/summary')

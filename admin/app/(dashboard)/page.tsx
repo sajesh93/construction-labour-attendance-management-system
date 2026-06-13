@@ -134,7 +134,7 @@ export default function DashboardPage() {
             label="Workers logged in"
             value={cat(on?.byCategory, 'WORKER')?.count ?? (stats.data ? 0 : '—')}
             tooltip={<PeopleTooltip title="Workers on site now" bucket={cat(on?.byCategory, 'WORKER')} />}
-            href="/attendance"
+            href="/attendance?category=WORKER"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -142,7 +142,7 @@ export default function DashboardPage() {
             label="Staff logged in"
             value={cat(on?.byCategory, 'STAFF')?.count ?? (stats.data ? 0 : '—')}
             tooltip={<PeopleTooltip title="Staff on site now" bucket={cat(on?.byCategory, 'STAFF')} />}
-            href="/attendance"
+            href="/attendance?category=STAFF"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -150,7 +150,7 @@ export default function DashboardPage() {
             label="Visitors logged in"
             value={cat(on?.byCategory, 'VISITOR')?.count ?? (stats.data ? 0 : '—')}
             tooltip={<PeopleTooltip title="Visitors on site now" bucket={cat(on?.byCategory, 'VISITOR')} />}
-            href="/attendance"
+            href="/attendance?category=VISITOR"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -177,7 +177,7 @@ export default function DashboardPage() {
                 bucket={cat(missed?.byCategory, 'WORKER')}
               />
             }
-            href="/attendance?view=missed"
+            href="/attendance?view=missed&category=WORKER"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -190,7 +190,7 @@ export default function DashboardPage() {
                 bucket={cat(missed?.byCategory, 'STAFF')}
               />
             }
-            href="/attendance?view=missed"
+            href="/attendance?view=missed&category=STAFF"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>

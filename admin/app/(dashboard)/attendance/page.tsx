@@ -3,10 +3,13 @@
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Box,
   Card,
   CardContent,
   Chip,
+  Divider,
   Grid,
+  LinearProgress,
   MenuItem,
   Stack,
   Table,
@@ -51,12 +54,99 @@ interface DashboardStats {
   };
 }
 
+const CATEGORIES = [
+  { value: 'all', label: 'Everyone' },
+  { value: 'WORKER', label: 'Workers' },
+  { value: 'STAFF', label: 'Staff' },
+  { value: 'VISITOR', label: 'Visitors' },
+];
+
+const CATEGORY_LABEL: Record<string, string> = {
+  WORKER: 'Workers',
+  STAFF: 'Staff',
+  VISITOR: 'Visitors',
+};
+
+function Kpi({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
+  return (
+    <Card sx={{ height: '100%' }}>
+      <CardContent>
+        <Typography variant="caption" color="text.secondary">
+          {label}
+        </Typography>
+        <Typography variant="h4" sx={{ mt: 0.5, color }}>
+          {value}
+        </Typography>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Small "Group | total | on site" breakdown table used for designation & vendor. */
+function Breakdown({
+  title,
+  groupHeader,
+  rows,
+}: {
+  title: string;
+  groupHeader: string;
+  rows: { name: string; count: number; active: number }[];
+}) {
+  return (
+    <Card sx={{ height: '100%' }}>
+      <CardContent>
+        <Typography variant="subtitle2" gutterBottom>
+          {title}
+        </Typography>
+        {rows.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No logins recorded today.
+          </Typography>
+        ) : (
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{groupHeader}</TableCell>
+                <TableCell align="right">Logged in</TableCell>
+                <TableCell align="right">On site now</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.name} hover>
+                  <TableCell>{r.name}</TableCell>
+                  <TableCell align="right">{r.count}</TableCell>
+                  <TableCell align="right">
+                    <Chip
+                      size="small"
+                      color={r.active > 0 ? 'success' : 'default'}
+                      label={r.active}
+                      variant={r.active > 0 ? 'filled' : 'outlined'}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AttendancePage() {
   const [siteId, setSiteId] = React.useState('all');
+  const [category, setCategory] = React.useState('all');
   const [missedView, setMissedView] = React.useState(false);
+
+  // Pick up ?view=missed and ?category=… handed over from the dashboard cards.
   React.useEffect(() => {
-    setMissedView(new URLSearchParams(window.location.search).get('view') === 'missed');
+    const params = new URLSearchParams(window.location.search);
+    setMissedView(params.get('view') === 'missed');
+    const cat = params.get('category');
+    if (cat && ['WORKER', 'STAFF', 'VISITOR'].includes(cat)) setCategory(cat);
   }, []);
+
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
 
   const stats = useQuery({
@@ -65,96 +155,150 @@ export default function AttendancePage() {
     enabled: missedView,
   });
 
+  const qs = (extra = '') =>
+    `?siteId=${siteId}${category !== 'all' ? `&category=${category}` : ''}${extra}`;
+
   const active = useQuery({
-    queryKey: ['active', siteId],
-    queryFn: () => api.get<ActiveSession[]>(`/attendance/active?siteId=${siteId}`),
+    queryKey: ['active', siteId, category],
+    queryFn: () => api.get<ActiveSession[]>(`/attendance/active${qs()}`),
     refetchInterval: 15000,
   });
 
   const summary = useQuery({
-    queryKey: ['day-summary', siteId],
-    queryFn: () => api.get<DaySummary>(`/attendance/day-summary?siteId=${siteId}`),
+    queryKey: ['day-summary', siteId, category],
+    queryFn: () => api.get<DaySummary>(`/attendance/day-summary${qs()}`),
     refetchInterval: 30000,
   });
 
+  const catLabel = category === 'all' ? 'people' : CATEGORY_LABEL[category].toLowerCase();
+  const total = summary.data?.total ?? 0;
+  const activeNow = summary.data?.activeNow ?? 0;
+  const onSitePct = total > 0 ? Math.round((activeNow / total) * 100) : 0;
+
+  // Missed-logout rows, honouring the category filter (dashboard-stats is grouped by category).
+  const missedRows = React.useMemo(() => {
+    const byCat = stats.data?.missedLogout.byCategory ?? {};
+    return Object.entries(byCat)
+      .filter(([cat]) => category === 'all' || cat === category)
+      .flatMap(([cat, bucket]) => bucket.people.map((p) => ({ ...p, category: cat })));
+  }, [stats.data, category]);
+
+  const isLoading = active.isLoading || summary.isLoading;
+
   return (
     <>
-      <PageHeader title="Attendance" subtitle="Today's headcount and live open sessions" />
-      <Stack direction="row" sx={{ mb: 2 }}>
+      <PageHeader title="Attendance" subtitle="Today's headcount, breakdowns and live open sessions" />
+
+      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
         <TextField
           select
           size="small"
           label="Site"
           value={siteId}
           onChange={(e) => setSiteId(e.target.value)}
-          sx={{ width: 280 }}
+          sx={{ width: 240 }}
         >
           <MenuItem value="all">All sites</MenuItem>
           {sites.data?.map((s) => (
             <MenuItem key={s.id} value={s.id}>
               {s.name}
+              {s.isActive ? '' : ' (disabled)'}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          size="small"
+          label="Category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          sx={{ width: 200 }}
+        >
+          {CATEGORIES.map((c) => (
+            <MenuItem key={c.value} value={c.value}>
+              {c.label}
             </MenuItem>
           ))}
         </TextField>
       </Stack>
 
-      {/* Today's logins by designation */}
+      {isLoading && <LinearProgress sx={{ mb: 2 }} />}
+
+      {/* Headline numbers */}
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} sm={4} md={2}>
-          <Card>
-            <CardContent>
-              <Typography variant="caption" color="text.secondary">
-                Logged in today
-              </Typography>
-              <Typography variant="h4">{summary.data?.total ?? '—'}</Typography>
-            </CardContent>
-          </Card>
+        <Grid item xs={6} md={3}>
+          <Kpi label={`Logged in today (${catLabel})`} value={summary.data ? total : '—'} />
         </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          <Card>
-            <CardContent>
-              <Typography variant="caption" color="text.secondary">
-                On site now
-              </Typography>
-              <Typography variant="h4">{summary.data?.activeNow ?? '—'}</Typography>
-            </CardContent>
-          </Card>
+        <Grid item xs={6} md={3}>
+          <Kpi
+            label="On site right now"
+            value={summary.data ? activeNow : '—'}
+            color="success.main"
+          />
         </Grid>
-        <Grid item xs={12} md={8}>
+        <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="caption" color="text.secondary" gutterBottom>
-                By designation (today{siteId === 'all' ? ', all sites' : ''})
+              <Typography variant="caption" color="text.secondary">
+                By category (logged in today)
               </Typography>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-                {summary.data?.byDesignation.map((d) => (
+                {summary.data?.byCategory.map((c) => (
                   <Chip
-                    key={d.designation}
-                    label={`${d.designation}: ${d.count} (${d.active} on site)`}
-                    size="small"
+                    key={c.category}
+                    color="primary"
+                    variant="outlined"
+                    label={`${CATEGORY_LABEL[c.category] ?? c.category}: ${c.count} (${c.active} on site)`}
                   />
                 ))}
-                {summary.data && summary.data.byDesignation.length === 0 && (
+                {summary.data && summary.data.byCategory.length === 0 && (
                   <Typography variant="body2" color="text.secondary">
                     No logins recorded today.
                   </Typography>
                 )}
               </Stack>
-              {summary.data && summary.data.byCategory.length > 1 && (
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-                  {summary.data.byCategory.map((c) => (
-                    <Chip
-                      key={c.category}
-                      color="primary"
-                      variant="outlined"
-                      label={`${c.category}: ${c.count}`}
-                      size="small"
-                    />
-                  ))}
-                </Stack>
+              {total > 0 && (
+                <>
+                  <Divider sx={{ my: 1.5 }} />
+                  <Typography variant="caption" color="text.secondary">
+                    {activeNow} of {total} still on site ({onSitePct}%)
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={onSitePct}
+                    color="success"
+                    sx={{ mt: 0.5, height: 8, borderRadius: 1 }}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
+        </Grid>
+      </Grid>
+
+      {/* Breakdowns: by designation + by vendor */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} md={6}>
+          <Breakdown
+            title="By designation (today)"
+            groupHeader="Designation"
+            rows={(summary.data?.byDesignation ?? []).map((d) => ({
+              name: d.designation,
+              count: d.count,
+              active: d.active,
+            }))}
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Breakdown
+            title="By vendor / contractor (today)"
+            groupHeader="Vendor"
+            rows={(summary.data?.byVendor ?? []).map((v) => ({
+              name: v.vendor,
+              count: v.count,
+              active: v.active,
+            }))}
+          />
         </Grid>
       </Grid>
 
@@ -163,6 +307,7 @@ export default function AttendancePage() {
           <CardContent>
             <Typography variant="subtitle1" gutterBottom>
               Missed logouts — {stats.data?.missedLogout.date ?? 'yesterday'}
+              {category !== 'all' ? ` (${CATEGORY_LABEL[category]})` : ''}
             </Typography>
             <Typography variant="body2" color="text.secondary" gutterBottom>
               These people logged in but never logged out; their sessions were auto-closed.
@@ -178,19 +323,16 @@ export default function AttendancePage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {Object.entries(stats.data?.missedLogout.byCategory ?? {}).flatMap(
-                  ([category, bucket]) =>
-                    bucket.people.map((p) => (
-                      <TableRow key={`${category}-${p.workerCode}`} hover>
-                        <TableCell>{p.fullName}</TableCell>
-                        <TableCell>{p.workerCode}</TableCell>
-                        <TableCell>{category}</TableCell>
-                        <TableCell>{p.siteName ?? '—'}</TableCell>
-                        <TableCell>{new Date(p.loginAt).toLocaleString()}</TableCell>
-                      </TableRow>
-                    )),
-                )}
-                {stats.data && stats.data.missedLogout.total === 0 && (
+                {missedRows.map((p) => (
+                  <TableRow key={`${p.category}-${p.workerCode}`} hover>
+                    <TableCell>{p.fullName}</TableCell>
+                    <TableCell>{p.workerCode}</TableCell>
+                    <TableCell>{CATEGORY_LABEL[p.category] ?? p.category}</TableCell>
+                    <TableCell>{p.siteName ?? '—'}</TableCell>
+                    <TableCell>{new Date(p.loginAt).toLocaleString()}</TableCell>
+                  </TableRow>
+                ))}
+                {stats.data && missedRows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5}>
                       <Typography color="text.secondary">
@@ -205,38 +347,51 @@ export default function AttendancePage() {
         </Card>
       )}
 
+      {/* Live open sessions */}
       <Card>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Code</TableCell>
-              <TableCell>Designation</TableCell>
-              <TableCell>Vendor</TableCell>
-              {siteId === 'all' && <TableCell>Site</TableCell>}
-              <TableCell>Logged in at</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {active.data?.map((s) => (
-              <TableRow key={s.id} hover>
-                <TableCell>{s.worker.fullName}</TableCell>
-                <TableCell>{s.worker.workerCode}</TableCell>
-                <TableCell>{s.worker.designation?.name ?? '—'}</TableCell>
-                <TableCell>{s.worker.vendor?.name ?? '—'}</TableCell>
-                {siteId === 'all' && <TableCell>{s.site?.name ?? '—'}</TableCell>}
-                <TableCell>{new Date(s.loginAt).toLocaleString()}</TableCell>
-              </TableRow>
-            ))}
-            {active.data?.length === 0 && (
+        <CardContent sx={{ pb: 0 }}>
+          <Typography variant="subtitle1">
+            On site now ({active.data?.length ?? 0})
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Open sessions, refreshing every 15s
+          </Typography>
+        </CardContent>
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={siteId === 'all' ? 6 : 5}>
-                  <Typography color="text.secondary">No open sessions.</Typography>
-                </TableCell>
+                <TableCell>Name</TableCell>
+                <TableCell>Code</TableCell>
+                <TableCell>Category</TableCell>
+                <TableCell>Designation</TableCell>
+                <TableCell>Vendor</TableCell>
+                {siteId === 'all' && <TableCell>Site</TableCell>}
+                <TableCell>Logged in at</TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {active.data?.map((s) => (
+                <TableRow key={s.id} hover>
+                  <TableCell>{s.worker.fullName}</TableCell>
+                  <TableCell>{s.worker.workerCode}</TableCell>
+                  <TableCell>{CATEGORY_LABEL[s.worker.category ?? ''] ?? s.worker.category ?? '—'}</TableCell>
+                  <TableCell>{s.worker.designation?.name ?? '—'}</TableCell>
+                  <TableCell>{s.worker.vendor?.name ?? '—'}</TableCell>
+                  {siteId === 'all' && <TableCell>{s.site?.name ?? '—'}</TableCell>}
+                  <TableCell>{new Date(s.loginAt).toLocaleString()}</TableCell>
+                </TableRow>
+              ))}
+              {active.data?.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={siteId === 'all' ? 7 : 6}>
+                    <Typography color="text.secondary">No open sessions.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Box>
       </Card>
     </>
   );

@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { AttendanceTap, Prisma, SiteSettings, TapSource, Worker } from '@prisma/client';
+import {
+  AttendanceTap,
+  PersonCategory,
+  Prisma,
+  SiteSettings,
+  TapSource,
+  Worker,
+} from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { RedisService } from '../../infra/redis/redis.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -433,15 +440,22 @@ export class AttendanceService {
   }
 
   /** Open sessions; siteId omitted (or 'all') = every site in the caller's scope. */
-  async activeSessions(user: AuthUser, siteId?: string) {
+  async activeSessions(user: AuthUser, siteId?: string, category?: string) {
     const siteFilter =
       siteId && siteId !== 'all'
         ? { siteId }
         : user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
           ? { siteId: { in: user.siteScopes } }
           : {};
+    const categoryFilter =
+      category && category !== 'all' ? { worker: { category: category as PersonCategory } } : {};
     return this.prisma.attendanceSession.findMany({
-      where: { organizationId: user.organizationId, state: 'OPEN', ...siteFilter },
+      where: {
+        organizationId: user.organizationId,
+        state: 'OPEN',
+        ...siteFilter,
+        ...categoryFilter,
+      },
       include: {
         worker: {
           select: {
@@ -462,10 +476,10 @@ export class AttendanceService {
 
   /**
    * Day summary for the attendance dashboard: how many people logged in today,
-   * broken down by designation and by category. siteId omitted/'all' = all
-   * sites in the caller's scope.
+   * broken down by designation, by vendor and by category. siteId omitted/'all'
+   * = all sites in the caller's scope; category omitted/'all' = everyone.
    */
-  async daySummary(user: AuthUser, siteId?: string, dateStr?: string) {
+  async daySummary(user: AuthUser, siteId?: string, dateStr?: string, category?: string) {
     const org = await this.prisma.organization.findUnique({
       where: { id: user.organizationId },
       select: { timezone: true },
@@ -480,6 +494,8 @@ export class AttendanceService {
         : user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
           ? { siteId: { in: user.siteScopes } }
           : {};
+    const categoryFilter =
+      category && category !== 'all' ? { worker: { category: category as PersonCategory } } : {};
 
     const sessions = await this.prisma.attendanceSession.findMany({
       where: {
@@ -487,35 +503,50 @@ export class AttendanceService {
         workDate: date,
         state: { not: 'VOID' },
         ...siteFilter,
+        ...categoryFilter,
       },
       select: {
         workerId: true,
         state: true,
         worker: {
-          select: { category: true, designation: { select: { name: true } } },
+          select: {
+            category: true,
+            designation: { select: { name: true } },
+            vendor: { select: { name: true } },
+          },
         },
       },
     });
 
     // A person may have several sessions in a day — count each once.
-    const seen = new Map<string, { category: string; designation: string; open: boolean }>();
+    const seen = new Map<
+      string,
+      { category: string; designation: string; vendor: string; open: boolean }
+    >();
     for (const s of sessions) {
       const prev = seen.get(s.workerId);
       const open = s.state === 'OPEN' || prev?.open === true;
       seen.set(s.workerId, {
         category: s.worker.category,
         designation: s.worker.designation?.name ?? 'Unassigned',
+        vendor: s.worker.vendor?.name ?? 'No vendor',
         open,
       });
     }
 
     const byDesignation = new Map<string, { count: number; active: number }>();
+    const byVendor = new Map<string, { count: number; active: number }>();
     const byCategory = new Map<string, { count: number; active: number }>();
     for (const v of seen.values()) {
       const d = byDesignation.get(v.designation) ?? { count: 0, active: 0 };
       d.count += 1;
       if (v.open) d.active += 1;
       byDesignation.set(v.designation, d);
+
+      const vn = byVendor.get(v.vendor) ?? { count: 0, active: 0 };
+      vn.count += 1;
+      if (v.open) vn.active += 1;
+      byVendor.set(v.vendor, vn);
 
       const c = byCategory.get(v.category) ?? { count: 0, active: 0 };
       c.count += 1;
@@ -529,6 +560,9 @@ export class AttendanceService {
       activeNow: [...seen.values()].filter((v) => v.open).length,
       byDesignation: [...byDesignation.entries()]
         .map(([designation, v]) => ({ designation, ...v }))
+        .sort((a, b) => b.count - a.count),
+      byVendor: [...byVendor.entries()]
+        .map(([vendor, v]) => ({ vendor, ...v }))
         .sort((a, b) => b.count - a.count),
       byCategory: [...byCategory.entries()].map(([category, v]) => ({ category, ...v })),
     };

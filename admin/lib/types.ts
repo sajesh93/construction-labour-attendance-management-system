@@ -99,6 +99,7 @@ export interface DaySummary {
   total: number;
   activeNow: number;
   byDesignation: { designation: string; count: number; active: number }[];
+  byVendor: { vendor: string; count: number; active: number }[];
   byCategory: { category: string; count: number; active: number }[];
 }
 
