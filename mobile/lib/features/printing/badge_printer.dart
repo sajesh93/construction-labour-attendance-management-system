@@ -153,53 +153,69 @@ pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
             ],
           ),
         ),
-        // Identity
+        // Identity — fills the body, evenly spaced
         pw.Expanded(
           child: pw.Padding(
-            padding: pw.EdgeInsets.all(6 * u),
+            padding: pw.EdgeInsets.all(9 * u),
             child: pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
                 pw.Container(
-                  width: 46 * u,
-                  height: 56 * u,
+                  width: 60 * u,
                   decoration: pw.BoxDecoration(
                     color: PdfColors.grey200,
                     border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
-                    borderRadius: pw.BorderRadius.circular(4 * u),
+                    borderRadius: pw.BorderRadius.circular(5 * u),
                   ),
                   child: b.photoBytes != null
                       ? pw.ClipRRect(
-                          horizontalRadius: 4 * u,
-                          verticalRadius: 4 * u,
+                          horizontalRadius: 5 * u,
+                          verticalRadius: 5 * u,
                           child: pw.Image(pw.MemoryImage(b.photoBytes!), fit: pw.BoxFit.cover),
                         )
                       : pw.Center(
                           child: pw.Text('No photo',
-                              style: pw.TextStyle(fontSize: 6 * u, color: PdfColors.grey500)),
+                              style: pw.TextStyle(fontSize: 7 * u, color: PdfColors.grey500)),
                         ),
                 ),
-                pw.SizedBox(width: 6 * u),
+                pw.SizedBox(width: 10 * u),
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    mainAxisSize: pw.MainAxisSize.min,
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text(
-                        b.fullName,
-                        maxLines: 2,
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9.5 * u),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            b.fullName,
+                            maxLines: 2,
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11 * u),
+                          ),
+                          if (b.designation != null) ...[
+                            pw.SizedBox(height: 4 * u),
+                            pw.Text(b.designation!,
+                                maxLines: 1,
+                                style: pw.TextStyle(fontSize: 8 * u, color: PdfColors.grey800)),
+                          ],
+                          if (b.vendor != null) ...[
+                            pw.SizedBox(height: 2 * u),
+                            pw.Text(b.vendor!,
+                                maxLines: 1,
+                                style: pw.TextStyle(fontSize: 7 * u, color: PdfColors.grey600)),
+                          ],
+                        ],
                       ),
-                      if (b.designation != null)
-                        pw.Text(b.designation!,
-                            maxLines: 1, style: pw.TextStyle(fontSize: 7 * u, color: PdfColors.grey800)),
-                      if (b.vendor != null)
-                        pw.Text(b.vendor!,
-                            maxLines: 1, style: pw.TextStyle(fontSize: 6.5 * u, color: PdfColors.grey600)),
-                      pw.SizedBox(height: 3 * u),
-                      pw.Text(b.workerCode,
-                          style: pw.TextStyle(
-                              fontSize: 7 * u, fontWeight: pw.FontWeight.bold, color: _accent)),
+                      pw.Container(
+                        padding: pw.EdgeInsets.symmetric(horizontal: 6 * u, vertical: 2.5 * u),
+                        decoration: pw.BoxDecoration(
+                          color: const PdfColor.fromInt(0xffe8f0fb),
+                          borderRadius: pw.BorderRadius.circular(10 * u),
+                        ),
+                        child: pw.Text(b.workerCode,
+                            style: pw.TextStyle(
+                                fontSize: 8 * u, fontWeight: pw.FontWeight.bold, color: _accent)),
+                      ),
                     ],
                   ),
                 ),
@@ -226,41 +242,46 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
       color: PdfColors.white,
     ),
     child: pw.Column(
-      mainAxisAlignment: pw.MainAxisAlignment.center,
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
         pw.BarcodeWidget(
           barcode: pw.Barcode.qrCode(),
           data: 'CLAMS:${b.workerCode}',
-          width: 70 * u,
-          height: 70 * u,
+          width: 64 * u,
+          height: 64 * u,
         ),
-        pw.SizedBox(height: 5 * u),
-        if ((b.bloodGroup ?? '').isNotEmpty)
-          pw.RichText(
-            text: pw.TextSpan(
-              children: [
-                pw.TextSpan(
-                    text: 'Blood group: ',
-                    style: pw.TextStyle(fontSize: 7.5 * u, fontWeight: pw.FontWeight.bold)),
-                pw.TextSpan(text: b.bloodGroup, style: pw.TextStyle(fontSize: 7.5 * u)),
-              ],
-            ),
-          )
-        else if (emergency.isNotEmpty) ...[
-          pw.Text('In emergency, call',
-              style: pw.TextStyle(
-                  fontSize: 7 * u,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.red800)),
-          pw.Text(emergency,
-              textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 7 * u)),
-        ],
-        pw.SizedBox(height: 5 * u),
+        // Blood group and emergency contact both shown, with breathing room.
+        pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            if ((b.bloodGroup ?? '').isNotEmpty)
+              pw.RichText(
+                text: pw.TextSpan(
+                  children: [
+                    pw.TextSpan(
+                        text: 'Blood group: ',
+                        style: pw.TextStyle(fontSize: 8 * u, fontWeight: pw.FontWeight.bold)),
+                    pw.TextSpan(text: b.bloodGroup, style: pw.TextStyle(fontSize: 8 * u)),
+                  ],
+                ),
+              ),
+            if ((b.bloodGroup ?? '').isNotEmpty && emergency.isNotEmpty)
+              pw.SizedBox(height: 4 * u),
+            if (emergency.isNotEmpty) ...[
+              pw.Text('Emergency contact',
+                  style: pw.TextStyle(
+                      fontSize: 7 * u, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
+              pw.SizedBox(height: 1.5 * u),
+              pw.Text(emergency,
+                  textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 7 * u)),
+            ],
+          ],
+        ),
         pw.Text(
           [org?.name ?? 'CLAMS', if ((org?.phone ?? '').isNotEmpty) org!.phone].join(' · '),
           textAlign: pw.TextAlign.center,
-          style: pw.TextStyle(fontSize: 5.5 * u, color: PdfColors.grey600),
+          style: pw.TextStyle(fontSize: 6 * u, color: PdfColors.grey600),
         ),
       ],
     ),
