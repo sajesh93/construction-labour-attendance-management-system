@@ -10,6 +10,7 @@ import '../attendance/domain/models.dart';
 import '../auth/auth_controller.dart';
 import '../printing/badge_printer.dart';
 import '../printing/bulk_print_screen.dart';
+import '../printing/print_cards.dart';
 import '../sos/notification_watcher.dart';
 import '../sos/sos_button.dart';
 import 'supervisor_summary_screen.dart';
@@ -83,13 +84,17 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
   }
 
   Future<void> _printBadge(WorkerCard w) async {
-    await printBadges([
+    await printWorkerCards(context, ref, [
       BadgeData(
         fullName: w.fullName,
         workerCode: w.workerCode,
         designation: w.designationName,
         vendor: w.vendorName,
         siteName: _siteName.isEmpty ? null : _siteName,
+        bloodGroup: w.bloodGroup,
+        emergencyName: w.emergencyContactName,
+        emergencyNumber: w.emergencyContactNumber,
+        photoUrl: w.photoUrl,
       ),
     ]);
   }

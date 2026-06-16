@@ -10,6 +10,22 @@ export interface Me {
   siteScopes: string[];
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  code: string;
+  timezone: string;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  logoUrl?: string | null;
+}
+
 export interface Site {
   id: string;
   name: string;
@@ -117,6 +133,7 @@ export interface Device {
 export interface CorrectionRequest {
   id: string;
   workerId: string;
+  worker?: { fullName: string; workerCode: string } | null;
   siteId: string;
   workDate: string;
   type: 'LOGIN' | 'LOGOUT' | 'MISSING' | 'WRONG_SITE';
@@ -124,6 +141,13 @@ export interface CorrectionRequest {
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
   notes?: string | null;
   items: { id: string; field: string; proposedValue: unknown; previousValue?: unknown }[];
+  requestedBy: string;
+  requestedByName?: string | null;
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
+  reviewNotes?: string | null;
+  createdAt: string;
 }
 
 export interface Paginated<T> {

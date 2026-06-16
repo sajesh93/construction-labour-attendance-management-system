@@ -19,6 +19,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Corrections', href: '/corrections', roles: ['SUPER_ADMIN', 'SITE_ADMIN', 'SUPERVISOR'] },
   { label: 'Reports', href: '/reports', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },
   { label: 'Users', href: '/users', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },
+  { label: 'Company', href: '/company', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },
   { label: 'Audit', href: '/audit', roles: ['SUPER_ADMIN', 'SITE_ADMIN'] },
 ];
 

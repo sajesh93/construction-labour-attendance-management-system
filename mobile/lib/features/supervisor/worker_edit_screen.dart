@@ -10,6 +10,7 @@ import '../../core/widgets/api_image.dart';
 import '../aadhaar/aadhaar_decoder.dart';
 import '../aadhaar/aadhaar_verify_screen.dart';
 import '../printing/badge_printer.dart';
+import '../printing/print_cards.dart';
 
 /// Safety-officer worker registration / editing — full parity with the admin
 /// panel form. IDs (W-/S-/V-####) are always auto-generated and immutable;
@@ -338,8 +339,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
           ],
         ),
       );
-      if (printNow == true) {
-        await printBadges([
+      if (printNow == true && mounted) {
+        await printWorkerCards(context, ref, [
           BadgeData(
             fullName: saved['fullName'] as String? ?? _name.text,
             workerCode: saved['workerCode'] as String? ?? '',
@@ -349,6 +350,11 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
             vendor: _vendors.firstWhere((v) => v['id'] == _vendorId, orElse: () => {})['name']
                 as String?,
             siteName: _siteName,
+            bloodGroup: _bloodGroup.text.trim().isEmpty ? null : _bloodGroup.text.trim(),
+            emergencyName: _emergencyName.text.trim().isEmpty ? null : _emergencyName.text.trim(),
+            emergencyNumber:
+                _emergencyNumber.text.trim().isEmpty ? null : _emergencyNumber.text.trim(),
+            photoUrl: _photoUrl,
           ),
         ]);
       }

@@ -23,17 +23,25 @@ export class DevicesService {
     });
   }
 
-  async update(user: AuthUser, id: string, data: { status?: DeviceStatus; siteId?: string }) {
+  async update(
+    user: AuthUser,
+    id: string,
+    data: { status?: DeviceStatus; siteId?: string; label?: string },
+  ) {
     const device = await this.prisma.device.findFirst({
       where: { id, organizationId: user.organizationId },
     });
     if (!device) throw Errors.notFound('Device');
+
+    // An empty rename clears the label so the UI falls back to the device UID.
+    const nextLabel = data.label !== undefined ? data.label.trim() || null : undefined;
 
     const updated = await this.prisma.device.update({
       where: { id },
       data: {
         status: data.status,
         siteId: data.siteId ?? device.siteId,
+        ...(nextLabel !== undefined ? { label: nextLabel } : {}),
         ...(data.status === 'AUTHORIZED'
           ? { authorizedBy: user.userId, authorizedAt: new Date() }
           : {}),
@@ -48,8 +56,8 @@ export class DevicesService {
       action: 'DEVICE_UPDATE',
       entityType: 'Device',
       entityId: id,
-      oldValue: { status: device.status, siteId: device.siteId },
-      newValue: { status: updated.status, siteId: updated.siteId },
+      oldValue: { status: device.status, siteId: device.siteId, label: device.label },
+      newValue: { status: updated.status, siteId: updated.siteId, label: updated.label },
     });
 
     return updated;

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
 import 'badge_printer.dart';
+import 'print_cards.dart';
 
 /// "Print today's badges": every worker/staff/visitor the signed-in safety
 /// officer created or updated today, with select/deselect before printing.
@@ -51,7 +52,7 @@ class _BulkPrintScreenState extends ConsumerState<BulkPrintScreen> {
   Future<void> _print() async {
     final picked = _rows.where((r) => _selected.contains(r['id'])).toList();
     if (picked.isEmpty) return;
-    await printBadges([
+    await printWorkerCards(context, ref, [
       for (final r in picked)
         BadgeData(
           fullName: r['fullName'] as String? ?? '',
@@ -59,6 +60,10 @@ class _BulkPrintScreenState extends ConsumerState<BulkPrintScreen> {
           designation: r['designationName'] as String?,
           vendor: r['vendorName'] as String?,
           siteName: r['siteName'] as String?,
+          bloodGroup: r['bloodGroup'] as String?,
+          emergencyName: r['emergencyContactName'] as String?,
+          emergencyNumber: r['emergencyContactNumber'] as String?,
+          photoUrl: r['photoUrl'] as String?,
         ),
     ]);
   }

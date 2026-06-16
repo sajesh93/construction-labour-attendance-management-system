@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 
@@ -25,6 +28,24 @@ class DeviceService {
   final SecureStore _store;
   final LocalDb _db;
 
+  /// Best-effort human-friendly device name (e.g. "samsung SM-A525F") used as the
+  /// initial label so the admin panel shows something meaningful instead of the
+  /// random UID. Admins can rename it afterwards; we never overwrite that rename.
+  Future<String> _deviceName() async {
+    try {
+      final plugin = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final info = await plugin.androidInfo;
+        final name = '${info.manufacturer} ${info.model}'.trim();
+        if (name.isNotEmpty) return name;
+      } else if (Platform.isIOS) {
+        final info = await plugin.iosInfo;
+        return '${info.name} (${info.model})';
+      }
+    } catch (_) {}
+    return 'CLAMS terminal';
+  }
+
   Future<DeviceStatus> ensureRegisteredAndAuthorized() async {
     // Credentials from a previous session (they survive logout).
     final storedId = await _store.deviceId;
@@ -38,8 +59,8 @@ class DeviceService {
 
       final reg = await _api.dio.post('/auth/device/register', data: {
         'deviceUid': uid,
-        'platform': 'android',
-        'label': 'CLAMS terminal',
+        'platform': Platform.isIOS ? 'ios' : 'android',
+        'label': await _deviceName(),
       });
       final deviceId = reg.data['deviceId'] as String;
       await _db.setMeta('device_id', deviceId);

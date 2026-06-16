@@ -5,14 +5,18 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Button, Checkbox, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { api } from '@/lib/api/browser';
-import { Paginated, PersonCategory, Site, Worker } from '@/lib/types';
-import { QrBadge } from '@/components/QrBadge';
+import { Organization, Paginated, PersonCategory, Site, Worker } from '@/lib/types';
+import { CardOrientation, CardSize, IdCard } from '@/components/IdCard';
 
 const CATEGORY_TITLES: Record<PersonCategory, string> = {
-  WORKER: 'Worker QR badges',
-  STAFF: 'Staff QR badges',
-  VISITOR: 'Visitor QR passes',
+  WORKER: 'Worker ID cards',
+  STAFF: 'Staff ID cards',
+  VISITOR: 'Visitor passes',
 };
+
+// Remembered as the default for next time (per-browser).
+const SIZE_KEY = 'clams.badge.size';
+const ORIENT_KEY = 'clams.badge.orientation';
 
 export default function BadgesPage() {
   const params = useSearchParams();
@@ -22,6 +26,30 @@ export default function BadgesPage() {
   );
   const [siteId, setSiteId] = React.useState('');
   const [q, setQ] = React.useState('');
+
+  // Card size + orientation, restored from localStorage after mount (avoids SSR
+  // hydration mismatch), and written back whenever the admin changes them.
+  const [size, setSize] = React.useState<CardSize>('M');
+  const [orientation, setOrientation] = React.useState<CardOrientation>('landscape');
+  React.useEffect(() => {
+    const s = localStorage.getItem(SIZE_KEY) as CardSize | null;
+    const o = localStorage.getItem(ORIENT_KEY) as CardOrientation | null;
+    if (s === 'S' || s === 'M' || s === 'L') setSize(s);
+    if (o === 'portrait' || o === 'landscape') setOrientation(o);
+  }, []);
+  const chooseSize = (s: CardSize) => {
+    setSize(s);
+    localStorage.setItem(SIZE_KEY, s);
+  };
+  const chooseOrientation = (o: CardOrientation) => {
+    setOrientation(o);
+    localStorage.setItem(ORIENT_KEY, o);
+  };
+
+  const org = useQuery({
+    queryKey: ['org-current'],
+    queryFn: () => api.get<Organization>('/organizations/current'),
+  });
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
   const workers = useQuery({
     queryKey: ['workers', 'all-badges', category, siteId, q],
@@ -33,7 +61,6 @@ export default function BadgesPage() {
       ),
   });
 
-  const siteName = sites.data?.find((s) => s.id === siteId)?.name;
   const list = React.useMemo(() => workers.data?.data ?? [], [workers.data]);
 
   // Everyone in the current filter starts selected; untick to leave them out.
@@ -69,7 +96,7 @@ export default function BadgesPage() {
           placeholder="Search name / code / mobile"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          sx={{ width: 240 }}
+          sx={{ width: 220 }}
         />
         <TextField
           select
@@ -77,7 +104,7 @@ export default function BadgesPage() {
           label="Type"
           value={category}
           onChange={(e) => setCategory(e.target.value as PersonCategory)}
-          sx={{ width: 160 }}
+          sx={{ width: 130 }}
         >
           <MenuItem value="WORKER">Workers</MenuItem>
           <MenuItem value="STAFF">Staff</MenuItem>
@@ -89,7 +116,7 @@ export default function BadgesPage() {
           label="Site"
           value={siteId}
           onChange={(e) => setSiteId(e.target.value)}
-          sx={{ width: 240 }}
+          sx={{ width: 180 }}
         >
           <MenuItem value="">All sites</MenuItem>
           {sites.data?.map((s) => (
@@ -97,6 +124,29 @@ export default function BadgesPage() {
               {s.name}
             </MenuItem>
           ))}
+        </TextField>
+        <TextField
+          select
+          size="small"
+          label="Size"
+          value={size}
+          onChange={(e) => chooseSize(e.target.value as CardSize)}
+          sx={{ width: 120 }}
+        >
+          <MenuItem value="S">Small</MenuItem>
+          <MenuItem value="M">Medium</MenuItem>
+          <MenuItem value="L">Large</MenuItem>
+        </TextField>
+        <TextField
+          select
+          size="small"
+          label="Orientation"
+          value={orientation}
+          onChange={(e) => chooseOrientation(e.target.value as CardOrientation)}
+          sx={{ width: 140 }}
+        >
+          <MenuItem value="landscape">Landscape</MenuItem>
+          <MenuItem value="portrait">Portrait</MenuItem>
         </TextField>
         <Button size="small" onClick={() => setSelected(new Set(list.map((w) => w.id)))}>
           Select all
@@ -108,6 +158,12 @@ export default function BadgesPage() {
           Print selected ({selectedCount})
         </Button>
       </Stack>
+
+      {!org.isLoading && !org.data?.name && (
+        <Typography variant="body2" color="warning.main" sx={{ mb: 2, '@media print': { display: 'none' } }}>
+          Tip: set your company name and address on the Company page so they appear on every card.
+        </Typography>
+      )}
 
       <Box
         className="print-area"
@@ -128,12 +184,13 @@ export default function BadgesPage() {
                 position: 'relative',
                 cursor: 'pointer',
                 borderRadius: 1,
+                p: 0.5,
                 outline: isSelected ? '2px solid' : '2px dashed',
                 outlineColor: isSelected ? 'primary.main' : 'divider',
                 opacity: isSelected ? 1 : 0.45,
-                // Unselected badges vanish from the printout entirely.
+                // Unselected cards vanish from the printout entirely.
                 '@media print': isSelected
-                  ? { outline: 'none', opacity: 1 }
+                  ? { outline: 'none', opacity: 1, p: 0 }
                   : { display: 'none' },
               }}
             >
@@ -150,7 +207,11 @@ export default function BadgesPage() {
                   '@media print': { display: 'none' },
                 }}
               />
-              <QrBadge fullName={w.fullName} workerCode={w.workerCode} siteName={siteName} />
+              {/* Front + back kept together so the pair can be cut out and laminated double-sided. */}
+              <Stack direction="row" spacing={0.5} sx={{ breakInside: 'avoid' }}>
+                <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="front" />
+                <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="back" />
+              </Stack>
             </Box>
           );
         })}

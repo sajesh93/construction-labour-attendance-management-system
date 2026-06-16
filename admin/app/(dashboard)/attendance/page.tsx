@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -20,6 +21,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import PrintIcon from '@mui/icons-material/Print';
 import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { DaySummary, Site } from '@/lib/types';
@@ -170,6 +172,8 @@ export default function AttendancePage() {
     refetchInterval: 30000,
   });
 
+  const siteLabel =
+    siteId === 'all' ? 'All sites' : (sites.data?.find((s) => s.id === siteId)?.name ?? 'Selected site');
   const catLabel = category === 'all' ? 'people' : CATEGORY_LABEL[category].toLowerCase();
   const total = summary.data?.total ?? 0;
   const activeNow = summary.data?.activeNow ?? 0;
@@ -220,9 +224,27 @@ export default function AttendancePage() {
             </MenuItem>
           ))}
         </TextField>
+        <Button
+          variant="outlined"
+          startIcon={<PrintIcon />}
+          onClick={() => window.print()}
+          sx={{ ml: 'auto' }}
+        >
+          Print
+        </Button>
       </Stack>
 
       {isLoading && <LinearProgress sx={{ mb: 2 }} />}
+
+      <Box className="print-area">
+        {/* Print-only header — hidden on screen, shown on the printout. */}
+        <Box sx={{ display: 'none', '@media print': { display: 'block', mb: 2 } }}>
+          <Typography variant="h6">Attendance — {siteLabel}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {category === 'all' ? 'Everyone' : CATEGORY_LABEL[category]}
+            {missedView ? ' · Missed logouts' : ''} · Printed {new Date().toLocaleString()}
+          </Typography>
+        </Box>
 
       {/* Headline numbers */}
       <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -393,6 +415,7 @@ export default function AttendancePage() {
           </Table>
         </Box>
       </Card>
+      </Box>
     </>
   );
 }

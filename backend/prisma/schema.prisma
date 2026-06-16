@@ -108,6 +108,16 @@ model Organization {
   code      String   @unique
   timezone  String   @default("Asia/Kolkata")
   isActive  Boolean  @default(true) @map("is_active")
+  // Company profile printed on ID cards (front-side header).
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city         String?
+  state        String?
+  pincode      String?
+  phone        String?
+  email        String?
+  website      String?
+  logoUrl      String? @map("logo_url")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 

@@ -13,9 +13,12 @@ export class DeviceAuthService {
 
   /** App self-registers; admin must AUTHORIZE before attendance is accepted. */
   async register(organizationId: string, deviceUid: string, platform?: string, label?: string) {
+    // On re-register we deliberately DO NOT overwrite `label`: the device sends its
+    // phone make/model as the initial name, but an admin may have renamed it in the
+    // panel (e.g. "Gate 1 tablet") — that rename must stick across app restarts.
     const device = await this.prisma.device.upsert({
       where: { organizationId_deviceUid: { organizationId, deviceUid } },
-      update: { platform, label, lastSeenAt: new Date() },
+      update: { platform, lastSeenAt: new Date() },
       create: { organizationId, deviceUid, platform, label, status: 'PENDING' },
     });
     return { deviceId: device.id, status: device.status };

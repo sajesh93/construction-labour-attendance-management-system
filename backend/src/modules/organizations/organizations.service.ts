@@ -3,7 +3,11 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
-import { CreateOrganizationDto, UpdateOrganizationDto } from './dto/organization.dto';
+import {
+  CreateOrganizationDto,
+  UpdateOrganizationDto,
+  UpdateOrganizationProfileDto,
+} from './dto/organization.dto';
 
 @Injectable()
 export class OrganizationsService {
@@ -14,6 +18,37 @@ export class OrganizationsService {
 
   list() {
     return this.prisma.organization.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+
+  /** The caller's own organization (company profile for the ID card). */
+  getCurrent(user: AuthUser) {
+    return this.get(user.organizationId);
+  }
+
+  /** Update the caller's own company profile. Editable by Super + Site Admin. */
+  async updateProfile(user: AuthUser, dto: UpdateOrganizationProfileDto) {
+    const before = await this.get(user.organizationId);
+    // Blank strings clear the field; undefined leaves it untouched.
+    const data: Record<string, string | null> = {};
+    for (const [k, v] of Object.entries(dto)) {
+      if (v === undefined) continue;
+      data[k] = typeof v === 'string' && v.trim() === '' ? null : (v as string);
+    }
+    const org = await this.prisma.organization.update({
+      where: { id: user.organizationId },
+      data,
+    });
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.userId,
+      actorRole: user.role,
+      action: 'ORG_PROFILE_UPDATE',
+      entityType: 'Organization',
+      entityId: user.organizationId,
+      oldValue: before,
+      newValue: org,
+    });
+    return org;
   }
 
   async get(id: string) {

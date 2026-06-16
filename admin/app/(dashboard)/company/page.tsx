@@ -1,0 +1,266 @@
+'use client';
+
+import * as React from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { api, BrowserApiError } from '@/lib/api/browser';
+import { PageHeader } from '@/components/PageHeader';
+import { photoSrc } from '@/components/PeopleDirectory';
+import { Organization } from '@/lib/types';
+
+type ProfileForm = {
+  name: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  email: string;
+  website: string;
+  logoUrl: string;
+};
+
+const EMPTY: ProfileForm = {
+  name: '',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  pincode: '',
+  phone: '',
+  email: '',
+  website: '',
+  logoUrl: '',
+};
+
+/** Downscale a logo to ≤400px PNG/JPEG and upload to /files; returns stored url. */
+async function uploadLogo(file: File): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = dataUrl;
+  });
+  const maxDim = 400;
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const out = canvas.toDataURL('image/png');
+  const base64 = out.split(',')[1];
+  const res = await api.post<{ url: string }>('/files', {
+    dataBase64: base64,
+    mimeType: 'image/png',
+  });
+  return res.url;
+}
+
+export default function CompanyPage() {
+  const qc = useQueryClient();
+  const [form, setForm] = React.useState<ProfileForm>(EMPTY);
+  const [error, setError] = React.useState<string | null>(null);
+  const [saved, setSaved] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+
+  const org = useQuery({
+    queryKey: ['org-current'],
+    queryFn: () => api.get<Organization>('/organizations/current'),
+  });
+
+  // Seed the form once the org loads.
+  React.useEffect(() => {
+    if (!org.data) return;
+    setForm({
+      name: org.data.name ?? '',
+      addressLine1: org.data.addressLine1 ?? '',
+      addressLine2: org.data.addressLine2 ?? '',
+      city: org.data.city ?? '',
+      state: org.data.state ?? '',
+      pincode: org.data.pincode ?? '',
+      phone: org.data.phone ?? '',
+      email: org.data.email ?? '',
+      website: org.data.website ?? '',
+      logoUrl: org.data.logoUrl ?? '',
+    });
+  }, [org.data]);
+
+  const set = (k: keyof ProfileForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+    setSaved(false);
+  };
+
+  const save = useMutation({
+    mutationFn: () => {
+      // Email is omitted when blank so the @IsEmail validator doesn't reject ''.
+      const { email, ...rest } = form;
+      const body: Record<string, string> = { ...rest };
+      if (email.trim()) body.email = email.trim();
+      else body.email = '';
+      return api.patch<Organization>('/organizations/current', body);
+    },
+    onSuccess: () => {
+      setError(null);
+      setSaved(true);
+      qc.invalidateQueries({ queryKey: ['org-current'] });
+    },
+    onError: (e) => {
+      const err = e as BrowserApiError;
+      setError(err.body?.detail ?? err.body?.title ?? 'Failed to save');
+    },
+  });
+
+  const onLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadLogo(file);
+      setForm((f) => ({ ...f, logoUrl: url }));
+      setSaved(false);
+    } catch {
+      setError('Logo upload failed');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Company details"
+        subtitle="Name, address and logo — printed on every worker ID card."
+      />
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+      {saved && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaved(false)}>
+          Saved. New cards will use these details.
+        </Alert>
+      )}
+
+      <Card sx={{ maxWidth: 760 }}>
+        <CardContent>
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
+            <Avatar
+              src={photoSrc(form.logoUrl)}
+              variant="rounded"
+              sx={{ width: 72, height: 72, bgcolor: 'grey.100' }}
+            >
+              Logo
+            </Avatar>
+            <Box>
+              <Button variant="outlined" component="label" disabled={uploading}>
+                {uploading ? 'Uploading…' : 'Upload logo'}
+                <input hidden type="file" accept="image/*" onChange={onLogo} />
+              </Button>
+              {form.logoUrl && (
+                <Button
+                  size="small"
+                  color="inherit"
+                  sx={{ ml: 1 }}
+                  onClick={() => setForm((f) => ({ ...f, logoUrl: '' }))}
+                >
+                  Remove
+                </Button>
+              )}
+            </Box>
+          </Stack>
+
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Company name"
+                value={form.name}
+                onChange={set('name')}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Address line 1"
+                value={form.addressLine1}
+                onChange={set('addressLine1')}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Address line 2"
+                value={form.addressLine2}
+                onChange={set('addressLine2')}
+              />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <TextField fullWidth label="City" value={form.city} onChange={set('city')} />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <TextField fullWidth label="State" value={form.state} onChange={set('state')} />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                label="Pincode"
+                value={form.pincode}
+                onChange={set('pincode')}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField fullWidth label="Phone" value={form.phone} onChange={set('phone')} />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Email"
+                value={form.email}
+                onChange={set('email')}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Website"
+                value={form.website}
+                onChange={set('website')}
+              />
+            </Grid>
+          </Grid>
+
+          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
+            <Button
+              variant="contained"
+              disabled={save.isPending || org.isLoading}
+              onClick={() => save.mutate()}
+            >
+              {save.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+    </>
+  );
+}

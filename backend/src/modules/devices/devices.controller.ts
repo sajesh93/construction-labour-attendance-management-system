@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { DeviceStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { DevicesService } from './devices.service';
 import { RequirePermissions } from '../../common/rbac/rbac.decorators';
 import { Permission } from '../../common/rbac/permissions';
@@ -16,6 +16,11 @@ class UpdateDeviceDto {
   @IsOptional()
   @IsUUID()
   siteId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  label?: string;
 }
 
 @ApiTags('devices')

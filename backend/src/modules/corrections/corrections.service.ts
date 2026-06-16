@@ -49,17 +49,39 @@ export class CorrectionsService {
     return request;
   }
 
-  list(user: AuthUser, status?: CorrectionStatus, siteId?: string, workerId?: string) {
-    return this.prisma.correctionRequest.findMany({
+  async list(user: AuthUser, status?: CorrectionStatus, siteId?: string, workerId?: string) {
+    const rows = await this.prisma.correctionRequest.findMany({
       where: {
         organizationId: user.organizationId,
         ...(status ? { status } : {}),
         ...(siteId ? { siteId } : {}),
         ...(workerId ? { workerId } : {}),
       },
-      include: { items: true },
+      include: {
+        items: true,
+        worker: { select: { fullName: true, workerCode: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Resolve the requester/reviewer UUIDs to human names so the admin sees
+    // *who* filed each correction and who reviewed it, not raw IDs.
+    const userIds = [
+      ...new Set(rows.flatMap((r) => [r.requestedBy, r.reviewedBy]).filter(Boolean) as string[]),
+    ];
+    const users = userIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, fullName: true, role: true },
+        })
+      : [];
+    const nameOf = new Map(users.map((u) => [u.id, u.fullName]));
+
+    return rows.map((r) => ({
+      ...r,
+      requestedByName: nameOf.get(r.requestedBy) ?? null,
+      reviewedByName: r.reviewedBy ? (nameOf.get(r.reviewedBy) ?? null) : null,
+    }));
   }
 
   async get(user: AuthUser, id: string) {
