@@ -18,7 +18,8 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Protect everything except login, the auth routes, and static assets.
-    '/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)',
+    // Protect everything except login, the auth routes, and public/static assets
+    // (logo.png must be reachable on the unauthenticated login page).
+    '/((?!login|api/auth|_next/static|_next/image|favicon.ico|logo.png).*)',
   ],
 };
