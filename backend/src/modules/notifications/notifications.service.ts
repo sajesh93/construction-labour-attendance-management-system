@@ -54,6 +54,47 @@ export class NotificationsService {
     });
   }
 
+  /** Register (or refresh) an FCM device token for the current user/device. */
+  registerPushToken(
+    user: AuthUser,
+    input: { token: string; deviceUid?: string; platform?: string },
+  ) {
+    return this.prisma.pushToken.upsert({
+      where: { token: input.token },
+      create: {
+        organizationId: user.organizationId,
+        userId: user.userId,
+        deviceUid: input.deviceUid,
+        token: input.token,
+        platform: input.platform,
+      },
+      update: {
+        organizationId: user.organizationId,
+        userId: user.userId,
+        deviceUid: input.deviceUid,
+        platform: input.platform,
+      },
+    });
+  }
+
+  /** Push tokens to alert for an SOS — everyone in the org except the sender's device. */
+  async sosTokens(organizationId: string, excludeDeviceUid?: string | null): Promise<string[]> {
+    const rows = await this.prisma.pushToken.findMany({
+      where: {
+        organizationId,
+        ...(excludeDeviceUid ? { NOT: { deviceUid: excludeDeviceUid } } : {}),
+      },
+      select: { token: true },
+    });
+    return rows.map((r) => r.token);
+  }
+
+  /** Drop tokens FCM reported as no longer valid. */
+  async pruneTokens(tokens: string[]) {
+    if (tokens.length === 0) return;
+    await this.prisma.pushToken.deleteMany({ where: { token: { in: tokens } } });
+  }
+
   /** Emails of active users in the given roles (defaults to admins + safety officers). */
   async alertEmails(organizationId: string, roles: UserRole[] = ALERT_ROLES): Promise<string[]> {
     const users = await this.prisma.user.findMany({

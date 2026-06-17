@@ -608,6 +608,21 @@ model Notification {
   @@map("notifications")
 }
 
+// FCM device tokens for SOS push (so alerts ring even when the app is closed).
+model PushToken {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  deviceUid      String?  @map("device_uid")
+  token          String   @unique
+  platform       String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([organizationId])
+  @@map("push_tokens")
+}
+
 // ---------------- Reports ----------------
 model ReportJob {
   id             String    @id @default(uuid()) @db.Uuid

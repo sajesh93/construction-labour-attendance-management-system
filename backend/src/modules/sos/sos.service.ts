@@ -4,6 +4,7 @@ import { MailService } from '../../common/mail/mail.service';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../../common/push/push.service';
 import { distanceMeters } from '../attendance/engine/tap-decision';
 import { TriggerSosDto } from './dto/sos.dto';
 
@@ -17,6 +18,7 @@ export class SosService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly notifications: NotificationsService,
+    private readonly push: PushService,
   ) {}
 
   /**
@@ -117,19 +119,22 @@ export class SosService {
       : `Sent from a logged-out device`;
     const phoneLine = dto.deviceName ? `Phone: ${dto.deviceName}` : null;
 
+    const title = `🚨 SOS — ${where}`;
+    const body = [
+      `Emergency reported at ${where}.`,
+      senderLine,
+      phoneLine,
+      mapsLink ? `Location: ${mapsLink}` : null,
+      dto.message ? `Message: ${dto.message}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     await this.notifications.create({
       organizationId,
       type: 'SOS',
-      title: `🚨 SOS — ${where}`,
-      body: [
-        `Emergency reported at ${where}.`,
-        senderLine,
-        phoneLine,
-        mapsLink ? `Location: ${mapsLink}` : null,
-        dto.message ? `Message: ${dto.message}` : null,
-      ]
-        .filter(Boolean)
-        .join('\n'),
+      title,
+      body,
       siteId: site?.id ?? null,
       // Carry the sender's device/email so a receiver can avoid alarming the
       // very device (or person) that raised the SOS.
@@ -139,6 +144,14 @@ export class SosService {
         senderEmail: dto.senderEmail ?? null,
       },
     });
+
+    // Push to every registered device in the org (except the sender's), so the
+    // alert rings even when the app is closed. No-op if push isn't configured.
+    void (async () => {
+      const tokens = await this.notifications.sosTokens(organizationId, dto.deviceUid);
+      const stale = await this.push.sendSos(tokens, { title, body, sosEventId: event.id });
+      await this.notifications.pruneTokens(stale);
+    })().catch((e) => this.logger.error(`SOS push failed: ${(e as Error).message}`));
 
     // Email all admins + safety officers; never block the SOS response on it.
     void (async () => {

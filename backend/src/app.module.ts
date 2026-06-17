@@ -8,6 +8,7 @@ import { RedisModule } from './infra/redis/redis.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { AuditModule } from './common/audit/audit.module';
 import { MailModule } from './common/mail/mail.module';
+import { PushModule } from './common/push/push.module';
 import { AuditInterceptor } from './common/audit/audit.interceptor';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
 import { DeviceGuard } from './common/auth/device.guard';
@@ -40,6 +41,7 @@ import { SosModule } from './modules/sos/sos.module';
     RedisModule,
     CryptoModule,
     AuditModule,
+    PushModule,
     AuthModule,
     OrganizationsModule,
     SitesModule,

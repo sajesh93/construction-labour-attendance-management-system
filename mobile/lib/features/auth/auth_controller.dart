@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
+import '../../core/push/push_service.dart';
 import '../../core/storage/secure_store.dart';
 
 class AuthState {
@@ -51,6 +54,16 @@ class AuthController extends StateNotifier<AuthState> {
   SecureStore get _store => _ref.read(secureStoreProvider);
   Dio get _dio => _ref.read(apiClientProvider).dio;
 
+  /// Send this device's FCM token to the backend so SOS push can reach it.
+  Future<void> _registerPush() async {
+    try {
+      final deviceUid = await _ref.read(localDbProvider).getMeta('device_uid');
+      await PushService.registerToken(_dio, deviceUid: deviceUid);
+    } catch (_) {
+      // Best-effort; retried on next login/start.
+    }
+  }
+
   /// On app start: if a token is stored, validate it via /auth/me (the API
   /// client auto-refreshes on 401), restoring the session + role across restarts.
   Future<void> bootstrap() async {
@@ -68,6 +81,7 @@ class AuthController extends StateNotifier<AuthState> {
         fullName: me.data['fullName'] as String?,
         email: me.data['email'] as String?,
       );
+      unawaited(_registerPush());
     } catch (_) {
       // Session invalid — drop tokens but KEEP device credentials so this
       // phone stays authorized for attendance after the next login.
@@ -92,6 +106,7 @@ class AuthController extends StateNotifier<AuthState> {
         fullName: res.data['user']?['fullName'] as String?,
         email: (res.data['user']?['email'] as String?) ?? email,
       );
+      unawaited(_registerPush());
       return true;
     } on DioException catch (e) {
       final detail = e.response?.data is Map
