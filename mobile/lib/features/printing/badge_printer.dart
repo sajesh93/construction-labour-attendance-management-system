@@ -255,7 +255,7 @@ pw.Widget _disciplinary(double u) {
 
 /// A job-specific training seal: coloured ring with an abbreviation, name below.
 pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
-  final d = 27 * u;
+  final d = 24 * u;
   return pw.Column(
     mainAxisSize: pw.MainAxisSize.min,
     children: [
@@ -426,15 +426,20 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
                   child: pw.BarcodeWidget(
                     barcode: pw.Barcode.qrCode(),
                     data: 'CLAMS:${b.workerCode}',
-                    width: 42 * u,
-                    height: 42 * u,
+                    width: 36 * u,
+                    height: 36 * u,
                   ),
                 ),
               ),
             ],
           ),
         ),
-        // Computer-generated note (replaces the General Safety Induction paragraph).
+        // Induction details.
+        pw.Row(children: [
+          pw.Expanded(child: _row('Induction Done on', _fmtDate(b.inductionDoneOn), u, labelW: 86)),
+          pw.Expanded(child: _row('Inducted By', b.inductedBy ?? '', u, labelW: 56)),
+        ]),
+        // Computer-generated note (comes right after the induction details).
         pw.Container(
           width: double.infinity,
           padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 1.6 * u),
@@ -448,11 +453,6 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
                 fontSize: 4.4 * u, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700),
           ),
         ),
-        // Induction details.
-        pw.Row(children: [
-          pw.Expanded(child: _row('Induction Done on', _fmtDate(b.inductionDoneOn), u, labelW: 86)),
-          pw.Expanded(child: _row('Inducted By', b.inductedBy ?? '', u, labelW: 56)),
-        ]),
         // Job-specific training seals (fills remaining height).
         pw.Expanded(
           child: pw.Padding(

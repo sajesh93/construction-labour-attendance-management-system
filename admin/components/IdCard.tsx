@@ -185,8 +185,9 @@ export function IdCard({
           src={photoSrc(org.logoUrl)}
           alt=""
           style={{
-            maxWidth: '100%',
-            maxHeight: '100%',
+            // Scale up to fill the box (no empty space); zoom slider fine-tunes.
+            width: '100%',
+            height: '100%',
             objectFit: 'contain',
             transform: `scale(${logoScale})`,
           }}
@@ -290,15 +291,16 @@ export function IdCard({
   }
 
   // ---- Back face: company + screening/induction details, QR, training seals ----
-  const qrPx = Math.round(15 * u * 3.78);
-  const sealPx = Math.round(10 * u * 3.78);
+  // A small QR + seals leave real vertical slack so nothing overlaps.
+  const qrPx = Math.round(9 * u * 3.78);
+  const sealPx = Math.round(8.5 * u * 3.78);
 
   return (
     <div style={shell}>
       {titleBar('SCREENING & INDUCTION CARD')}
 
       {/* Company + screening rows on the left, QR on the right */}
-      <div style={{ display: 'flex', borderBottom: `0.5px solid ${BORDER}` }}>
+      <div style={{ display: 'flex', borderBottom: `0.5px solid ${BORDER}`, flexShrink: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <Row cells={[{ label: 'Name of the Company', value: org?.name ?? '', labelW: 30 }]} />
           <Row cells={[{ label: 'Screening Done on', value: fmtDate(worker.screeningDoneOn), labelW: 30 }]} />
@@ -306,51 +308,63 @@ export function IdCard({
         </div>
         <div
           style={{
-            width: `${20 * u}mm`,
+            width: `${15 * u}mm`,
             flexShrink: 0,
             borderLeft: `0.5px solid ${BORDER}`,
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: `${0.8 * u}mm`,
+            padding: `${0.6 * u}mm`,
           }}
         >
           <QRCodeSVG value={qrPayload(worker.workerCode)} size={qrPx} includeMargin={false} />
         </div>
       </div>
 
-      {/* Computer-generated note (replaces the General Safety Induction paragraph) */}
+      {/* Induction details */}
+      <div style={{ flexShrink: 0 }}>
+        <Row
+          cells={[
+            { label: 'Induction Done on', value: fmtDate(worker.inductionDoneOn), labelW: 30, valueFlex: 1 },
+            { label: 'Inducted By', value: worker.inductedBy ?? '', labelW: 20, valueFlex: 1 },
+          ]}
+        />
+      </div>
+
+      {/* Computer-generated note (comes right after the induction details) */}
       <div
         style={{
-          fontSize: `${1.75 * u}mm`,
+          flexShrink: 0,
+          fontSize: `${1.7 * u}mm`,
           fontStyle: 'italic',
           color: '#555',
           textAlign: 'center',
-          padding: `${0.7 * u}mm ${1.2 * u}mm`,
+          padding: `${0.55 * u}mm ${1.2 * u}mm`,
           borderBottom: `0.5px solid ${BORDER}`,
         }}
       >
         This card is computer-generated and does not require a company seal or signature.
       </div>
 
-      {/* Induction details */}
-      <Row
-        cells={[
-          { label: 'Induction Done on', value: fmtDate(worker.inductionDoneOn), labelW: 30, valueFlex: 1 },
-          { label: 'Inducted By', value: worker.inductedBy ?? '', labelW: 20, valueFlex: 1 },
-        ]}
-      />
-
-      {/* Job-specific training seals (fills remaining height so nothing overlaps) */}
-      <div style={{ flex: 1, minHeight: 0, padding: `${0.9 * u}mm ${1.4 * u}mm`, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontWeight: 700, fontSize: `${2 * u}mm`, marginBottom: `${0.6 * u}mm` }}>
+      {/* Job-specific training seals (fills remaining height; clipped so it can never overlap) */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+          padding: `${0.8 * u}mm ${1.4 * u}mm`,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ flexShrink: 0, fontWeight: 700, fontSize: `${1.9 * u}mm`, marginBottom: `${0.5 * u}mm` }}>
           Job Specific Training Attended:
         </div>
         <div
           style={{
             flex: 1,
             minHeight: 0,
+            overflow: 'hidden',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -363,7 +377,9 @@ export function IdCard({
         </div>
       </div>
 
-      <Row cells={[{ label: 'Validity till', value: fmtDate(worker.validityTill), labelW: 26 }]} />
+      <div style={{ flexShrink: 0 }}>
+        <Row cells={[{ label: 'Validity till', value: fmtDate(worker.validityTill), labelW: 26 }]} />
+      </div>
 
       {footerBar('If Found, Please Return to Project Office')}
     </div>
