@@ -129,6 +129,19 @@ export class CreateWorkerDto {
   @IsString()
   screeningDoneBy?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Date safety induction was done (printed on the ID card)',
+  })
+  @IsOptional()
+  @IsDateString()
+  inductionDoneOn?: string;
+
+  @ApiProperty({ required: false, description: 'Who carried out the induction (free text)' })
+  @IsOptional()
+  @IsString()
+  inductedBy?: string;
+
   @ApiProperty({ required: false, description: 'ID card validity end date' })
   @IsOptional()
   @IsDateString()

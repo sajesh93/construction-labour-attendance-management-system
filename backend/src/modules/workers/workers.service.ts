@@ -139,6 +139,8 @@ export class WorkersService {
         emergencyContactNumber: true,
         screeningDoneOn: true,
         screeningDoneBy: true,
+        inductionDoneOn: true,
+        inductedBy: true,
         validityTill: true,
         // Current site assignment supplies the "Project Name" line on the ID card.
         assignments: {
@@ -264,6 +266,8 @@ export class WorkersService {
           emergencyContactNumber: dto.emergencyContactNumber,
           screeningDoneOn: dto.screeningDoneOn ? new Date(dto.screeningDoneOn) : undefined,
           screeningDoneBy: dto.screeningDoneBy,
+          inductionDoneOn: dto.inductionDoneOn ? new Date(dto.inductionDoneOn) : undefined,
+          inductedBy: dto.inductedBy,
           validityTill: dto.validityTill ? new Date(dto.validityTill) : undefined,
           nomineeName: dto.nomineeName,
           nomineeRelation: dto.nomineeRelation,
@@ -330,6 +334,8 @@ export class WorkersService {
       emergencyContactNumber: dto.emergencyContactNumber,
       screeningDoneOn: dto.screeningDoneOn ? new Date(dto.screeningDoneOn) : undefined,
       screeningDoneBy: dto.screeningDoneBy,
+      inductionDoneOn: dto.inductionDoneOn ? new Date(dto.inductionDoneOn) : undefined,
+      inductedBy: dto.inductedBy,
       validityTill: dto.validityTill ? new Date(dto.validityTill) : undefined,
       nomineeName: dto.nomineeName,
       nomineeRelation: dto.nomineeRelation,

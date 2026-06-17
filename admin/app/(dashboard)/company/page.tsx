@@ -10,6 +10,7 @@ import {
   Card,
   CardContent,
   Grid,
+  Slider,
   Stack,
   TextField,
   Typography,
@@ -30,6 +31,7 @@ type ProfileForm = {
   email: string;
   website: string;
   logoUrl: string;
+  logoScale: number;
 };
 
 const EMPTY: ProfileForm = {
@@ -43,6 +45,7 @@ const EMPTY: ProfileForm = {
   email: '',
   website: '',
   logoUrl: '',
+  logoScale: 1,
 };
 
 /** Downscale a logo to ≤400px PNG/JPEG and upload to /files; returns stored url. */
@@ -100,6 +103,7 @@ export default function CompanyPage() {
       email: org.data.email ?? '',
       website: org.data.website ?? '',
       logoUrl: org.data.logoUrl ?? '',
+      logoScale: org.data.logoScale ?? 1,
     });
   }, [org.data]);
 
@@ -111,8 +115,8 @@ export default function CompanyPage() {
   const save = useMutation({
     mutationFn: () => {
       // Email is omitted when blank so the @IsEmail validator doesn't reject ''.
-      const { email, ...rest } = form;
-      const body: Record<string, string> = { ...rest };
+      const { email, logoScale, ...rest } = form;
+      const body: Record<string, string | number> = { ...rest, logoScale };
       if (email.trim()) body.email = email.trim();
       else body.email = '';
       return api.patch<Organization>('/organizations/current', body);
@@ -189,6 +193,60 @@ export default function CompanyPage() {
               )}
             </Box>
           </Stack>
+
+          {form.logoUrl && (
+            <Stack direction="row" spacing={3} alignItems="center" sx={{ mb: 3 }}>
+              {/* Clipped preview mimics the logo box on the ID card. */}
+              <Box
+                sx={{
+                  width: 120,
+                  height: 56,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  bgcolor: 'grey.50',
+                  flexShrink: 0,
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photoSrc(form.logoUrl)}
+                  alt=""
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain',
+                    transform: `scale(${form.logoScale})`,
+                  }}
+                />
+              </Box>
+              <Box sx={{ flex: 1, maxWidth: 320 }}>
+                <Typography variant="body2" gutterBottom>
+                  Logo zoom on card: {form.logoScale.toFixed(2)}×
+                </Typography>
+                <Slider
+                  value={form.logoScale}
+                  min={0.5}
+                  max={3}
+                  step={0.05}
+                  marks={[
+                    { value: 1, label: 'Fit' },
+                    { value: 2, label: '2×' },
+                    { value: 3, label: '3×' },
+                  ]}
+                  valueLabelDisplay="auto"
+                  onChange={(_, v) => {
+                    setForm((f) => ({ ...f, logoScale: v as number }));
+                    setSaved(false);
+                  }}
+                />
+              </Box>
+            </Stack>
+          )}
 
           <Grid container spacing={2}>
             <Grid item xs={12}>

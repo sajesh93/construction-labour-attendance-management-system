@@ -50,6 +50,8 @@ interface PersonForm {
   emergencyContactNumber?: string;
   screeningDoneOn?: string;
   screeningDoneBy?: string;
+  inductionDoneOn?: string;
+  inductedBy?: string;
   validityTill?: string;
   nomineeName?: string;
   nomineeRelation?: string;
@@ -114,6 +116,8 @@ function toForm(w: WorkerDetail): PersonForm {
     emergencyContactNumber: w.emergencyContactNumber ?? '',
     screeningDoneOn: w.screeningDoneOn ? w.screeningDoneOn.slice(0, 10) : '',
     screeningDoneBy: w.screeningDoneBy ?? '',
+    inductionDoneOn: w.inductionDoneOn ? w.inductionDoneOn.slice(0, 10) : '',
+    inductedBy: w.inductedBy ?? '',
     validityTill: w.validityTill ? w.validityTill.slice(0, 10) : '',
     nomineeName: w.nomineeName ?? '',
     nomineeRelation: w.nomineeRelation ?? '',
@@ -672,6 +676,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
             <Grid container spacing={2}>
               {field('screeningDoneOn', 'Screening done on', { type: 'date' })}
               {field('screeningDoneBy', 'Screening done by')}
+              {field('inductionDoneOn', 'Induction done on', { type: 'date' })}
+              {field('inductedBy', 'Inducted by')}
               {field('validityTill', 'Validity till', { type: 'date' })}
             </Grid>
 

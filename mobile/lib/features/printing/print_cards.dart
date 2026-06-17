@@ -8,16 +8,12 @@ import '../../core/providers.dart';
 import 'badge_printer.dart';
 
 const _sizeKey = 'card_size';
-const _orientKey = 'card_orientation';
 
 CardSize _parseSize(String? s) => switch (s) {
       'small' => CardSize.small,
       'large' => CardSize.large,
       _ => CardSize.medium,
     };
-
-CardOrientation _parseOrient(String? s) =>
-    s == 'portrait' ? CardOrientation.portrait : CardOrientation.landscape;
 
 /// Fetch bytes for a stored "/files/<id>" ref (or absolute URL) via the
 /// authenticated API client. Returns null on any failure.
@@ -33,8 +29,8 @@ Future<Uint8List?> _bytes(Dio dio, String? url) async {
 }
 
 /// End-to-end "print ID cards" flow used by every Safety Officer print button:
-/// pick size/orientation (remembered), load company details + photos, then
-/// open the print dialog. Returns false if the user cancels the size sheet.
+/// pick size (remembered), load company details + photos, then open the print
+/// dialog. Returns false if the user cancels the size sheet.
 Future<bool> printWorkerCards(
   BuildContext context,
   WidgetRef ref,
@@ -45,7 +41,6 @@ Future<bool> printWorkerCards(
   final dio = ref.read(apiClientProvider).dio;
 
   var size = _parseSize(await db.getMeta(_sizeKey));
-  var orientation = _parseOrient(await db.getMeta(_orientKey));
 
   if (!context.mounted) return false;
   final picked = await showModalBottomSheet<bool>(
@@ -69,17 +64,6 @@ Future<bool> printWorkerCards(
                 selected: {size},
                 onSelectionChanged: (s) => setSheet(() => size = s.first),
               ),
-              const SizedBox(height: 16),
-              Text('Orientation', style: Theme.of(ctx).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              SegmentedButton<CardOrientation>(
-                segments: const [
-                  ButtonSegment(value: CardOrientation.landscape, label: Text('Landscape')),
-                  ButtonSegment(value: CardOrientation.portrait, label: Text('Portrait')),
-                ],
-                selected: {orientation},
-                onSelectionChanged: (o) => setSheet(() => orientation = o.first),
-              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -99,7 +83,6 @@ Future<bool> printWorkerCards(
 
   // Remember the choice as the new default.
   await db.setMeta(_sizeKey, size.name);
-  await db.setMeta(_orientKey, orientation.name);
 
   // Company details for the card header/footer.
   OrgInfo? org;
@@ -115,6 +98,7 @@ Future<bool> printWorkerCards(
       pincode: m['pincode'] as String?,
       phone: m['phone'] as String?,
       logoBytes: await _bytes(dio, m['logoUrl'] as String?),
+      logoScale: (m['logoScale'] as num?)?.toDouble() ?? 1.0,
     );
   } catch (_) {
     org = null;
@@ -126,6 +110,6 @@ Future<bool> printWorkerCards(
     withPhotos.add(b.withPhoto(await _bytes(dio, b.photoUrl)));
   }
 
-  await printCards(withPhotos, org: org, size: size, orientation: orientation);
+  await printCards(withPhotos, org: org, size: size);
   return true;
 }

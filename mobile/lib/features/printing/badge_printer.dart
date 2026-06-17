@@ -4,10 +4,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-/// Physical card size. Base is CR80 (85.6 × 54 mm); orientation decides the edge.
+/// Physical card size. Base is CR80 (85.6 × 54 mm). Cards are landscape only.
 enum CardSize { small, medium, large }
-
-enum CardOrientation { portrait, landscape }
 
 double _sizeScale(CardSize s) => switch (s) {
       CardSize.small => 0.82,
@@ -15,7 +13,7 @@ double _sizeScale(CardSize s) => switch (s) {
       CardSize.large => 1.22,
     };
 
-/// Company details stamped on the front header / back footer of every card.
+/// Company details stamped on the cards.
 class OrgInfo {
   const OrgInfo({
     this.name,
@@ -26,6 +24,7 @@ class OrgInfo {
     this.pincode,
     this.phone,
     this.logoBytes,
+    this.logoScale = 1.0,
   });
 
   final String? name;
@@ -36,6 +35,9 @@ class OrgInfo {
   final String? pincode;
   final String? phone;
   final Uint8List? logoBytes;
+
+  /// Print-time zoom for the logo (1 = fit to box).
+  final double logoScale;
 
   String? get cityLine {
     final parts = [city, state, pincode].where((e) => (e ?? '').isNotEmpty).toList();
@@ -58,6 +60,8 @@ class BadgeData {
     this.emergencyNumber,
     this.screeningDoneOn,
     this.screeningDoneBy,
+    this.inductionDoneOn,
+    this.inductedBy,
     this.validityTill,
     this.photoUrl,
     this.photoBytes,
@@ -79,6 +83,8 @@ class BadgeData {
   final String? emergencyNumber;
   final String? screeningDoneOn;
   final String? screeningDoneBy;
+  final String? inductionDoneOn;
+  final String? inductedBy;
   final String? validityTill;
 
   /// Stored photo ref (e.g. "/files/<id>") — resolved to [photoBytes] before print.
@@ -98,6 +104,8 @@ class BadgeData {
         emergencyNumber: emergencyNumber,
         screeningDoneOn: screeningDoneOn,
         screeningDoneBy: screeningDoneBy,
+        inductionDoneOn: inductionDoneOn,
+        inductedBy: inductedBy,
         validityTill: validityTill,
         photoUrl: photoUrl,
         photoBytes: bytes,
@@ -105,11 +113,11 @@ class BadgeData {
 }
 
 const PdfColor _navy = PdfColor.fromInt(0xff0d1b3e);
-const PdfColor _labelBg = PdfColor.fromInt(0xfff3f5f8);
+const PdfColor _labelBg = PdfColor.fromInt(0xffeef1f5);
 
-// CR80 in PDF points (1mm = 2.83465pt).
-const double _baseLongPt = 85.6 * 2.83465;
-const double _baseShortPt = 54 * 2.83465;
+// CR80 in PDF points (1mm = 2.83465pt), landscape.
+const double _cardWidthPt = 85.6 * 2.83465;
+const double _cardHeightPt = 54 * 2.83465;
 
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' //
@@ -139,15 +147,6 @@ String _sex(String? g) => switch (g) {
       _ => g,
     };
 
-({double w, double h}) _dims(CardSize size, CardOrientation orientation) {
-  final s = _sizeScale(size);
-  final long = _baseLongPt * s;
-  final short = _baseShortPt * s;
-  return orientation == CardOrientation.landscape
-      ? (w: long, h: short)
-      : (w: short, h: long);
-}
-
 pw.Widget _bar(String text, double u, {bool title = false}) {
   return pw.Container(
     width: double.infinity,
@@ -175,17 +174,17 @@ pw.Widget _row(String label, String value, double u, {double labelW = 62, bool g
       pw.Container(
         width: labelW * u,
         color: _labelBg,
-        padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2.4 * u),
+        padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2 * u),
         alignment: pw.Alignment.centerLeft,
         child: pw.Text(label,
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 6 * u)),
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 5.8 * u)),
       ),
       pw.Expanded(
         child: pw.Container(
-          padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2.4 * u),
+          padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2 * u),
           alignment: pw.Alignment.centerLeft,
           child: pw.Text(value, maxLines: 1, overflow: pw.TextOverflow.clip,
-              style: pw.TextStyle(fontSize: 6.4 * u)),
+              style: pw.TextStyle(fontSize: 6.2 * u)),
         ),
       ),
     ],
@@ -202,6 +201,22 @@ pw.Widget _row(String label, String value, double u, {double labelW = 62, bool g
   return grow ? pw.Expanded(child: box) : box;
 }
 
+/// Company logo in a bordered box, with print-time zoom.
+pw.Widget _logoBox(OrgInfo? org, double u) {
+  if (org?.logoBytes == null) return pw.SizedBox(height: 16 * u);
+  return pw.Container(
+    height: 16 * u,
+    width: double.infinity,
+    decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey500, width: 0.5)),
+    child: pw.ClipRect(
+      child: pw.Transform.scale(
+        scale: org!.logoScale,
+        child: pw.Image(pw.MemoryImage(org.logoBytes!), fit: pw.BoxFit.contain),
+      ),
+    ),
+  );
+}
+
 /// 1st / 2nd / 3rd disciplinary-action chips (green → amber → red).
 pw.Widget _disciplinary(double u) {
   const items = [
@@ -209,7 +224,7 @@ pw.Widget _disciplinary(double u) {
     ('2nd', PdfColor.fromInt(0xfff9a825)),
     ('3rd', PdfColor.fromInt(0xffc62828)),
   ];
-  final d = 13 * u;
+  final d = 14 * u;
   return pw.Row(
     mainAxisAlignment: pw.MainAxisAlignment.center,
     children: [
@@ -218,25 +233,29 @@ pw.Widget _disciplinary(double u) {
           margin: pw.EdgeInsets.symmetric(horizontal: 1.2 * u),
           width: d,
           height: d,
-          decoration: pw.BoxDecoration(color: color, shape: pw.BoxShape.circle),
+          decoration: pw.BoxDecoration(
+            color: color,
+            shape: pw.BoxShape.circle,
+            border: pw.Border.all(color: PdfColors.white, width: 0.8 * u),
+          ),
           alignment: pw.Alignment.center,
           child: pw.Container(
-            width: d * 0.74,
-            height: d * 0.74,
+            width: d * 0.72,
+            height: d * 0.72,
             decoration: const pw.BoxDecoration(color: PdfColors.white, shape: pw.BoxShape.circle),
             alignment: pw.Alignment.center,
             child: pw.Text(label,
                 style: pw.TextStyle(
-                    color: color, fontWeight: pw.FontWeight.bold, fontSize: 4.6 * u)),
+                    color: color, fontWeight: pw.FontWeight.bold, fontSize: 4.8 * u)),
           ),
         ),
     ],
   );
 }
 
-/// A job-specific training seal: coloured circle with an abbreviation, name below.
+/// A job-specific training seal: coloured ring with an abbreviation, name below.
 pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
-  final d = 26 * u;
+  final d = 27 * u;
   return pw.Column(
     mainAxisSize: pw.MainAxisSize.min,
     children: [
@@ -250,9 +269,13 @@ pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
         ),
         alignment: pw.Alignment.center,
         child: pw.Container(
-          width: d * 0.66,
-          height: d * 0.66,
-          decoration: const pw.BoxDecoration(color: PdfColors.white, shape: pw.BoxShape.circle),
+          width: d * 0.6,
+          height: d * 0.6,
+          decoration: pw.BoxDecoration(
+            color: PdfColors.white,
+            shape: pw.BoxShape.circle,
+            border: pw.Border.all(color: color, width: 0.6 * u),
+          ),
           alignment: pw.Alignment.center,
           child: pw.Text(abbr,
               style: pw.TextStyle(
@@ -272,21 +295,21 @@ pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
 }
 
 const _seals = [
-  ('SI', 'Safety Induction', PdfColor.fromInt(0xff1565c0)),
-  ('FP', 'Fire Protection', PdfColor.fromInt(0xffad1457)),
-  ('CS', 'Confined Space', PdfColor.fromInt(0xff2e7d32)),
+  ('SI', 'Safety Induction', PdfColor.fromInt(0xff1f3a93)),
+  ('FP', 'Fire Protection', PdfColor.fromInt(0xffb0185a)),
+  ('CS', 'Confined Space', PdfColor.fromInt(0xff1e7d4f)),
   ('ES', 'Electrical Safety', PdfColor.fromInt(0xffc62828)),
-  ('ST', 'Safety Trained', PdfColor.fromInt(0xff00838f)),
+  ('ST', 'Safety Trained', PdfColor.fromInt(0xff0277bd)),
   ('HW', 'Hot Work', PdfColor.fromInt(0xfff9a825)),
 ];
 
-pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
+pw.Widget _front(BadgeData b, OrgInfo? org, double u) {
   final emergency = [b.emergencyName, b.emergencyNumber]
       .where((e) => (e ?? '').isNotEmpty)
       .join(' · ');
   return pw.Container(
-    width: w,
-    height: h,
+    width: _cardWidthPt * u,
+    height: _cardHeightPt * u,
     decoration: pw.BoxDecoration(
       border: pw.Border.all(color: PdfColors.grey700, width: 0.6),
       color: PdfColors.white,
@@ -294,24 +317,7 @@ pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        // Title bar with logo at the right edge.
-        pw.Stack(
-          children: [
-            _bar('IDENTITY CARD', u, title: true),
-            if (org?.logoBytes != null)
-              pw.Positioned(
-                right: 3 * u,
-                top: 2 * u,
-                child: pw.Container(
-                  height: 11 * u,
-                  padding: pw.EdgeInsets.all(0.8 * u),
-                  color: PdfColors.white,
-                  child: pw.Image(pw.MemoryImage(org!.logoBytes!), fit: pw.BoxFit.contain),
-                ),
-              ),
-          ],
-        ),
-        // Body: details table | photo + badges
+        _bar('IDENTITY CARD', u, title: true),
         pw.Expanded(
           child: pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -335,7 +341,7 @@ pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
                         ]),
                       ),
                       _row('Blood Group', b.bloodGroup ?? '', u, grow: true),
-                      _row('Emergency', emergency, u, grow: true),
+                      _row('Emergency Contact', emergency, u, labelW: 76, grow: true),
                     ],
                   ),
                 ),
@@ -345,6 +351,8 @@ pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
                 padding: pw.EdgeInsets.all(3 * u),
                 child: pw.Column(
                   children: [
+                    _logoBox(org, u),
+                    pw.SizedBox(height: 2 * u),
                     pw.Expanded(
                       child: pw.Container(
                         width: double.infinity,
@@ -373,16 +381,15 @@ pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
             ],
           ),
         ),
-        _bar('Contact In Case Of Emergency (Name & Number)', u),
       ],
     ),
   );
 }
 
-pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
+pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
   return pw.Container(
-    width: w,
-    height: h,
+    width: _cardWidthPt * u,
+    height: _cardHeightPt * u,
     decoration: pw.BoxDecoration(
       border: pw.Border.all(color: PdfColors.grey700, width: 0.6),
       color: PdfColors.white,
@@ -390,7 +397,7 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        _bar('SCREENING CARD', u, title: true),
+        _bar('SCREENING & INDUCTION CARD', u, title: true),
         // Company + screening rows | QR
         pw.Container(
           decoration: const pw.BoxDecoration(
@@ -403,40 +410,34 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                   children: [
-                    _row('Company', org?.name ?? '', u, labelW: 74),
-                    _row('Screening Done on', _fmtDate(b.screeningDoneOn), u, labelW: 74),
-                    _row('Screening Done by', b.screeningDoneBy ?? '', u, labelW: 74),
-                    _row('Validity till', _fmtDate(b.validityTill), u, labelW: 74),
+                    _row('Name of the Company', org?.name ?? '', u, labelW: 86),
+                    _row('Screening Done on', _fmtDate(b.screeningDoneOn), u, labelW: 86),
+                    _row('Screening Done by', b.screeningDoneBy ?? '', u, labelW: 86),
                   ],
                 ),
               ),
               pw.Container(
-                width: 66 * u,
-                padding: pw.EdgeInsets.all(3 * u),
+                width: 54 * u,
+                padding: pw.EdgeInsets.all(2.5 * u),
                 decoration: const pw.BoxDecoration(
                   border: pw.Border(left: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
                 ),
-                child: pw.Column(
-                  mainAxisAlignment: pw.MainAxisAlignment.center,
-                  children: [
-                    pw.BarcodeWidget(
-                      barcode: pw.Barcode.qrCode(),
-                      data: 'CLAMS:${b.workerCode}',
-                      width: 50 * u,
-                      height: 50 * u,
-                    ),
-                    pw.SizedBox(height: 1 * u),
-                    pw.Text(b.workerCode, style: pw.TextStyle(fontSize: 4.4 * u)),
-                  ],
+                child: pw.Center(
+                  child: pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: 'CLAMS:${b.workerCode}',
+                    width: 42 * u,
+                    height: 42 * u,
+                  ),
                 ),
               ),
             ],
           ),
         ),
-        // Computer-generated note (replaces seal / signature).
+        // Computer-generated note (replaces the General Safety Induction paragraph).
         pw.Container(
           width: double.infinity,
-          padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2 * u),
+          padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 1.6 * u),
           decoration: const pw.BoxDecoration(
             border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
           ),
@@ -444,23 +445,28 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
             'This card is computer-generated and does not require a company seal or signature.',
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(
-                fontSize: 4.6 * u, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700),
+                fontSize: 4.4 * u, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700),
           ),
         ),
-        // Job-specific training seals.
+        // Induction details.
+        pw.Row(children: [
+          pw.Expanded(child: _row('Induction Done on', _fmtDate(b.inductionDoneOn), u, labelW: 86)),
+          pw.Expanded(child: _row('Inducted By', b.inductedBy ?? '', u, labelW: 56)),
+        ]),
+        // Job-specific training seals (fills remaining height).
         pw.Expanded(
           child: pw.Padding(
-            padding: pw.EdgeInsets.symmetric(horizontal: 4 * u, vertical: 2.5 * u),
+            padding: pw.EdgeInsets.symmetric(horizontal: 4 * u, vertical: 2 * u),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text('Job Specific Training Attended:',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 5.6 * u)),
-                pw.SizedBox(height: 2 * u),
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 5.4 * u)),
+                pw.SizedBox(height: 1.5 * u),
                 pw.Expanded(
                   child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
                       for (final (abbr, name, color) in _seals) _seal(abbr, name, color, u),
                     ],
@@ -470,6 +476,7 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
             ),
           ),
         ),
+        _row('Validity till', _fmtDate(b.validityTill), u, labelW: 60),
         _bar('If Found, Please Return to Project Office', u),
       ],
     ),
@@ -482,9 +489,7 @@ Future<void> printCards(
   List<BadgeData> badges, {
   OrgInfo? org,
   CardSize size = CardSize.medium,
-  CardOrientation orientation = CardOrientation.landscape,
 }) async {
-  final dim = _dims(size, orientation);
   final u = _sizeScale(size);
   final doc = pw.Document();
   doc.addPage(
@@ -500,9 +505,9 @@ Future<void> printCards(
               pw.Row(
                 mainAxisSize: pw.MainAxisSize.min,
                 children: [
-                  _front(b, org, dim.w, dim.h, u),
+                  _front(b, org, u),
                   pw.SizedBox(width: 4),
-                  _back(b, org, dim.w, dim.h, u),
+                  _back(b, org, u),
                 ],
               ),
           ],

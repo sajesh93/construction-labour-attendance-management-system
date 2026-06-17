@@ -10,8 +10,8 @@ import { DisciplinaryBadges, SafetySeal, TRAINING_SEALS } from '@/components/Saf
 export type CardSize = 'S' | 'M' | 'L';
 export type CardOrientation = 'portrait' | 'landscape';
 
-// Base ID card = CR80 (85.6 × 54 mm). Size scales the whole card; orientation
-// decides which edge is the width.
+// Base ID card = CR80 (85.6 × 54 mm). Cards are landscape only; size scales the
+// whole card.
 const SIZE_SCALE: Record<CardSize, number> = { S: 0.82, M: 1, L: 1.22 };
 const BASE_LONG = 85.6;
 const BASE_SHORT = 54;
@@ -20,14 +20,12 @@ export function cardDimsMm(size: CardSize, orientation: CardOrientation) {
   const s = SIZE_SCALE[size];
   const long = BASE_LONG * s;
   const short = BASE_SHORT * s;
-  return orientation === 'landscape'
-    ? { w: long, h: short }
-    : { w: short, h: long };
+  return orientation === 'portrait' ? { w: short, h: long } : { w: long, h: short };
 }
 
 const NAVY = '#0d1b3e';
 const BORDER = '#3a3f47';
-const LABEL_BG = '#f3f5f8';
+const LABEL_BG = '#eef1f5';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -66,6 +64,7 @@ export function IdCard({
   const { w, h } = cardDimsMm(size, orientation);
   // A unit scale so text/QR grow with the card. 1 == Medium.
   const u = SIZE_SCALE[size];
+  const logoScale = org?.logoScale ?? 1;
 
   const shell: React.CSSProperties = {
     width: `${w}mm`,
@@ -79,9 +78,10 @@ export function IdCard({
     color: '#111',
     display: 'flex',
     flexDirection: 'column',
+    printColorAdjust: 'exact',
+    WebkitPrintColorAdjust: 'exact',
   };
 
-  // Dark title / footer bars used on both faces.
   const titleBar = (text: string) => (
     <div
       style={{
@@ -90,8 +90,10 @@ export function IdCard({
         textAlign: 'center',
         fontWeight: 700,
         letterSpacing: 0.6,
-        fontSize: `${2.9 * u}mm`,
+        fontSize: `${2.8 * u}mm`,
         padding: `${1.2 * u}mm`,
+        printColorAdjust: 'exact',
+        WebkitPrintColorAdjust: 'exact',
       }}
     >
       {text}
@@ -105,15 +107,17 @@ export function IdCard({
         color: '#fff',
         textAlign: 'center',
         fontWeight: 600,
-        fontSize: `${2.1 * u}mm`,
+        fontSize: `${2 * u}mm`,
         padding: `${0.9 * u}mm`,
+        printColorAdjust: 'exact',
+        WebkitPrintColorAdjust: 'exact',
       }}
     >
       {text}
     </div>
   );
 
-  // A label/value table row. `flex` lets a row stretch to fill the body.
+  // A label/value table row. `grow` lets a row stretch to fill the body height.
   const Row = ({
     cells,
     grow,
@@ -130,11 +134,13 @@ export function IdCard({
               flexShrink: 0,
               background: LABEL_BG,
               borderRight: `0.5px solid ${BORDER}`,
-              padding: `${0.9 * u}mm ${1.2 * u}mm`,
+              padding: `${0.7 * u}mm ${1.2 * u}mm`,
               fontWeight: 700,
-              fontSize: `${2.2 * u}mm`,
+              fontSize: `${2.1 * u}mm`,
               display: 'flex',
               alignItems: 'center',
+              printColorAdjust: 'exact',
+              WebkitPrintColorAdjust: 'exact',
             }}
           >
             {c.label}
@@ -143,8 +149,8 @@ export function IdCard({
             style={{
               flex: c.valueFlex ?? 1,
               borderRight: i < cells.length - 1 ? `0.5px solid ${BORDER}` : undefined,
-              padding: `${0.9 * u}mm ${1.2 * u}mm`,
-              fontSize: `${2.4 * u}mm`,
+              padding: `${0.7 * u}mm ${1.2 * u}mm`,
+              fontSize: `${2.3 * u}mm`,
               display: 'flex',
               alignItems: 'center',
               overflow: 'hidden',
@@ -159,6 +165,35 @@ export function IdCard({
     </div>
   );
 
+  const logoBox = (hMm: number) =>
+    org?.logoUrl ? (
+      <div
+        style={{
+          height: `${hMm * u}mm`,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          border: `0.5px solid ${BORDER}`,
+          borderRadius: `${0.8 * u}mm`,
+          background: '#fff',
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={photoSrc(org.logoUrl)}
+          alt=""
+          style={{
+            maxWidth: '100%',
+            maxHeight: '100%',
+            objectFit: 'contain',
+            transform: `scale(${logoScale})`,
+          }}
+        />
+      </div>
+    ) : null;
+
   if (side === 'front') {
     const project = worker.assignments?.[0]?.site?.name ?? '';
     const designation = worker.designation?.name ?? '';
@@ -170,32 +205,9 @@ export function IdCard({
 
     return (
       <div style={shell}>
-        {/* Title bar with company logo at the right edge */}
-        <div style={{ position: 'relative' }}>
-          {titleBar('IDENTITY CARD')}
-          {org?.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={photoSrc(org.logoUrl)}
-              alt=""
-              style={{
-                position: 'absolute',
-                right: `${1.2 * u}mm`,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                height: `${4.4 * u}mm`,
-                width: 'auto',
-                maxWidth: `${16 * u}mm`,
-                objectFit: 'contain',
-                background: '#fff',
-                borderRadius: `${0.6 * u}mm`,
-                padding: `${0.3 * u}mm`,
-              }}
-            />
-          )}
-        </div>
+        {titleBar('IDENTITY CARD')}
 
-        {/* Body: details table on the left, photo + badges on the right */}
+        {/* Body: details table on the left, logo + photo + badges on the right */}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
           <div
             style={{
@@ -218,10 +230,10 @@ export function IdCard({
               grow={1}
             />
             <Row cells={[{ label: 'Blood Group', value: worker.bloodGroup ?? '' }]} grow={1} />
-            <Row cells={[{ label: 'Emergency', value: emergency }]} grow={1} />
+            <Row cells={[{ label: 'Emergency Contact', value: emergency, labelW: 26 }]} grow={1} />
           </div>
 
-          {/* Right column: photo on top, disciplinary badges beneath */}
+          {/* Right column: company logo, photo, then disciplinary badges */}
           <div
             style={{
               width: `${27 * u}mm`,
@@ -232,6 +244,7 @@ export function IdCard({
               gap: `${1 * u}mm`,
             }}
           >
+            {logoBox(7)}
             <div
               style={{
                 flex: 1,
@@ -257,7 +270,7 @@ export function IdCard({
               )}
             </div>
             <div>
-              <DisciplinaryBadges px={Math.round(6 * u * 3.78)} />
+              <DisciplinaryBadges px={Math.round(7 * u * 3.78)} />
               <div
                 style={{
                   textAlign: 'center',
@@ -272,73 +285,76 @@ export function IdCard({
             </div>
           </div>
         </div>
-
-        {footerBar('Contact In Case Of Emergency (Name & Number)')}
       </div>
     );
   }
 
-  // ---- Back face: company + screening details, QR, training seals ----
-  const qrPx = Math.round(20 * u * 3.78);
-  const sealPx = Math.round(10.5 * u * 3.78);
+  // ---- Back face: company + screening/induction details, QR, training seals ----
+  const qrPx = Math.round(15 * u * 3.78);
+  const sealPx = Math.round(10 * u * 3.78);
 
   return (
     <div style={shell}>
-      {titleBar('SCREENING CARD')}
+      {titleBar('SCREENING & INDUCTION CARD')}
 
       {/* Company + screening rows on the left, QR on the right */}
       <div style={{ display: 'flex', borderBottom: `0.5px solid ${BORDER}` }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <Row cells={[{ label: 'Company', value: org?.name ?? '', labelW: 26 }]} />
-          <Row cells={[{ label: 'Screening Done on', value: fmtDate(worker.screeningDoneOn), labelW: 26 }]} />
-          <Row cells={[{ label: 'Screening Done by', value: worker.screeningDoneBy ?? '', labelW: 26 }]} />
-          <Row cells={[{ label: 'Validity till', value: fmtDate(worker.validityTill), labelW: 26 }]} />
+          <Row cells={[{ label: 'Name of the Company', value: org?.name ?? '', labelW: 30 }]} />
+          <Row cells={[{ label: 'Screening Done on', value: fmtDate(worker.screeningDoneOn), labelW: 30 }]} />
+          <Row cells={[{ label: 'Screening Done by', value: worker.screeningDoneBy ?? '', labelW: 30 }]} />
         </div>
         <div
           style={{
-            width: `${24 * u}mm`,
+            width: `${20 * u}mm`,
             flexShrink: 0,
             borderLeft: `0.5px solid ${BORDER}`,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: `${1 * u}mm`,
+            padding: `${0.8 * u}mm`,
           }}
         >
           <QRCodeSVG value={qrPayload(worker.workerCode)} size={qrPx} includeMargin={false} />
-          <div style={{ fontSize: `${1.6 * u}mm`, color: '#444', marginTop: `${0.5 * u}mm` }}>
-            {worker.workerCode}
-          </div>
         </div>
       </div>
 
-      {/* Computer-generated note (replaces the seal/signature requirement) */}
+      {/* Computer-generated note (replaces the General Safety Induction paragraph) */}
       <div
         style={{
-          fontSize: `${1.8 * u}mm`,
+          fontSize: `${1.75 * u}mm`,
           fontStyle: 'italic',
           color: '#555',
           textAlign: 'center',
-          padding: `${0.8 * u}mm ${1.2 * u}mm`,
+          padding: `${0.7 * u}mm ${1.2 * u}mm`,
           borderBottom: `0.5px solid ${BORDER}`,
         }}
       >
         This card is computer-generated and does not require a company seal or signature.
       </div>
 
-      {/* Job-specific training seals */}
-      <div style={{ flex: 1, minHeight: 0, padding: `${1 * u}mm ${1.4 * u}mm`, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontWeight: 700, fontSize: `${2.1 * u}mm`, marginBottom: `${0.8 * u}mm` }}>
+      {/* Induction details */}
+      <Row
+        cells={[
+          { label: 'Induction Done on', value: fmtDate(worker.inductionDoneOn), labelW: 30, valueFlex: 1 },
+          { label: 'Inducted By', value: worker.inductedBy ?? '', labelW: 20, valueFlex: 1 },
+        ]}
+      />
+
+      {/* Job-specific training seals (fills remaining height so nothing overlaps) */}
+      <div style={{ flex: 1, minHeight: 0, padding: `${0.9 * u}mm ${1.4 * u}mm`, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontWeight: 700, fontSize: `${2 * u}mm`, marginBottom: `${0.6 * u}mm` }}>
           Job Specific Training Attended:
         </div>
         <div
           style={{
             flex: 1,
+            minHeight: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: `${0.6 * u}mm`,
+            gap: `${0.5 * u}mm`,
           }}
         >
           {TRAINING_SEALS.map((s) => (
@@ -346,6 +362,8 @@ export function IdCard({
           ))}
         </div>
       </div>
+
+      <Row cells={[{ label: 'Validity till', value: fmtDate(worker.validityTill), labelW: 26 }]} />
 
       {footerBar('If Found, Please Return to Project Office')}
     </div>

@@ -3,12 +3,13 @@
 import * as React from 'react';
 
 /**
- * Vector safety-training seals and disciplinary-action badges printed on the
- * ID card. These are crisp at any print size. Swap in official artwork later by
- * replacing the icon paths / colours below — the layout stays the same.
+ * Vector safety-training seals and disciplinary-action badges printed on the ID
+ * card. Built as SVG so they stay crisp at any print size and print their
+ * colours (print-color-adjust: exact). Swap in official artwork later by
+ * replacing the icon groups / colours below — the layout stays the same.
  */
 
-type SealIcon = 'helmet' | 'flame' | 'cube' | 'bolt' | 'cross';
+type SealIcon = 'helmet' | 'extinguisher' | 'confined' | 'electrical' | 'cross' | 'flame';
 
 export interface SealDef {
   key: string;
@@ -20,30 +21,63 @@ export interface SealDef {
 
 /** The six "Job Specific Training Attended" seals, in reference order. */
 export const TRAINING_SEALS: SealDef[] = [
-  { key: 'induction', top: 'SAFETY INDUCTION', color: '#1565c0', icon: 'helmet' },
-  { key: 'fire', top: 'FIRE PROTECTION', color: '#ad1457', icon: 'flame' },
-  { key: 'confined', top: 'CONFINED SPACE', color: '#2e7d32', icon: 'cube' },
-  { key: 'electrical', top: 'ELECTRICAL SAFETY', color: '#c62828', icon: 'bolt' },
-  { key: 'safety', top: 'SAFETY', color: '#00838f', icon: 'cross' },
+  { key: 'induction', top: 'SAFETY INDUCTION', color: '#1f3a93', icon: 'helmet' },
+  { key: 'fire', top: 'FIRE PROTECTION', color: '#b0185a', icon: 'extinguisher' },
+  { key: 'confined', top: 'CONFINED SPACE', color: '#1e7d4f', icon: 'confined' },
+  { key: 'electrical', top: 'ELECTRICAL SAFETY', color: '#c62828', icon: 'electrical' },
+  { key: 'safety', top: 'SAFETY', color: '#0277bd', icon: 'cross' },
   { key: 'hotwork', top: 'HOT WORK', color: '#f9a825', icon: 'flame' },
 ];
 
-// Minimal 24×24 monochrome glyphs, drawn in the seal colour.
-const ICON_PATHS: Record<SealIcon, string> = {
-  helmet: 'M4 15a8 8 0 0 1 16 0H4zm-2 0h20v2.2H2V15z',
-  flame: 'M12 2c1.8 3.4 4.4 4.6 4.4 8.2A4.4 4.4 0 0 1 7.6 10.2c0-1.6.8-2.6 1.7-3.4.1 1.2.9 2 1.9 2 0-2.6-1.1-4.4-1.1-6.8z',
-  cube: 'M12 2.2 20.5 7v10L12 21.8 3.5 17V7L12 2.2zm0 2.3L6 7.8v8.4L12 19.5l6-3.3V7.8L12 4.5z',
-  bolt: 'M13 2 4 14h6l-2 8 10-13h-6l1-7z',
-  cross: 'M10 3h4v5h5v4h-5v5h-4v-5H5V8h5V3z',
-};
-
-function SealIconGlyph({ icon, color }: { icon: SealIcon; color: string }) {
-  // Center the 24×24 glyph inside the 100×100 seal viewBox.
-  return (
-    <g transform="translate(32 32) scale(1.45)">
-      <path d={ICON_PATHS[icon]} fill={color} />
-    </g>
-  );
+// Each icon is drawn inside a 40×40 box, translated to the seal centre. Filled
+// in the seal colour on the white inner disc.
+function IconGroup({ icon, color }: { icon: SealIcon; color: string }) {
+  const body = (() => {
+    switch (icon) {
+      case 'helmet':
+        return (
+          <>
+            <path d="M6 26a14 14 0 0 1 28 0z" fill={color} />
+            <rect x="2" y="26" width="36" height="4.5" rx="1.5" fill={color} />
+            <rect x="18" y="12" width="4" height="5" rx="1" fill={color} />
+          </>
+        );
+      case 'extinguisher':
+        return (
+          <>
+            <rect x="14" y="13" width="13" height="22" rx="3" fill={color} />
+            <rect x="18.5" y="7" width="4" height="7" fill={color} />
+            <rect x="12" y="8" width="11" height="3" rx="1.5" fill={color} />
+            <path d="M11 10c-3 0-5 2-5 5v3" stroke={color} strokeWidth="2.2" fill="none" />
+          </>
+        );
+      case 'confined':
+        return (
+          <>
+            <rect x="6" y="7" width="28" height="28" rx="5" fill="none" stroke={color} strokeWidth="3" />
+            <circle cx="20" cy="17" r="3.6" fill={color} />
+            <path d="M13 33c0-5 3.5-8 7-8s7 3 7 8z" fill={color} />
+          </>
+        );
+      case 'electrical':
+        return (
+          <>
+            <path d="M20 5 37 35H3z" fill={color} />
+            <path d="M22 14l-7 11h4.5l-2 8 9-13h-5z" fill="#fff" />
+          </>
+        );
+      case 'cross':
+        return <path d="M16 5h8v11h11v8H24v11h-8V24H5v-8h11z" fill={color} />;
+      case 'flame':
+        return (
+          <path
+            d="M21 4c4 7 9 9 9 17a9 9 0 0 1-18 0c0-4 2-6.5 4.5-8.5 0 3 2 4.5 4 4.5 0-5.5-3.5-8-3.5-13z"
+            fill={color}
+          />
+        );
+    }
+  })();
+  return <g transform="translate(30 30)">{body}</g>;
 }
 
 /** A single circular training seal, sized in CSS px. */
@@ -51,35 +85,37 @@ export function SafetySeal({ seal, px }: { seal: SealDef; px: number }) {
   const uid = React.useId().replace(/:/g, '');
   const topId = `top-${uid}`;
   const botId = `bot-${uid}`;
+  const topSize = seal.top.length > 13 ? 7.2 : 8.4;
   return (
     <svg
       width={px}
       height={px}
       viewBox="0 0 100 100"
-      style={{ display: 'block', flexShrink: 0 }}
+      style={{ display: 'block', flexShrink: 0, printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}
       aria-label={`${seal.top} trained`}
     >
       <defs>
         {/* Upper semicircle (left→top→right) and lower semicircle (right→bottom→left). */}
-        <path id={topId} d="M 50,50 m -40,0 a 40,40 0 1 1 80,0" fill="none" />
-        <path id={botId} d="M 50,50 m 40,0 a 40,40 0 1 1 -80,0" fill="none" />
+        <path id={topId} d="M 50,50 m -39,0 a 39,39 0 1 1 78,0" fill="none" />
+        <path id={botId} d="M 50,50 m 39,0 a 39,39 0 1 1 -78,0" fill="none" />
       </defs>
       <circle cx="50" cy="50" r="49" fill={seal.color} />
-      <circle cx="50" cy="50" r="40" fill="#fff" />
-      <circle cx="50" cy="50" r="29" fill="none" stroke={seal.color} strokeWidth="1.4" />
-      <g fill="#fff" fontFamily="Arial, sans-serif" fontWeight={700} letterSpacing="0.4">
-        <text fontSize="9.5">
+      <circle cx="50" cy="50" r="48" fill="none" stroke="#fff" strokeWidth="1" opacity="0.5" />
+      <circle cx="50" cy="50" r="33" fill="#fff" />
+      <circle cx="50" cy="50" r="33" fill="none" stroke={seal.color} strokeWidth="1.6" />
+      <g fill="#fff" fontFamily="Arial, sans-serif" fontWeight={700}>
+        <text fontSize={topSize} letterSpacing="0.2">
           <textPath href={`#${topId}`} startOffset="50%" textAnchor="middle">
             {seal.top}
           </textPath>
         </text>
-        <text fontSize="9.5">
+        <text fontSize="8.4" letterSpacing="1.4">
           <textPath href={`#${botId}`} startOffset="50%" textAnchor="middle">
             TRAINED
           </textPath>
         </text>
       </g>
-      <SealIconGlyph icon={seal.icon} color={seal.color} />
+      <IconGroup icon={seal.icon} color={seal.color} />
     </svg>
   );
 }
@@ -92,24 +128,34 @@ export function DisciplinaryBadges({ px }: { px: number }) {
     { label: '3rd', color: '#c62828' },
   ];
   return (
-    <div style={{ display: 'flex', gap: px * 0.22, justifyContent: 'center' }}>
+    <div style={{ display: 'flex', gap: px * 0.18, justifyContent: 'center' }}>
       {steps.map((s) => (
-        <svg key={s.label} width={px} height={px} viewBox="0 0 100 100" style={{ display: 'block' }}>
-          <circle cx="50" cy="50" r="48" fill={s.color} />
-          <circle cx="50" cy="50" r="40" fill="#fff" />
-          {/* Hard-hat worker glyph */}
-          <g transform="translate(30 22) scale(1.6)" fill={s.color}>
-            <circle cx="12" cy="9" r="4" />
-            <path d="M4 13a8 8 0 0 1 16 0H4z" />
-            <path d="M2 13h20v1.6H2z" />
+        <svg
+          key={s.label}
+          width={px}
+          height={px}
+          viewBox="0 0 100 100"
+          style={{ display: 'block', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}
+        >
+          <circle cx="50" cy="50" r="49" fill={s.color} />
+          <circle cx="50" cy="50" r="48" fill="none" stroke="#fff" strokeWidth="1.4" opacity="0.55" />
+          {/* White hard-hat worker figure */}
+          <g fill="#fff" transform="translate(28 18) scale(1.8)">
+            <path d="M4 9a8 8 0 0 1 16 0z" />
+            <rect x="2" y="9" width="20" height="2.4" rx="1" />
+            <rect x="10.6" y="3.4" width="2.8" height="3" rx="1" />
+            <circle cx="12" cy="16" r="3.4" />
+            <path d="M6.5 25c0-3.4 2.5-6 5.5-6s5.5 2.6 5.5 6z" />
           </g>
+          {/* Ordinal pill */}
+          <rect x="28" y="72" width="44" height="20" rx="10" fill="#fff" />
           <text
             x="50"
-            y="84"
+            y="86.5"
             textAnchor="middle"
             fontFamily="Arial, sans-serif"
             fontWeight={800}
-            fontSize="24"
+            fontSize="15"
             fill={s.color}
           >
             {s.label}

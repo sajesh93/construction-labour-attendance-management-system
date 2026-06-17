@@ -1,5 +1,15 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreateOrganizationDto {
   @ApiProperty()
@@ -86,4 +96,11 @@ export class UpdateOrganizationProfileDto {
   @IsString()
   @MaxLength(300)
   logoUrl?: string;
+
+  @ApiProperty({ required: false, description: 'ID-card logo zoom (1 = fit, up to 3)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.5)
+  @Max(3)
+  logoScale?: number;
 }

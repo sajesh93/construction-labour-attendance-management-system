@@ -24,6 +24,7 @@ export interface Organization {
   email?: string | null;
   website?: string | null;
   logoUrl?: string | null;
+  logoScale?: number | null;
 }
 
 export interface Site {
@@ -71,6 +72,8 @@ export interface Worker {
   emergencyContactNumber?: string | null;
   screeningDoneOn?: string | null;
   screeningDoneBy?: string | null;
+  inductionDoneOn?: string | null;
+  inductedBy?: string | null;
   validityTill?: string | null;
   nomineeName?: string | null;
   nomineeRelation?: string | null;

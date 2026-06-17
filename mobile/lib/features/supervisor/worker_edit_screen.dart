@@ -42,6 +42,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   final _nomineeRelation = TextEditingController();
   // Screening & ID card
   final _screeningBy = TextEditingController();
+  final _inductedBy = TextEditingController();
   // Bank & statutory
   final _bankName = TextEditingController();
   final _bankAccount = TextEditingController();
@@ -59,6 +60,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   DateTime? _dob;
   DateTime? _joinDate;
   DateTime? _screeningOn;
+  DateTime? _inductionOn;
   DateTime? _validityTill;
   String? _designationId;
   String? _vendorId;
@@ -98,6 +100,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       _nomineeName,
       _nomineeRelation,
       _screeningBy,
+      _inductedBy,
       _bankName,
       _bankAccount,
       _ifsc,
@@ -143,8 +146,11 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         _nomineeName.text = (w['nomineeName'] as String?) ?? '';
         _nomineeRelation.text = (w['nomineeRelation'] as String?) ?? '';
         _screeningBy.text = (w['screeningDoneBy'] as String?) ?? '';
+        _inductedBy.text = (w['inductedBy'] as String?) ?? '';
         final soStr = w['screeningDoneOn'] as String?;
         if (soStr != null) _screeningOn = DateTime.tryParse(soStr);
+        final ioStr = w['inductionDoneOn'] as String?;
+        if (ioStr != null) _inductionOn = DateTime.tryParse(ioStr);
         final vtStr = w['validityTill'] as String?;
         if (vtStr != null) _validityTill = DateTime.tryParse(vtStr);
         _bankName.text = (w['bankName'] as String?) ?? '';
@@ -306,6 +312,9 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (_screeningOn != null)
         'screeningDoneOn': _screeningOn!.toIso8601String().substring(0, 10),
       if (text(_screeningBy) != null) 'screeningDoneBy': text(_screeningBy),
+      if (_inductionOn != null)
+        'inductionDoneOn': _inductionOn!.toIso8601String().substring(0, 10),
+      if (text(_inductedBy) != null) 'inductedBy': text(_inductedBy),
       if (_validityTill != null)
         'validityTill': _validityTill!.toIso8601String().substring(0, 10),
       if (text(_bankName) != null) 'bankName': text(_bankName),
@@ -373,6 +382,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                 _emergencyNumber.text.trim().isEmpty ? null : _emergencyNumber.text.trim(),
             screeningDoneOn: _screeningOn?.toIso8601String().substring(0, 10),
             screeningDoneBy: _screeningBy.text.trim().isEmpty ? null : _screeningBy.text.trim(),
+            inductionDoneOn: _inductionOn?.toIso8601String().substring(0, 10),
+            inductedBy: _inductedBy.text.trim().isEmpty ? null : _inductedBy.text.trim(),
             validityTill: _validityTill?.toIso8601String().substring(0, 10),
             photoUrl: _photoUrl,
           ),
@@ -642,6 +653,25 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       ),
                     ),
                     _text(_screeningBy, 'Screening done by'),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: OutlinedButton(
+                        onPressed: () => _pickDate(
+                          current: _inductionOn,
+                          first: DateTime(2000),
+                          onPicked: (d) => setState(() => _inductionOn = d),
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _inductionOn == null
+                                ? 'Induction done on'
+                                : 'Induction done on: ${_inductionOn!.day}/${_inductionOn!.month}/${_inductionOn!.year}',
+                          ),
+                        ),
+                      ),
+                    ),
+                    _text(_inductedBy, 'Inducted by'),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: OutlinedButton(

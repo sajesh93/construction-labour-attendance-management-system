@@ -16,7 +16,9 @@ const CATEGORY_TITLES: Record<PersonCategory, string> = {
 
 // Remembered as the default for next time (per-browser).
 const SIZE_KEY = 'clams.badge.size';
-const ORIENT_KEY = 'clams.badge.orientation';
+
+// ID cards are landscape only (CR80 in the long orientation).
+const ORIENTATION: CardOrientation = 'landscape';
 
 export default function BadgesPage() {
   const params = useSearchParams();
@@ -27,24 +29,18 @@ export default function BadgesPage() {
   const [siteId, setSiteId] = React.useState('');
   const [q, setQ] = React.useState('');
 
-  // Card size + orientation, restored from localStorage after mount (avoids SSR
-  // hydration mismatch), and written back whenever the admin changes them.
+  // Card size, restored from localStorage after mount (avoids SSR hydration
+  // mismatch), and written back whenever the admin changes it.
   const [size, setSize] = React.useState<CardSize>('M');
-  const [orientation, setOrientation] = React.useState<CardOrientation>('landscape');
   React.useEffect(() => {
     const s = localStorage.getItem(SIZE_KEY) as CardSize | null;
-    const o = localStorage.getItem(ORIENT_KEY) as CardOrientation | null;
     if (s === 'S' || s === 'M' || s === 'L') setSize(s);
-    if (o === 'portrait' || o === 'landscape') setOrientation(o);
   }, []);
   const chooseSize = (s: CardSize) => {
     setSize(s);
     localStorage.setItem(SIZE_KEY, s);
   };
-  const chooseOrientation = (o: CardOrientation) => {
-    setOrientation(o);
-    localStorage.setItem(ORIENT_KEY, o);
-  };
+  const orientation = ORIENTATION;
 
   const org = useQuery({
     queryKey: ['org-current'],
@@ -136,17 +132,6 @@ export default function BadgesPage() {
           <MenuItem value="S">Small</MenuItem>
           <MenuItem value="M">Medium</MenuItem>
           <MenuItem value="L">Large</MenuItem>
-        </TextField>
-        <TextField
-          select
-          size="small"
-          label="Orientation"
-          value={orientation}
-          onChange={(e) => chooseOrientation(e.target.value as CardOrientation)}
-          sx={{ width: 140 }}
-        >
-          <MenuItem value="landscape">Landscape</MenuItem>
-          <MenuItem value="portrait">Portrait</MenuItem>
         </TextField>
         <Button size="small" onClick={() => setSelected(new Set(list.map((w) => w.id)))}>
           Select all

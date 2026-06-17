@@ -7,6 +7,10 @@
   .print-area,
   .print-area * {
     visibility: visible !important;
+    /* Force backgrounds/colours (e.g. the navy ID-card bars and seals) to print
+       instead of being dropped by the browser's default "no backgrounds" rule. */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .print-area {
     position: absolute !important;

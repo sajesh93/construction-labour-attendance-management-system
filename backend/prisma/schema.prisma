@@ -118,6 +118,8 @@ model Organization {
   email        String?
   website      String?
   logoUrl      String?  @map("logo_url")
+  // Print-time zoom for the logo on the ID card (1 = fit, >1 zooms in).
+  logoScale    Float    @default(1) @map("logo_scale")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -262,6 +264,8 @@ model Worker {
   emergencyContactNumber String?        @map("emergency_contact_number")
   screeningDoneOn        DateTime?      @map("screening_done_on") @db.Date
   screeningDoneBy        String?        @map("screening_done_by")
+  inductionDoneOn        DateTime?      @map("induction_done_on") @db.Date
+  inductedBy             String?        @map("inducted_by")
   validityTill           DateTime?      @map("validity_till") @db.Date
   nomineeName            String?        @map("nominee_name")
   nomineeRelation        String?        @map("nominee_relation")

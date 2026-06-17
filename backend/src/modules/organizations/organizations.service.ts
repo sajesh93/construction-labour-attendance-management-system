@@ -28,11 +28,11 @@ export class OrganizationsService {
   /** Update the caller's own company profile. Editable by Super + Site Admin. */
   async updateProfile(user: AuthUser, dto: UpdateOrganizationProfileDto) {
     const before = await this.get(user.organizationId);
-    // Blank strings clear the field; undefined leaves it untouched.
-    const data: Record<string, string | null> = {};
+    // Blank strings clear the field; undefined leaves it untouched; numbers pass through.
+    const data: Record<string, string | number | null> = {};
     for (const [k, v] of Object.entries(dto)) {
       if (v === undefined) continue;
-      data[k] = typeof v === 'string' && v.trim() === '' ? null : (v as string);
+      data[k] = typeof v === 'string' && v.trim() === '' ? null : v;
     }
     const org = await this.prisma.organization.update({
       where: { id: user.organizationId },
