@@ -56,22 +56,3 @@ class ApiCircleAvatar extends ConsumerWidget {
     }
   }
 }
-
-/// The bundled company logo for app-bar branding. Width-capped so it never
-/// crowds out the title text beside it.
-class CompanyLogo extends StatelessWidget {
-  const CompanyLogo({super.key, this.height = 24, this.maxWidth = 88});
-  final double height;
-  final double maxWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: height),
-        child: Image.asset('assets/logo.png', fit: BoxFit.contain),
-      ),
-    );
-  }
-}

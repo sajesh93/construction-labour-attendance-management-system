@@ -45,6 +45,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Align(
+                    alignment: Alignment.center,
+                    child: Image.asset('assets/logo.png', height: 72, fit: BoxFit.contain),
+                  ),
+                  const SizedBox(height: 20),
                   Text('CLAMS', style: Theme.of(context).textTheme.headlineMedium),
                   const SizedBox(height: 4),
                   Text('Attendance terminal',

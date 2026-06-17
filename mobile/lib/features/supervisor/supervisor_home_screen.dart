@@ -111,17 +111,7 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            const CompanyLogo(),
-            Flexible(
-              child: Text(
-                _siteName.isEmpty ? 'Safety Officer' : 'Safety Officer · $_siteName',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
+        title: Text(_siteName.isEmpty ? 'Safety Officer' : 'Safety Officer · $_siteName'),
         actions: [
           const SosButton(compact: true),
           PopupMenuButton<String>(

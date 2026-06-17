@@ -35,12 +35,6 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
     <Box sx={{ display: 'flex' }}>
       <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }} color="default" elevation={1}>
         <Toolbar>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.png"
-            alt=""
-            style={{ height: 34, width: 'auto', maxWidth: 150, objectFit: 'contain', marginRight: 12 }}
-          />
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             CLAMS Admin
           </Typography>
