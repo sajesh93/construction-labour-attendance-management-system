@@ -255,7 +255,7 @@ pw.Widget _disciplinary(double u) {
 
 /// A job-specific training seal: coloured ring with an abbreviation, name below.
 pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
-  final d = 27 * u;
+  final d = 23 * u;
   return pw.Column(
     mainAxisSize: pw.MainAxisSize.min,
     children: [

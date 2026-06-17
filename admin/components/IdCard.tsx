@@ -285,8 +285,11 @@ export function IdCard({
   }
 
   // ---- Back face: company + screening/induction details, QR, training seals ----
-  const qrPx = Math.round(11 * u * 3.78);
-  const sealPx = Math.round(11.5 * u * 3.78);
+  // Seal size kept to what fits the row (no clipping); the larger curved text +
+  // wider colour band keep it readable. QR only slightly larger so it doesn't
+  // squeeze the seal row.
+  const qrPx = Math.round(9.5 * u * 3.78);
+  const sealPx = Math.round(8.5 * u * 3.78);
 
   return (
     <div style={shell}>
