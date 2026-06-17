@@ -40,6 +40,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   final _emergencyNumber = TextEditingController();
   final _nomineeName = TextEditingController();
   final _nomineeRelation = TextEditingController();
+  // Screening & ID card
+  final _screeningBy = TextEditingController();
   // Bank & statutory
   final _bankName = TextEditingController();
   final _bankAccount = TextEditingController();
@@ -56,6 +58,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   String? _status;
   DateTime? _dob;
   DateTime? _joinDate;
+  DateTime? _screeningOn;
+  DateTime? _validityTill;
   String? _designationId;
   String? _vendorId;
   String? _photoUrl;
@@ -93,6 +97,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       _emergencyNumber,
       _nomineeName,
       _nomineeRelation,
+      _screeningBy,
       _bankName,
       _bankAccount,
       _ifsc,
@@ -137,6 +142,11 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         _emergencyNumber.text = (w['emergencyContactNumber'] as String?) ?? '';
         _nomineeName.text = (w['nomineeName'] as String?) ?? '';
         _nomineeRelation.text = (w['nomineeRelation'] as String?) ?? '';
+        _screeningBy.text = (w['screeningDoneBy'] as String?) ?? '';
+        final soStr = w['screeningDoneOn'] as String?;
+        if (soStr != null) _screeningOn = DateTime.tryParse(soStr);
+        final vtStr = w['validityTill'] as String?;
+        if (vtStr != null) _validityTill = DateTime.tryParse(vtStr);
         _bankName.text = (w['bankName'] as String?) ?? '';
         _bankAccount.text = (w['bankAccountNumber'] as String?) ?? '';
         _ifsc.text = (w['ifscCode'] as String?) ?? '';
@@ -293,6 +303,11 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (text(_emergencyNumber) != null) 'emergencyContactNumber': text(_emergencyNumber),
       if (text(_nomineeName) != null) 'nomineeName': text(_nomineeName),
       if (text(_nomineeRelation) != null) 'nomineeRelation': text(_nomineeRelation),
+      if (_screeningOn != null)
+        'screeningDoneOn': _screeningOn!.toIso8601String().substring(0, 10),
+      if (text(_screeningBy) != null) 'screeningDoneBy': text(_screeningBy),
+      if (_validityTill != null)
+        'validityTill': _validityTill!.toIso8601String().substring(0, 10),
       if (text(_bankName) != null) 'bankName': text(_bankName),
       if (text(_bankAccount) != null) 'bankAccountNumber': text(_bankAccount),
       if (text(_ifsc) != null) 'ifscCode': text(_ifsc),
@@ -350,10 +365,15 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
             vendor: _vendors.firstWhere((v) => v['id'] == _vendorId, orElse: () => {})['name']
                 as String?,
             siteName: _siteName,
+            gender: _gender,
+            dateOfBirth: _dob?.toIso8601String().substring(0, 10),
             bloodGroup: _bloodGroup.text.trim().isEmpty ? null : _bloodGroup.text.trim(),
             emergencyName: _emergencyName.text.trim().isEmpty ? null : _emergencyName.text.trim(),
             emergencyNumber:
                 _emergencyNumber.text.trim().isEmpty ? null : _emergencyNumber.text.trim(),
+            screeningDoneOn: _screeningOn?.toIso8601String().substring(0, 10),
+            screeningDoneBy: _screeningBy.text.trim().isEmpty ? null : _screeningBy.text.trim(),
+            validityTill: _validityTill?.toIso8601String().substring(0, 10),
             photoUrl: _photoUrl,
           ),
         ]);
@@ -398,12 +418,13 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
     required DateTime? current,
     required DateTime first,
     required ValueChanged<DateTime> onPicked,
+    DateTime? last,
   }) async {
     final picked = await showDatePicker(
       context: context,
       initialDate: current ?? DateTime.now(),
       firstDate: first,
-      lastDate: DateTime.now(),
+      lastDate: last ?? DateTime.now(),
     );
     if (picked != null) onPicked(picked);
   }
@@ -600,6 +621,47 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       _text(_nomineeName, 'Nominee name'),
                       _text(_nomineeRelation, 'Nominee relation (e.g. Wife)'),
                     ]),
+
+                  _section('Screening & ID card', [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: OutlinedButton(
+                        onPressed: () => _pickDate(
+                          current: _screeningOn,
+                          first: DateTime(2000),
+                          onPicked: (d) => setState(() => _screeningOn = d),
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _screeningOn == null
+                                ? 'Screening done on'
+                                : 'Screening done on: ${_screeningOn!.day}/${_screeningOn!.month}/${_screeningOn!.year}',
+                          ),
+                        ),
+                      ),
+                    ),
+                    _text(_screeningBy, 'Screening done by'),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: OutlinedButton(
+                        onPressed: () => _pickDate(
+                          current: _validityTill,
+                          first: DateTime(2000),
+                          last: DateTime(2100),
+                          onPicked: (d) => setState(() => _validityTill = d),
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _validityTill == null
+                                ? 'Validity till'
+                                : 'Validity till: ${_validityTill!.day}/${_validityTill!.month}/${_validityTill!.year}',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ]),
 
                   if (!_isVisitor)
                     _section('Bank & statutory', [

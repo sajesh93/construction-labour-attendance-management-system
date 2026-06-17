@@ -48,6 +48,9 @@ interface PersonForm {
   bloodGroup?: string;
   emergencyContactName?: string;
   emergencyContactNumber?: string;
+  screeningDoneOn?: string;
+  screeningDoneBy?: string;
+  validityTill?: string;
   nomineeName?: string;
   nomineeRelation?: string;
   vendorId?: string;
@@ -109,6 +112,9 @@ function toForm(w: WorkerDetail): PersonForm {
     bloodGroup: w.bloodGroup ?? '',
     emergencyContactName: w.emergencyContactName ?? '',
     emergencyContactNumber: w.emergencyContactNumber ?? '',
+    screeningDoneOn: w.screeningDoneOn ? w.screeningDoneOn.slice(0, 10) : '',
+    screeningDoneBy: w.screeningDoneBy ?? '',
+    validityTill: w.validityTill ? w.validityTill.slice(0, 10) : '',
     nomineeName: w.nomineeName ?? '',
     nomineeRelation: w.nomineeRelation ?? '',
     vendorId: w.vendorId ?? '',
@@ -658,6 +664,16 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 </Grid>
               </>
             )}
+
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="subtitle2" gutterBottom>
+              Screening & ID card
+            </Typography>
+            <Grid container spacing={2}>
+              {field('screeningDoneOn', 'Screening done on', { type: 'date' })}
+              {field('screeningDoneBy', 'Screening done by')}
+              {field('validityTill', 'Validity till', { type: 'date' })}
+            </Grid>
 
             <Divider sx={{ my: 2 }} />
             <Typography variant="subtitle2" gutterBottom>

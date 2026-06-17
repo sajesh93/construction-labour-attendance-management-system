@@ -116,6 +116,21 @@ export class CreateWorkerDto {
   @IsString()
   emergencyContactNumber?: string;
 
+  @ApiProperty({ required: false, description: 'Date screening/medical was done (printed on the ID card)' })
+  @IsOptional()
+  @IsDateString()
+  screeningDoneOn?: string;
+
+  @ApiProperty({ required: false, description: 'Who carried out the screening (free text)' })
+  @IsOptional()
+  @IsString()
+  screeningDoneBy?: string;
+
+  @ApiProperty({ required: false, description: 'ID card validity end date' })
+  @IsOptional()
+  @IsDateString()
+  validityTill?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()

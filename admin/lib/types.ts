@@ -69,10 +69,15 @@ export interface Worker {
   bloodGroup?: string | null;
   emergencyContactName?: string | null;
   emergencyContactNumber?: string | null;
+  screeningDoneOn?: string | null;
+  screeningDoneBy?: string | null;
+  validityTill?: string | null;
   nomineeName?: string | null;
   nomineeRelation?: string | null;
   vendorId?: string | null;
   vendor?: { name: string } | null;
+  // Current site assignment (supplies the "Project Name" line on the ID card).
+  assignments?: { site?: { name?: string | null } | null }[];
   natureOfContractor?: string | null;
   bankName?: string | null;
   bankAccountNumber?: string | null;

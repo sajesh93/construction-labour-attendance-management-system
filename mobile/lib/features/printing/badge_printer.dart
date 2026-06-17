@@ -51,9 +51,14 @@ class BadgeData {
     this.designation,
     this.vendor,
     this.siteName,
+    this.gender,
+    this.dateOfBirth,
     this.bloodGroup,
     this.emergencyName,
     this.emergencyNumber,
+    this.screeningDoneOn,
+    this.screeningDoneBy,
+    this.validityTill,
     this.photoUrl,
     this.photoBytes,
   });
@@ -62,10 +67,19 @@ class BadgeData {
   final String workerCode;
   final String? designation;
   final String? vendor;
+
+  /// Project / site name shown on the front of the card.
   final String? siteName;
+  final String? gender;
+
+  /// ISO date strings (yyyy-MM-dd) — formatted for print.
+  final String? dateOfBirth;
   final String? bloodGroup;
   final String? emergencyName;
   final String? emergencyNumber;
+  final String? screeningDoneOn;
+  final String? screeningDoneBy;
+  final String? validityTill;
 
   /// Stored photo ref (e.g. "/files/<id>") — resolved to [photoBytes] before print.
   final String? photoUrl;
@@ -77,19 +91,53 @@ class BadgeData {
         designation: designation,
         vendor: vendor,
         siteName: siteName,
+        gender: gender,
+        dateOfBirth: dateOfBirth,
         bloodGroup: bloodGroup,
         emergencyName: emergencyName,
         emergencyNumber: emergencyNumber,
+        screeningDoneOn: screeningDoneOn,
+        screeningDoneBy: screeningDoneBy,
+        validityTill: validityTill,
         photoUrl: photoUrl,
         photoBytes: bytes,
       );
 }
 
-const PdfColor _accent = PdfColor.fromInt(0xff1565c0);
+const PdfColor _navy = PdfColor.fromInt(0xff0d1b3e);
+const PdfColor _labelBg = PdfColor.fromInt(0xfff3f5f8);
 
 // CR80 in PDF points (1mm = 2.83465pt).
 const double _baseLongPt = 85.6 * 2.83465;
 const double _baseShortPt = 54 * 2.83465;
+
+const _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' //
+];
+
+String _fmtDate(String? iso) {
+  if (iso == null || iso.isEmpty) return '';
+  final d = DateTime.tryParse(iso);
+  if (d == null) return '';
+  return '${d.day.toString().padLeft(2, '0')}-${_months[d.month - 1]}-${d.year}';
+}
+
+String _age(String? dobIso) {
+  if (dobIso == null || dobIso.isEmpty) return '';
+  final d = DateTime.tryParse(dobIso);
+  if (d == null) return '';
+  final now = DateTime.now();
+  var a = now.year - d.year;
+  if (now.month < d.month || (now.month == d.month && now.day < d.day)) a--;
+  return a > 0 ? '$a' : '';
+}
+
+String _sex(String? g) => switch (g) {
+      'M' => 'Male',
+      'F' => 'Female',
+      null => '',
+      _ => g,
+    };
 
 ({double w, double h}) _dims(CardSize size, CardOrientation orientation) {
   final s = _sizeScale(size);
@@ -100,122 +148,321 @@ const double _baseShortPt = 54 * 2.83465;
       : (w: short, h: long);
 }
 
+pw.Widget _bar(String text, double u, {bool title = false}) {
+  return pw.Container(
+    width: double.infinity,
+    color: _navy,
+    padding: pw.EdgeInsets.symmetric(vertical: title ? 3.4 * u : 2.6 * u),
+    alignment: pw.Alignment.center,
+    child: pw.Text(
+      text,
+      textAlign: pw.TextAlign.center,
+      style: pw.TextStyle(
+        color: PdfColors.white,
+        fontWeight: title ? pw.FontWeight.bold : pw.FontWeight.normal,
+        fontSize: title ? 8.5 * u : 6 * u,
+        letterSpacing: title ? 0.6 : 0.2,
+      ),
+    ),
+  );
+}
+
+/// One label/value table row with thin borders.
+pw.Widget _row(String label, String value, double u, {double labelW = 62, bool grow = false}) {
+  final cell = pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+    children: [
+      pw.Container(
+        width: labelW * u,
+        color: _labelBg,
+        padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2.4 * u),
+        alignment: pw.Alignment.centerLeft,
+        child: pw.Text(label,
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 6 * u)),
+      ),
+      pw.Expanded(
+        child: pw.Container(
+          padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2.4 * u),
+          alignment: pw.Alignment.centerLeft,
+          child: pw.Text(value, maxLines: 1, overflow: pw.TextOverflow.clip,
+              style: pw.TextStyle(fontSize: 6.4 * u)),
+        ),
+      ),
+    ],
+  );
+  final box = pw.Container(
+    decoration: const pw.BoxDecoration(
+      border: pw.Border(
+        bottom: pw.BorderSide(color: PdfColors.grey700, width: 0.4),
+        right: pw.BorderSide(color: PdfColors.grey700, width: 0.4),
+      ),
+    ),
+    child: cell,
+  );
+  return grow ? pw.Expanded(child: box) : box;
+}
+
+/// 1st / 2nd / 3rd disciplinary-action chips (green → amber → red).
+pw.Widget _disciplinary(double u) {
+  const items = [
+    ('1st', PdfColor.fromInt(0xff2e7d32)),
+    ('2nd', PdfColor.fromInt(0xfff9a825)),
+    ('3rd', PdfColor.fromInt(0xffc62828)),
+  ];
+  final d = 13 * u;
+  return pw.Row(
+    mainAxisAlignment: pw.MainAxisAlignment.center,
+    children: [
+      for (final (label, color) in items)
+        pw.Container(
+          margin: pw.EdgeInsets.symmetric(horizontal: 1.2 * u),
+          width: d,
+          height: d,
+          decoration: pw.BoxDecoration(color: color, shape: pw.BoxShape.circle),
+          alignment: pw.Alignment.center,
+          child: pw.Container(
+            width: d * 0.74,
+            height: d * 0.74,
+            decoration: const pw.BoxDecoration(color: PdfColors.white, shape: pw.BoxShape.circle),
+            alignment: pw.Alignment.center,
+            child: pw.Text(label,
+                style: pw.TextStyle(
+                    color: color, fontWeight: pw.FontWeight.bold, fontSize: 4.6 * u)),
+          ),
+        ),
+    ],
+  );
+}
+
+/// A job-specific training seal: coloured circle with an abbreviation, name below.
+pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
+  final d = 26 * u;
+  return pw.Column(
+    mainAxisSize: pw.MainAxisSize.min,
+    children: [
+      pw.Container(
+        width: d,
+        height: d,
+        decoration: pw.BoxDecoration(
+          color: color,
+          shape: pw.BoxShape.circle,
+          border: pw.Border.all(color: PdfColors.white, width: 1 * u),
+        ),
+        alignment: pw.Alignment.center,
+        child: pw.Container(
+          width: d * 0.66,
+          height: d * 0.66,
+          decoration: const pw.BoxDecoration(color: PdfColors.white, shape: pw.BoxShape.circle),
+          alignment: pw.Alignment.center,
+          child: pw.Text(abbr,
+              style: pw.TextStyle(
+                  color: color, fontWeight: pw.FontWeight.bold, fontSize: 6.5 * u)),
+        ),
+      ),
+      pw.SizedBox(height: 1.2 * u),
+      pw.SizedBox(
+        width: d + 6 * u,
+        child: pw.Text(name,
+            textAlign: pw.TextAlign.center,
+            maxLines: 2,
+            style: pw.TextStyle(fontSize: 3.6 * u, color: PdfColors.grey800)),
+      ),
+    ],
+  );
+}
+
+const _seals = [
+  ('SI', 'Safety Induction', PdfColor.fromInt(0xff1565c0)),
+  ('FP', 'Fire Protection', PdfColor.fromInt(0xffad1457)),
+  ('CS', 'Confined Space', PdfColor.fromInt(0xff2e7d32)),
+  ('ES', 'Electrical Safety', PdfColor.fromInt(0xffc62828)),
+  ('ST', 'Safety Trained', PdfColor.fromInt(0xff00838f)),
+  ('HW', 'Hot Work', PdfColor.fromInt(0xfff9a825)),
+];
+
 pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
+  final emergency = [b.emergencyName, b.emergencyNumber]
+      .where((e) => (e ?? '').isNotEmpty)
+      .join(' · ');
   return pw.Container(
     width: w,
     height: h,
     decoration: pw.BoxDecoration(
-      border: pw.Border.all(color: PdfColors.grey400, width: 0.6),
-      borderRadius: pw.BorderRadius.circular(7 * u),
+      border: pw.Border.all(color: PdfColors.grey700, width: 0.6),
       color: PdfColors.white,
     ),
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        // Company header
-        pw.Container(
-          padding: pw.EdgeInsets.symmetric(horizontal: 6 * u, vertical: 4 * u),
-          decoration: const pw.BoxDecoration(color: _accent),
-          child: pw.Row(
-            children: [
-              if (org?.logoBytes != null) ...[
-                pw.SizedBox(
-                  height: 16 * u,
-                  width: 16 * u,
+        // Title bar with logo at the right edge.
+        pw.Stack(
+          children: [
+            _bar('IDENTITY CARD', u, title: true),
+            if (org?.logoBytes != null)
+              pw.Positioned(
+                right: 3 * u,
+                top: 2 * u,
+                child: pw.Container(
+                  height: 11 * u,
+                  padding: pw.EdgeInsets.all(0.8 * u),
+                  color: PdfColors.white,
                   child: pw.Image(pw.MemoryImage(org!.logoBytes!), fit: pw.BoxFit.contain),
                 ),
-                pw.SizedBox(width: 5 * u),
-              ],
+              ),
+          ],
+        ),
+        // Body: details table | photo + badges
+        pw.Expanded(
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
               pw.Expanded(
+                child: pw.Container(
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(right: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    children: [
+                      _row('Project Name', b.siteName ?? '', u, grow: true),
+                      _row('Employee name', b.fullName, u, grow: true),
+                      _row('ID No', b.workerCode, u, grow: true),
+                      _row('JOB Title', b.designation ?? '', u, grow: true),
+                      pw.Expanded(
+                        child: pw.Row(children: [
+                          pw.Expanded(child: _row('Age', _age(b.dateOfBirth), u, labelW: 26)),
+                          pw.Expanded(child: _row('Sex', _sex(b.gender), u, labelW: 26)),
+                        ]),
+                      ),
+                      _row('Blood Group', b.bloodGroup ?? '', u, grow: true),
+                      _row('Emergency', emergency, u, grow: true),
+                    ],
+                  ),
+                ),
+              ),
+              pw.Container(
+                width: 76 * u,
+                padding: pw.EdgeInsets.all(3 * u),
                 child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  mainAxisSize: pw.MainAxisSize.min,
                   children: [
-                    pw.Text(
-                      org?.name ?? 'CLAMS',
-                      maxLines: 1,
-                      overflow: pw.TextOverflow.clip,
-                      style: pw.TextStyle(
-                        color: PdfColors.white,
-                        fontWeight: pw.FontWeight.bold,
-                        fontSize: 9 * u,
+                    pw.Expanded(
+                      child: pw.Container(
+                        width: double.infinity,
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.grey200,
+                          border: pw.Border.all(color: PdfColors.grey700, width: 0.5),
+                        ),
+                        child: b.photoBytes != null
+                            ? pw.Image(pw.MemoryImage(b.photoBytes!), fit: pw.BoxFit.cover)
+                            : pw.Center(
+                                child: pw.Text('Photo',
+                                    style: pw.TextStyle(fontSize: 6 * u, color: PdfColors.grey500)),
+                              ),
                       ),
                     ),
-                    if (org?.cityLine != null)
-                      pw.Text(
-                        org!.cityLine!,
-                        maxLines: 1,
-                        style: pw.TextStyle(color: PdfColors.white, fontSize: 5.5 * u),
-                      ),
+                    pw.SizedBox(height: 2 * u),
+                    _disciplinary(u),
+                    pw.SizedBox(height: 1 * u),
+                    pw.Text('Disciplinary Action on Safety Violation',
+                        textAlign: pw.TextAlign.center,
+                        maxLines: 2,
+                        style: pw.TextStyle(fontSize: 3.6 * u, color: PdfColors.grey800)),
                   ],
                 ),
               ),
             ],
           ),
         ),
-        // Identity — fills the body, evenly spaced
+        _bar('Contact In Case Of Emergency (Name & Number)', u),
+      ],
+    ),
+  );
+}
+
+pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
+  return pw.Container(
+    width: w,
+    height: h,
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: PdfColors.grey700, width: 0.6),
+      color: PdfColors.white,
+    ),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        _bar('SCREENING CARD', u, title: true),
+        // Company + screening rows | QR
+        pw.Container(
+          decoration: const pw.BoxDecoration(
+            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
+          ),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    _row('Company', org?.name ?? '', u, labelW: 74),
+                    _row('Screening Done on', _fmtDate(b.screeningDoneOn), u, labelW: 74),
+                    _row('Screening Done by', b.screeningDoneBy ?? '', u, labelW: 74),
+                    _row('Validity till', _fmtDate(b.validityTill), u, labelW: 74),
+                  ],
+                ),
+              ),
+              pw.Container(
+                width: 66 * u,
+                padding: pw.EdgeInsets.all(3 * u),
+                decoration: const pw.BoxDecoration(
+                  border: pw.Border(left: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
+                ),
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.BarcodeWidget(
+                      barcode: pw.Barcode.qrCode(),
+                      data: 'CLAMS:${b.workerCode}',
+                      width: 50 * u,
+                      height: 50 * u,
+                    ),
+                    pw.SizedBox(height: 1 * u),
+                    pw.Text(b.workerCode, style: pw.TextStyle(fontSize: 4.4 * u)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Computer-generated note (replaces seal / signature).
+        pw.Container(
+          width: double.infinity,
+          padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2 * u),
+          decoration: const pw.BoxDecoration(
+            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
+          ),
+          child: pw.Text(
+            'This card is computer-generated and does not require a company seal or signature.',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+                fontSize: 4.6 * u, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700),
+          ),
+        ),
+        // Job-specific training seals.
         pw.Expanded(
           child: pw.Padding(
-            padding: pw.EdgeInsets.all(9 * u),
-            child: pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            padding: pw.EdgeInsets.symmetric(horizontal: 4 * u, vertical: 2.5 * u),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Container(
-                  width: 60 * u,
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.grey200,
-                    border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
-                    borderRadius: pw.BorderRadius.circular(5 * u),
-                  ),
-                  child: b.photoBytes != null
-                      ? pw.ClipRRect(
-                          horizontalRadius: 5 * u,
-                          verticalRadius: 5 * u,
-                          child: pw.Image(pw.MemoryImage(b.photoBytes!), fit: pw.BoxFit.cover),
-                        )
-                      : pw.Center(
-                          child: pw.Text('No photo',
-                              style: pw.TextStyle(fontSize: 7 * u, color: PdfColors.grey500)),
-                        ),
-                ),
-                pw.SizedBox(width: 10 * u),
+                pw.Text('Job Specific Training Attended:',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 5.6 * u)),
+                pw.SizedBox(height: 2 * u),
                 pw.Expanded(
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            b.fullName,
-                            maxLines: 2,
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11 * u),
-                          ),
-                          if (b.designation != null) ...[
-                            pw.SizedBox(height: 4 * u),
-                            pw.Text(b.designation!,
-                                maxLines: 1,
-                                style: pw.TextStyle(fontSize: 8 * u, color: PdfColors.grey800)),
-                          ],
-                          if (b.vendor != null) ...[
-                            pw.SizedBox(height: 2 * u),
-                            pw.Text(b.vendor!,
-                                maxLines: 1,
-                                style: pw.TextStyle(fontSize: 7 * u, color: PdfColors.grey600)),
-                          ],
-                        ],
-                      ),
-                      pw.Container(
-                        padding: pw.EdgeInsets.symmetric(horizontal: 6 * u, vertical: 2.5 * u),
-                        decoration: pw.BoxDecoration(
-                          color: const PdfColor.fromInt(0xffe8f0fb),
-                          borderRadius: pw.BorderRadius.circular(10 * u),
-                        ),
-                        child: pw.Text(b.workerCode,
-                            style: pw.TextStyle(
-                                fontSize: 8 * u, fontWeight: pw.FontWeight.bold, color: _accent)),
-                      ),
+                      for (final (abbr, name, color) in _seals) _seal(abbr, name, color, u),
                     ],
                   ),
                 ),
@@ -223,66 +470,7 @@ pw.Widget _front(BadgeData b, OrgInfo? org, double w, double h, double u) {
             ),
           ),
         ),
-      ],
-    ),
-  );
-}
-
-pw.Widget _back(BadgeData b, OrgInfo? org, double w, double h, double u) {
-  final emergency = [b.emergencyName, b.emergencyNumber]
-      .where((e) => (e ?? '').isNotEmpty)
-      .join(' · ');
-  return pw.Container(
-    width: w,
-    height: h,
-    padding: pw.EdgeInsets.all(6 * u),
-    decoration: pw.BoxDecoration(
-      border: pw.Border.all(color: PdfColors.grey400, width: 0.6),
-      borderRadius: pw.BorderRadius.circular(7 * u),
-      color: PdfColors.white,
-    ),
-    child: pw.Column(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: pw.CrossAxisAlignment.center,
-      children: [
-        pw.BarcodeWidget(
-          barcode: pw.Barcode.qrCode(),
-          data: 'CLAMS:${b.workerCode}',
-          width: 64 * u,
-          height: 64 * u,
-        ),
-        // Blood group and emergency contact both shown, with breathing room.
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.center,
-          children: [
-            if ((b.bloodGroup ?? '').isNotEmpty)
-              pw.RichText(
-                text: pw.TextSpan(
-                  children: [
-                    pw.TextSpan(
-                        text: 'Blood group: ',
-                        style: pw.TextStyle(fontSize: 8 * u, fontWeight: pw.FontWeight.bold)),
-                    pw.TextSpan(text: b.bloodGroup, style: pw.TextStyle(fontSize: 8 * u)),
-                  ],
-                ),
-              ),
-            if ((b.bloodGroup ?? '').isNotEmpty && emergency.isNotEmpty)
-              pw.SizedBox(height: 4 * u),
-            if (emergency.isNotEmpty) ...[
-              pw.Text('Emergency contact',
-                  style: pw.TextStyle(
-                      fontSize: 7 * u, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
-              pw.SizedBox(height: 1.5 * u),
-              pw.Text(emergency,
-                  textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 7 * u)),
-            ],
-          ],
-        ),
-        pw.Text(
-          [org?.name ?? 'CLAMS', if ((org?.phone ?? '').isNotEmpty) org!.phone].join(' · '),
-          textAlign: pw.TextAlign.center,
-          style: pw.TextStyle(fontSize: 6 * u, color: PdfColors.grey600),
-        ),
+        _bar('If Found, Please Return to Project Office', u),
       ],
     ),
   );
