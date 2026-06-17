@@ -116,7 +116,10 @@ export class CreateWorkerDto {
   @IsString()
   emergencyContactNumber?: string;
 
-  @ApiProperty({ required: false, description: 'Date screening/medical was done (printed on the ID card)' })
+  @ApiProperty({
+    required: false,
+    description: 'Date screening/medical was done (printed on the ID card)',
+  })
   @IsOptional()
   @IsDateString()
   screeningDoneOn?: string;
