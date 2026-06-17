@@ -57,19 +57,21 @@ class ApiCircleAvatar extends ConsumerWidget {
   }
 }
 
-/// The company logo for app-bar branding. Renders nothing until/unless a logo
-/// is available, so it's safe to drop into any AppBar title row.
-class CompanyLogo extends ConsumerWidget {
-  const CompanyLogo({super.key, this.height = 28});
+/// The bundled company logo for app-bar branding. Width-capped so it never
+/// crowds out the title text beside it.
+class CompanyLogo extends StatelessWidget {
+  const CompanyLogo({super.key, this.height = 24, this.maxWidth = 88});
   final double height;
+  final double maxWidth;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final bytes = ref.watch(companyLogoProvider).asData?.value;
-    if (bytes == null) return const SizedBox.shrink();
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: Image.memory(bytes, height: height, fit: BoxFit.contain),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: height),
+        child: Image.asset('assets/logo.png', fit: BoxFit.contain),
+      ),
     );
   }
 }

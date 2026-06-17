@@ -267,9 +267,12 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
             child: Center(
               child: pending.when(
                 data: (n) => ActionChip(
-                  label: Text('$n queued'),
+                  avatar: Icon(n == 0 ? Icons.cloud_done : Icons.cloud_upload, size: 18),
+                  label: Text(n == 0 ? 'Synced' : '$n to sync'),
                   backgroundColor: n == 0 ? Colors.green.shade100 : Colors.orange.shade100,
-                  tooltip: 'Tap to sync now',
+                  tooltip: n == 0
+                      ? 'All punches uploaded — tap to sync now'
+                      : '$n punch(es) waiting to upload — tap to sync now',
                   onPressed: _backgroundSync,
                 ),
                 loading: () => const SizedBox.shrink(),
