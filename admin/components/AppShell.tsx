@@ -14,9 +14,12 @@ import {
   Button,
   Chip,
 } from '@mui/material';
-import { Me } from '@/lib/types';
+import { useQuery } from '@tanstack/react-query';
+import { Me, Organization } from '@/lib/types';
 import { navForRole, roleLabel } from '@/lib/rbac';
 import { SosBanner } from '@/components/SosBanner';
+import { api } from '@/lib/api/browser';
+import { photoSrc } from '@/components/PeopleDirectory';
 
 const DRAWER_WIDTH = 240;
 
@@ -24,6 +27,10 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
   const router = useRouter();
   const pathname = usePathname();
   const items = navForRole(me.role);
+  const org = useQuery({
+    queryKey: ['org-current'],
+    queryFn: () => api.get<Organization>('/organizations/current'),
+  });
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -35,8 +42,16 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
     <Box sx={{ display: 'flex' }}>
       <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }} color="default" elevation={1}>
         <Toolbar>
+          {org.data?.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={photoSrc(org.data.logoUrl)}
+              alt=""
+              style={{ height: 36, width: 'auto', maxWidth: 120, objectFit: 'contain', marginRight: 12 }}
+            />
+          )}
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            CLAMS Admin
+            {org.data?.name ? `${org.data.name}` : 'CLAMS Admin'}
           </Typography>
           {me.fullName.trim().toLowerCase() !== roleLabel(me.role).trim().toLowerCase() && (
             <Chip label={roleLabel(me.role)} size="small" sx={{ mr: 2 }} />

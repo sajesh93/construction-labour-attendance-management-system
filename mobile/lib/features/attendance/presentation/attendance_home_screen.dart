@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/providers.dart';
 import '../../../core/time/clock_guard.dart';
+import '../../../core/widgets/api_image.dart';
 import '../attendance_providers.dart';
 import '../../auth/auth_controller.dart';
 import '../../device/device_service.dart';
@@ -248,7 +249,17 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
     final pending = ref.watch(pendingCountProvider);
     return Scaffold(
       appBar: AppBar(
-        title: Text(_siteName.isEmpty ? 'Attendance' : _siteName),
+        title: Row(
+          children: [
+            const CompanyLogo(),
+            Flexible(
+              child: Text(
+                _siteName.isEmpty ? 'Attendance' : _siteName,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
         actions: [
           const SosButton(compact: true),
           Padding(

@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'geo/location_service.dart';
@@ -18,3 +21,19 @@ final apiClientProvider = Provider<ApiClient>(
 final nfcReaderProvider = Provider<NfcReader>((ref) => NfcManagerReader());
 
 final locationServiceProvider = Provider<LocationService>((ref) => LocationService());
+
+/// Company logo bytes (for app-bar branding), fetched once and cached. Returns
+/// null when no logo is set or the device is offline.
+final companyLogoProvider = FutureProvider<Uint8List?>((ref) async {
+  final dio = ref.read(apiClientProvider).dio;
+  try {
+    final res = await dio.get('/organizations/current');
+    final url = (res.data as Map)['logoUrl'] as String?;
+    if (url == null || url.isEmpty) return null;
+    final img = await dio.get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
+    final bytes = Uint8List.fromList(img.data ?? const []);
+    return bytes.isEmpty ? null : bytes;
+  } catch (_) {
+    return null;
+  }
+});

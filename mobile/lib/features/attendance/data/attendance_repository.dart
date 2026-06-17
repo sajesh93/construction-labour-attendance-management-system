@@ -34,8 +34,16 @@ class AttendanceRepository {
 
   /// Resolve a worker from cached data for the given identifier/source.
   /// QR badges encode the EMP-ID (worker code); fall back to the opaque
-  /// qr identifier for legacy codes.
+  /// qr identifier for legacy codes. On a local cache miss we ask the server
+  /// (best-effort) — this covers workers not assigned to the active site or a
+  /// cache that hasn't refreshed yet, so a valid badge isn't reported as unknown.
   Future<WorkerCard?> resolve(TapSource source, String identifier) async {
+    final local = await _resolveLocal(source, identifier);
+    if (local != null) return local;
+    return _resolveRemote(source, identifier);
+  }
+
+  Future<WorkerCard?> _resolveLocal(TapSource source, String identifier) async {
     switch (source) {
       case TapSource.nfcUid:
         return _db.findByUid(identifier);
@@ -44,6 +52,40 @@ class AttendanceRepository {
       default:
         return _db.findByCode(identifier);
     }
+  }
+
+  /// Server lookup used only when the offline cache misses. Caches the result so
+  /// the next scan resolves locally. Returns null when offline or not found —
+  /// the tap is still recorded by identifier and resolves on sync.
+  Future<WorkerCard?> _resolveRemote(TapSource source, String identifier) async {
+    final attempts = switch (source) {
+      TapSource.nfcUid => [
+          {'uid': identifier},
+        ],
+      TapSource.qr => [
+          {'code': identifier},
+          {'qr': identifier},
+        ],
+      _ => [
+          {'code': identifier},
+        ],
+    };
+    for (final params in attempts) {
+      try {
+        final res = await _api.dio.get('/workers/lookup', queryParameters: params);
+        final data = res.data;
+        if (data is Map<String, dynamic>) {
+          final card = WorkerCard.fromMap(data);
+          await _db.cacheWorkers([card]);
+          return card;
+        }
+      } on DioException catch (e) {
+        // No response means offline — stop trying. A 404 just means "not this
+        // identifier"; move on to the next attempt.
+        if (e.response == null) break;
+      }
+    }
+    return null;
   }
 
   /// Core offline-first tap: resolve locally → decide → persist to outbox →

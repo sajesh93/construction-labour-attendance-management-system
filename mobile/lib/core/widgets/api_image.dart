@@ -56,3 +56,20 @@ class ApiCircleAvatar extends ConsumerWidget {
     }
   }
 }
+
+/// The company logo for app-bar branding. Renders nothing until/unless a logo
+/// is available, so it's safe to drop into any AppBar title row.
+class CompanyLogo extends ConsumerWidget {
+  const CompanyLogo({super.key, this.height = 28});
+  final double height;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bytes = ref.watch(companyLogoProvider).asData?.value;
+    if (bytes == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Image.memory(bytes, height: height, fit: BoxFit.contain),
+    );
+  }
+}
