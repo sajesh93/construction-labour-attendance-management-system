@@ -47,7 +47,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 children: [
                   Align(
                     alignment: Alignment.center,
-                    child: Image.asset('assets/logo.png', height: 72, fit: BoxFit.contain),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F365D),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Image.asset('assets/logo.png', height: 56, fit: BoxFit.contain),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Text('CLAMS', style: Theme.of(context).textTheme.headlineMedium),

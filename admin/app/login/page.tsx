@@ -51,8 +51,22 @@ export default function LoginPage() {
       <Card sx={{ width: 400, maxWidth: '90vw' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Optispace" style={{ height: 56, maxWidth: '75%', objectFit: 'contain' }} />
+            <Box
+              sx={{
+                bgcolor: '#0F365D',
+                borderRadius: 2,
+                px: 3,
+                py: 1.5,
+                display: 'inline-flex',
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.png"
+                alt="Optispace"
+                style={{ height: 48, maxWidth: 220, objectFit: 'contain', display: 'block' }}
+              />
+            </Box>
           </Box>
           <Typography variant="h5" gutterBottom>
             CLAMS Admin
