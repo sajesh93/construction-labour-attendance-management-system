@@ -12,6 +12,9 @@ out/
 .env.local
 .env.*.local
 infra/.env
+# Firebase service-account key (server secret — NEVER commit; set as the API env var)
+*firebase-adminsdk*.json
+serviceAccount*.json
 
 # Prisma
 backend/prisma/*.db
@@ -24,7 +27,6 @@ mobile/build/
 mobile/.packages
 mobile/ios/Pods/
 mobile/android/.gradle/
-mobile/android/app/google-services.json
 *.g.dart
 *.freezed.dart
 

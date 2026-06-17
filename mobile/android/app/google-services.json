@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "543645944124",
+    "project_id": "clams-768c9",
+    "storage_bucket": "clams-768c9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:543645944124:android:fd3f661b8538737834b639",
+        "android_client_info": {
+          "package_name": "com.clamsapp.clams_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvqm3MqUJQHh59-RCu9soispIurwqew2o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
