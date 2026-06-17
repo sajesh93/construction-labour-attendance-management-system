@@ -224,7 +224,7 @@ pw.Widget _disciplinary(double u) {
     ('2nd', PdfColor.fromInt(0xfff9a825)),
     ('3rd', PdfColor.fromInt(0xffc62828)),
   ];
-  final d = 14 * u;
+  final d = 16 * u;
   return pw.Row(
     mainAxisAlignment: pw.MainAxisAlignment.center,
     children: [
@@ -240,13 +240,13 @@ pw.Widget _disciplinary(double u) {
           ),
           alignment: pw.Alignment.center,
           child: pw.Container(
-            width: d * 0.72,
-            height: d * 0.72,
+            width: d * 0.74,
+            height: d * 0.74,
             decoration: const pw.BoxDecoration(color: PdfColors.white, shape: pw.BoxShape.circle),
             alignment: pw.Alignment.center,
             child: pw.Text(label,
                 style: pw.TextStyle(
-                    color: color, fontWeight: pw.FontWeight.bold, fontSize: 4.8 * u)),
+                    color: color, fontWeight: pw.FontWeight.bold, fontSize: 5.6 * u)),
           ),
         ),
     ],
@@ -255,7 +255,7 @@ pw.Widget _disciplinary(double u) {
 
 /// A job-specific training seal: coloured ring with an abbreviation, name below.
 pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
-  final d = 24 * u;
+  final d = 27 * u;
   return pw.Column(
     mainAxisSize: pw.MainAxisSize.min,
     children: [
@@ -279,16 +279,16 @@ pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
           alignment: pw.Alignment.center,
           child: pw.Text(abbr,
               style: pw.TextStyle(
-                  color: color, fontWeight: pw.FontWeight.bold, fontSize: 6.5 * u)),
+                  color: color, fontWeight: pw.FontWeight.bold, fontSize: 7.5 * u)),
         ),
       ),
       pw.SizedBox(height: 1.2 * u),
       pw.SizedBox(
-        width: d + 6 * u,
+        width: d + 8 * u,
         child: pw.Text(name,
             textAlign: pw.TextAlign.center,
             maxLines: 2,
-            style: pw.TextStyle(fontSize: 3.6 * u, color: PdfColors.grey800)),
+            style: pw.TextStyle(fontSize: 4.2 * u, color: PdfColors.grey800)),
       ),
     ],
   );
@@ -417,18 +417,24 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
                 ),
               ),
               pw.Container(
-                width: 54 * u,
+                width: 58 * u,
                 padding: pw.EdgeInsets.all(2.5 * u),
                 decoration: const pw.BoxDecoration(
                   border: pw.Border(left: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
                 ),
-                child: pw.Center(
-                  child: pw.BarcodeWidget(
-                    barcode: pw.Barcode.qrCode(),
-                    data: 'CLAMS:${b.workerCode}',
-                    width: 36 * u,
-                    height: 36 * u,
-                  ),
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.BarcodeWidget(
+                      barcode: pw.Barcode.qrCode(),
+                      data: 'CLAMS:${b.workerCode}',
+                      width: 44 * u,
+                      height: 44 * u,
+                    ),
+                    pw.SizedBox(height: 1 * u),
+                    pw.Text(b.workerCode,
+                        style: pw.TextStyle(fontSize: 5 * u, fontWeight: pw.FontWeight.bold)),
+                  ],
                 ),
               ),
             ],
@@ -498,15 +504,16 @@ Future<void> printCards(
       margin: const pw.EdgeInsets.all(20),
       build: (_) => [
         pw.Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          // Generous gaps so the printed cards can be cut apart easily.
+          spacing: 28,
+          runSpacing: 28,
           children: [
             for (final b in badges)
               pw.Row(
                 mainAxisSize: pw.MainAxisSize.min,
                 children: [
                   _front(b, org, u),
-                  pw.SizedBox(width: 4),
+                  pw.SizedBox(width: 16),
                   _back(b, org, u),
                 ],
               ),

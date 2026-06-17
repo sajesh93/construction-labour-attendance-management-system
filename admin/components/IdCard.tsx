@@ -165,31 +165,25 @@ export function IdCard({
     </div>
   );
 
-  const logoBox = (hMm: number) =>
+  // The bordered box hugs the logo (auto-sizes to it) so there's no empty space;
+  // the Company-page zoom (logoScale) drives how large the logo prints.
+  const logoBox = () =>
     org?.logoUrl ? (
-      <div
-        style={{
-          height: `${hMm * u}mm`,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          border: `0.5px solid ${BORDER}`,
-          borderRadius: `${0.8 * u}mm`,
-          background: '#fff',
-        }}
-      >
+      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={photoSrc(org.logoUrl)}
           alt=""
           style={{
-            // Scale up to fill the box (no empty space); zoom slider fine-tunes.
-            width: '100%',
-            height: '100%',
+            maxHeight: `${7 * u * logoScale}mm`,
+            maxWidth: '100%',
             objectFit: 'contain',
-            transform: `scale(${logoScale})`,
+            display: 'block',
+            border: `0.5px solid ${BORDER}`,
+            borderRadius: `${0.8 * u}mm`,
+            background: '#fff',
+            padding: `${0.5 * u}mm`,
+            boxSizing: 'border-box',
           }}
         />
       </div>
@@ -245,7 +239,7 @@ export function IdCard({
               gap: `${1 * u}mm`,
             }}
           >
-            {logoBox(7)}
+            {logoBox()}
             <div
               style={{
                 flex: 1,
@@ -271,7 +265,7 @@ export function IdCard({
               )}
             </div>
             <div>
-              <DisciplinaryBadges px={Math.round(7 * u * 3.78)} />
+              <DisciplinaryBadges px={Math.round(7.8 * u * 3.78)} />
               <div
                 style={{
                   textAlign: 'center',
@@ -291,9 +285,8 @@ export function IdCard({
   }
 
   // ---- Back face: company + screening/induction details, QR, training seals ----
-  // A small QR + seals leave real vertical slack so nothing overlaps.
-  const qrPx = Math.round(9 * u * 3.78);
-  const sealPx = Math.round(8.5 * u * 3.78);
+  const qrPx = Math.round(11 * u * 3.78);
+  const sealPx = Math.round(11.5 * u * 3.78);
 
   return (
     <div style={shell}>
@@ -308,16 +301,20 @@ export function IdCard({
         </div>
         <div
           style={{
-            width: `${15 * u}mm`,
+            width: `${17 * u}mm`,
             flexShrink: 0,
             borderLeft: `0.5px solid ${BORDER}`,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: `${0.6 * u}mm`,
+            padding: `${0.5 * u}mm`,
           }}
         >
           <QRCodeSVG value={qrPayload(worker.workerCode)} size={qrPx} includeMargin={false} />
+          <div style={{ fontSize: `${1.8 * u}mm`, fontWeight: 700, marginTop: `${0.4 * u}mm`, lineHeight: 1 }}>
+            {worker.workerCode}
+          </div>
         </div>
       </div>
 

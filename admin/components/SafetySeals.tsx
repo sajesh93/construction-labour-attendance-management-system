@@ -85,7 +85,8 @@ export function SafetySeal({ seal, px }: { seal: SealDef; px: number }) {
   const uid = React.useId().replace(/:/g, '');
   const topId = `top-${uid}`;
   const botId = `bot-${uid}`;
-  const topSize = seal.top.length > 13 ? 7.2 : 8.4;
+  // Larger, length-aware text so the seal stays readable at print size.
+  const topSize = seal.top.length > 14 ? 9 : seal.top.length > 10 ? 10 : 12;
   return (
     <svg
       width={px}
@@ -96,20 +97,21 @@ export function SafetySeal({ seal, px }: { seal: SealDef; px: number }) {
     >
       <defs>
         {/* Upper semicircle (left→top→right) and lower semicircle (right→bottom→left). */}
-        <path id={topId} d="M 50,50 m -39,0 a 39,39 0 1 1 78,0" fill="none" />
-        <path id={botId} d="M 50,50 m 39,0 a 39,39 0 1 1 -78,0" fill="none" />
+        <path id={topId} d="M 50,50 m -40,0 a 40,40 0 1 1 80,0" fill="none" />
+        <path id={botId} d="M 50,50 m 40,0 a 40,40 0 1 1 -80,0" fill="none" />
       </defs>
       <circle cx="50" cy="50" r="49" fill={seal.color} />
       <circle cx="50" cy="50" r="48" fill="none" stroke="#fff" strokeWidth="1" opacity="0.5" />
-      <circle cx="50" cy="50" r="33" fill="#fff" />
-      <circle cx="50" cy="50" r="33" fill="none" stroke={seal.color} strokeWidth="1.6" />
+      {/* Smaller white centre widens the coloured band so the text reads larger. */}
+      <circle cx="50" cy="50" r="29" fill="#fff" />
+      <circle cx="50" cy="50" r="29" fill="none" stroke={seal.color} strokeWidth="1.6" />
       <g fill="#fff" fontFamily="Arial, sans-serif" fontWeight={700}>
         <text fontSize={topSize} letterSpacing="0.2">
           <textPath href={`#${topId}`} startOffset="50%" textAnchor="middle">
             {seal.top}
           </textPath>
         </text>
-        <text fontSize="8.4" letterSpacing="1.4">
+        <text fontSize="11" letterSpacing="1.2">
           <textPath href={`#${botId}`} startOffset="50%" textAnchor="middle">
             TRAINED
           </textPath>
@@ -139,23 +141,23 @@ export function DisciplinaryBadges({ px }: { px: number }) {
         >
           <circle cx="50" cy="50" r="49" fill={s.color} />
           <circle cx="50" cy="50" r="48" fill="none" stroke="#fff" strokeWidth="1.4" opacity="0.55" />
-          {/* White hard-hat worker figure */}
-          <g fill="#fff" transform="translate(28 18) scale(1.8)">
+          {/* White hard-hat worker figure (smaller, up top) */}
+          <g fill="#fff" transform="translate(34 8) scale(1.35)">
             <path d="M4 9a8 8 0 0 1 16 0z" />
             <rect x="2" y="9" width="20" height="2.4" rx="1" />
             <rect x="10.6" y="3.4" width="2.8" height="3" rx="1" />
             <circle cx="12" cy="16" r="3.4" />
             <path d="M6.5 25c0-3.4 2.5-6 5.5-6s5.5 2.6 5.5 6z" />
           </g>
-          {/* Ordinal pill */}
-          <rect x="28" y="72" width="44" height="20" rx="10" fill="#fff" />
+          {/* Ordinal pill — large so it's readable at print size */}
+          <rect x="16" y="60" width="68" height="32" rx="16" fill="#fff" />
           <text
             x="50"
-            y="86.5"
+            y="84"
             textAnchor="middle"
             fontFamily="Arial, sans-serif"
             fontWeight={800}
-            fontSize="15"
+            fontSize="26"
             fill={s.color}
           >
             {s.label}

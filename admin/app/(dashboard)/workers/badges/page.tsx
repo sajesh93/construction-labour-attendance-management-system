@@ -156,7 +156,8 @@ export default function BadgesPage() {
           display: 'flex',
           flexWrap: 'wrap',
           gap: 2,
-          '@media print': { gap: '6px' },
+          // Wider gaps between cards on paper leave room to cut them apart.
+          '@media print': { gap: '10mm' },
         }}
       >
         {list.map((w) => {
@@ -193,7 +194,11 @@ export default function BadgesPage() {
                 }}
               />
               {/* Front + back kept together so the pair can be cut out and laminated double-sided. */}
-              <Stack direction="row" spacing={0.5} sx={{ breakInside: 'avoid' }}>
+              <Stack
+                direction="row"
+                spacing={0.5}
+                sx={{ breakInside: 'avoid', '@media print': { gap: '6mm' } }}
+              >
                 <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="front" />
                 <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="back" />
               </Stack>
