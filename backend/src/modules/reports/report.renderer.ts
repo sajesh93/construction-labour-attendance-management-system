@@ -28,7 +28,8 @@ export async function renderXlsx(title: string, headers: string[], rows: Row[]):
 
 export interface AttSheetMonth {
   label: string;
-  daysInMonth: number;
+  /** Day-of-month numbers included for this block (may be a partial month). */
+  days: number[];
 }
 export interface AttSheetRow {
   info: (string | number | null)[];
@@ -81,7 +82,7 @@ export async function renderAttendanceSheetXlsx(
   let col = n + 1;
   for (const mo of months) {
     const blockStart = col;
-    const blockWidth = mo.daysInMonth * 2;
+    const blockWidth = mo.days.length * 2;
     ws.mergeCells(1, blockStart, 2, blockStart + blockWidth - 1);
     const mcell = ws.getCell(1, blockStart);
     mcell.value = mo.label;
@@ -89,7 +90,7 @@ export async function renderAttendanceSheetXlsx(
     mcell.alignment = { horizontal: 'center', vertical: 'middle' };
     mcell.fill = monthFill;
     mcell.border = thin;
-    for (let day = 1; day <= mo.daysInMonth; day++) {
+    for (const day of mo.days) {
       ws.mergeCells(3, col, 3, col + 1);
       const dcell = ws.getCell(3, col);
       dcell.value = day;

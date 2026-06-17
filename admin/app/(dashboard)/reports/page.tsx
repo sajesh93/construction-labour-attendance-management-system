@@ -42,7 +42,7 @@ const REPORT_TYPES = [
   'ATTENDANCE_SHEET',
 ];
 const REPORT_TYPE_LABELS: Record<string, string> = {
-  ATTENDANCE_SHEET: 'Attendance sheet (muster roll)',
+  ATTENDANCE_SHEET: 'Attendance sheet',
 };
 const PREVIEW_LIMIT = 500;
 
@@ -87,9 +87,10 @@ export default function ReportsPage() {
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
 
-  const showMonth = reportType === 'MONTHLY' || reportType === 'ATTENDANCE_SHEET';
+  const showAttSheet = reportType === 'ATTENDANCE_SHEET';
+  const showMonth = reportType === 'MONTHLY';
   const showDate = reportType === 'DAILY';
-  const showRange = !showMonth && !showDate && reportType !== 'CORRECTION';
+  const showRange = !showMonth && !showDate && !showAttSheet && reportType !== 'CORRECTION';
   const showVendorTools = reportType !== 'CORRECTION';
 
   const buildParams = (): Record<string, unknown> => {
@@ -99,6 +100,11 @@ export default function ReportsPage() {
     if (showRange) {
       if (from) params.from = from.toISOString();
       if (to) params.to = to.toISOString();
+    }
+    // Attendance sheet: a plain date range (covers a few days or several months).
+    if (showAttSheet) {
+      if (from) params.from = from.format('YYYY-MM-DD');
+      if (to) params.to = to.format('YYYY-MM-DD');
     }
     if (showVendorTools && vendorId) params.vendorId = vendorId;
     if (siteId) params.siteId = siteId;
@@ -209,6 +215,26 @@ export default function ReportsPage() {
                 <Grid item xs={12} md={3}>
                   <DateTimePicker
                     label="End date & time"
+                    value={to}
+                    onChange={setTo}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </Grid>
+              </>
+            )}
+            {showAttSheet && (
+              <>
+                <Grid item xs={12} md={3}>
+                  <DatePicker
+                    label="From date"
+                    value={from}
+                    onChange={setFrom}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <DatePicker
+                    label="To date"
                     value={to}
                     onChange={setTo}
                     slotProps={{ textField: { fullWidth: true } }}
@@ -327,8 +353,8 @@ export default function ReportsPage() {
                 No rows matched the selected period — nothing to download.
               </Typography>
             ) : (
-              <Card variant="outlined" sx={{ overflowX: 'auto' }}>
-                <Table size="small">
+              <Card variant="outlined" sx={{ maxWidth: '100%', overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: 'max-content' }}>
                   <TableHead>
                     <TableRow>
                       {data.headers.map((h) => (

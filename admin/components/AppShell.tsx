@@ -75,7 +75,9 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
         </List>
       </Drawer>
 
-      <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+      {/* minWidth:0 lets the main column shrink so wide content (e.g. report
+          tables) scrolls inside its own container instead of widening the page. */}
+      <Box component="main" sx={{ flexGrow: 1, minWidth: 0, p: 3, mt: 8 }}>
         <SosBanner />
         {children}
       </Box>

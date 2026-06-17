@@ -24,7 +24,7 @@ export class ReportsService {
   async create(user: AuthUser, dto: CreateReportDto) {
     const params = dto.params ?? {};
 
-    // The muster-roll grid has a bespoke (merged-header) XLSX layout, so it gets
+    // The attendance grid has a bespoke (merged-header) XLSX layout, so it gets
     // its own build + render path; CSV/PDF fall back to a flat representation.
     if (dto.reportType === ReportType.ATTENDANCE_SHEET) {
       const sheet = await this.buildAttendanceSheet(user, params);
@@ -270,9 +270,10 @@ export class ReportsService {
   }
 
   /**
-   * Build the muster-roll grid: every worker as a row, with IN/Out times per day
-   * across one or more month blocks. Supports a single `month` (YYYY-MM) or a
-   * `from`/`to` range (each month in range becomes a block, like the template).
+   * Build the attendance grid: every worker as a row, with IN/Out times per day.
+   * Accepts a single `month` (YYYY-MM, whole month) or a `from`/`to` date range —
+   * which may be a few days or span several months (each month becomes a block,
+   * clamped to the selected days).
    */
   private async buildAttendanceSheet(user: AuthUser, params: Record<string, unknown>) {
     const orgId = user.organizationId;
@@ -285,21 +286,35 @@ export class ReportsService {
         new Date(Date.UTC(y, m - 1, 1)),
       );
     const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const blocks: { year: number; month: number; label: string; days: number }[] = [];
+    const range = (a: number, b: number) => {
+      const out: number[] = [];
+      for (let d = a; d <= b; d++) out.push(d);
+      return out;
+    };
+    // Each block is a (possibly partial) month with the exact day numbers to show.
+    const blocks: { year: number; month: number; label: string; days: number[] }[] = [];
     if (params.month) {
       const [y, m] = String(params.month)
         .split('-')
         .map((n) => parseInt(n, 10));
-      blocks.push({ year: y, month: m, label: monthName(y, m), days: daysInMonth(y, m) });
+      blocks.push({ year: y, month: m, label: monthName(y, m), days: range(1, daysInMonth(y, m)) });
     } else {
-      const from = params.from ? new Date(String(params.from)) : new Date();
-      const to = params.to ? new Date(String(params.to)) : from;
-      let y = from.getUTCFullYear();
-      let m = from.getUTCMonth() + 1;
+      let from = params.from ? new Date(String(params.from)) : new Date();
+      let to = params.to ? new Date(String(params.to)) : from;
+      if (from > to) [from, to] = [to, from]; // tolerate a reversed range
+      const startY = from.getUTCFullYear();
+      const startM = from.getUTCMonth() + 1;
+      const startD = from.getUTCDate();
       const endY = to.getUTCFullYear();
       const endM = to.getUTCMonth() + 1;
+      const endD = to.getUTCDate();
+      let y = startY;
+      let m = startM;
       while ((y < endY || (y === endY && m <= endM)) && blocks.length < 24) {
-        blocks.push({ year: y, month: m, label: monthName(y, m), days: daysInMonth(y, m) });
+        const firstDay = y === startY && m === startM ? startD : 1;
+        const lastDay = y === endY && m === endM ? endD : daysInMonth(y, m);
+        const days = range(firstDay, lastDay);
+        if (days.length) blocks.push({ year: y, month: m, label: monthName(y, m), days });
         m += 1;
         if (m > 12) {
           m = 1;
@@ -307,9 +322,20 @@ export class ReportsService {
         }
       }
     }
-    const periodStart = new Date(Date.UTC(blocks[0].year, blocks[0].month - 1, 1));
+    if (blocks.length === 0) {
+      const now = new Date();
+      const y = now.getUTCFullYear();
+      const m = now.getUTCMonth() + 1;
+      blocks.push({ year: y, month: m, label: monthName(y, m), days: range(1, daysInMonth(y, m)) });
+    }
+    const firstBlock = blocks[0];
     const lastBlock = blocks[blocks.length - 1];
-    const periodEnd = new Date(Date.UTC(lastBlock.year, lastBlock.month, 1)); // exclusive
+    const periodStart = new Date(
+      Date.UTC(firstBlock.year, firstBlock.month - 1, firstBlock.days[0]),
+    );
+    const periodEnd = new Date(
+      Date.UTC(lastBlock.year, lastBlock.month - 1, lastBlock.days[lastBlock.days.length - 1] + 1),
+    ); // exclusive
 
     // Workers (the workforce — exclude visitors), with optional vendor/site filters.
     const where: Prisma.WorkerWhereInput = {
@@ -382,7 +408,7 @@ export class ReportsService {
       'Mobile number',
     ];
 
-    const months: AttSheetMonth[] = blocks.map((b) => ({ label: b.label, daysInMonth: b.days }));
+    const months: AttSheetMonth[] = blocks.map((b) => ({ label: b.label, days: b.days }));
 
     const rows: AttSheetRow[] = workers.map((w, idx) => {
       const wm = byWorkerDay.get(w.id);
@@ -400,7 +426,7 @@ export class ReportsService {
       ];
       const cells: (string | null)[] = [];
       for (const b of blocks) {
-        for (let day = 1; day <= b.days; day++) {
+        for (const day of b.days) {
           const dkey = `${b.year}-${String(b.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const e = wm?.get(dkey);
           cells.push(fmtTime(e?.inAt ?? null));
@@ -413,7 +439,7 @@ export class ReportsService {
     // Flat representation for the preview table and CSV/PDF exports.
     const flatHeaders = [...infoHeaders];
     for (const b of blocks) {
-      for (let day = 1; day <= b.days; day++) {
+      for (const day of b.days) {
         flatHeaders.push(`${b.label} ${day} IN`);
         flatHeaders.push(`${b.label} ${day} Out`);
       }
