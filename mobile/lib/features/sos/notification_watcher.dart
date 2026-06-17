@@ -31,13 +31,17 @@ class _NotificationWatcherState extends ConsumerState<NotificationWatcher> {
   final Set<String> _seen = {};
   bool _seenLoaded = false;
   bool _alertShowing = false;
+  String? _deviceUid;
   final _ringtone = FlutterRingtonePlayer();
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _poll());
+    // Poll frequently so an SOS rings within a few seconds (true push isn't
+    // used in this deployment).
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) => _poll());
     Future.microtask(() async {
+      _deviceUid = await ref.read(localDbProvider).getMeta('device_uid');
       await _loadSeen();
       await _poll();
     });
@@ -94,6 +98,10 @@ class _NotificationWatcherState extends ConsumerState<NotificationWatcher> {
         _seen.add(id);
         final type = n['type'] as String?;
         if (type == 'SOS') {
+          // Don't alarm the very device that raised the SOS.
+          final data = n['data'];
+          final senderUid = data is Map ? data['senderDeviceUid'] as String? : null;
+          if (senderUid != null && senderUid == _deviceUid) continue;
           await _showSosAlert(n);
         } else if (type == 'FORGOT_LOGOUT' && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

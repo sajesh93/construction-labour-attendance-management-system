@@ -131,7 +131,13 @@ export class SosService {
         .filter(Boolean)
         .join('\n'),
       siteId: site?.id ?? null,
-      data: { sosEventId: event.id },
+      // Carry the sender's device/email so a receiver can avoid alarming the
+      // very device (or person) that raised the SOS.
+      data: {
+        sosEventId: event.id,
+        senderDeviceUid: dto.deviceUid ?? null,
+        senderEmail: dto.senderEmail ?? null,
+      },
     });
 
     // Email all admins + safety officers; never block the SOS response on it.

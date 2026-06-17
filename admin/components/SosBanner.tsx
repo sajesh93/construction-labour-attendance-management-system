@@ -30,7 +30,8 @@ interface MissedSession {
   loginAt: string;
 }
 
-const POLL_MS = 20_000;
+// Poll fast so an SOS surfaces within a few seconds.
+const POLL_MS = 5_000;
 const WINDOW_HOURS = 24;
 
 /**
