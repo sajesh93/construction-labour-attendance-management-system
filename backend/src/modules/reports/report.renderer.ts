@@ -26,6 +26,111 @@ export async function renderXlsx(title: string, headers: string[], rows: Row[]):
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
+export interface AttSheetMonth {
+  label: string;
+  daysInMonth: number;
+}
+export interface AttSheetRow {
+  info: (string | number | null)[];
+  cells: (string | null)[];
+}
+
+/**
+ * Renders the muster-roll "Attendance" grid: worker-info columns followed by one
+ * 2-column (IN/Out) block per day, grouped under per-month headers. Mirrors the
+ * layout of the workforce workbook's Attendance sheet.
+ */
+export async function renderAttendanceSheetXlsx(
+  months: AttSheetMonth[],
+  infoHeaders: string[],
+  rows: AttSheetRow[],
+): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Attendance');
+  const headerFill: ExcelJS.Fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE8EEF7' },
+  };
+  const monthFill: ExcelJS.Fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFD6E2F2' },
+  };
+  const thin: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFBFC7D1' } },
+    left: { style: 'thin', color: { argb: 'FFBFC7D1' } },
+    bottom: { style: 'thin', color: { argb: 'FFBFC7D1' } },
+    right: { style: 'thin', color: { argb: 'FFBFC7D1' } },
+  };
+
+  const n = infoHeaders.length;
+  // Info columns: one header each, merged down all four header rows.
+  infoHeaders.forEach((h, i) => {
+    const c = i + 1;
+    ws.mergeCells(1, c, 4, c);
+    const cell = ws.getCell(1, c);
+    cell.value = h;
+    cell.font = { bold: true };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.fill = headerFill;
+    cell.border = thin;
+  });
+
+  // Day blocks, grouped by month.
+  let col = n + 1;
+  for (const mo of months) {
+    const blockStart = col;
+    const blockWidth = mo.daysInMonth * 2;
+    ws.mergeCells(1, blockStart, 2, blockStart + blockWidth - 1);
+    const mcell = ws.getCell(1, blockStart);
+    mcell.value = mo.label;
+    mcell.font = { bold: true };
+    mcell.alignment = { horizontal: 'center', vertical: 'middle' };
+    mcell.fill = monthFill;
+    mcell.border = thin;
+    for (let day = 1; day <= mo.daysInMonth; day++) {
+      ws.mergeCells(3, col, 3, col + 1);
+      const dcell = ws.getCell(3, col);
+      dcell.value = day;
+      dcell.font = { bold: true };
+      dcell.alignment = { horizontal: 'center' };
+      dcell.fill = headerFill;
+      dcell.border = thin;
+      const inCell = ws.getCell(4, col);
+      inCell.value = 'IN';
+      const outCell = ws.getCell(4, col + 1);
+      outCell.value = 'Out';
+      for (const hc of [inCell, outCell]) {
+        hc.font = { bold: true, size: 9 };
+        hc.alignment = { horizontal: 'center' };
+        hc.fill = headerFill;
+        hc.border = thin;
+      }
+      col += 2;
+    }
+  }
+  const lastCol = col - 1;
+
+  // Data rows start at row 5 (after the four header rows).
+  rows.forEach((row, i) => {
+    const values = [...row.info, ...row.cells];
+    const wsRow = ws.getRow(5 + i);
+    values.forEach((v, j) => {
+      const cell = wsRow.getCell(j + 1);
+      cell.value = v as ExcelJS.CellValue;
+      cell.border = thin;
+      if (j >= n) cell.alignment = { horizontal: 'center' };
+    });
+  });
+
+  for (let c = 1; c <= n; c++) ws.getColumn(c).width = c === 1 ? 6 : 16;
+  for (let c = n + 1; c <= lastCol; c++) ws.getColumn(c).width = 6;
+  ws.views = [{ state: 'frozen', xSplit: n, ySplit: 4 }];
+
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
 /** Renders report rows to a simple landscape-A4 PDF table buffer. */
 export function renderPdf(title: string, headers: string[], rows: Row[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {

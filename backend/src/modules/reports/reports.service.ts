@@ -4,7 +4,13 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
 import { minutesToHours, toCsv } from './report.builder';
-import { renderPdf, renderXlsx } from './report.renderer';
+import {
+  AttSheetMonth,
+  AttSheetRow,
+  renderAttendanceSheetXlsx,
+  renderPdf,
+  renderXlsx,
+} from './report.renderer';
 import { CreateReportDto, ReportType } from './dto/report.dto';
 
 @Injectable()
@@ -17,6 +23,50 @@ export class ReportsService {
    */
   async create(user: AuthUser, dto: CreateReportDto) {
     const params = dto.params ?? {};
+
+    // The muster-roll grid has a bespoke (merged-header) XLSX layout, so it gets
+    // its own build + render path; CSV/PDF fall back to a flat representation.
+    if (dto.reportType === ReportType.ATTENDANCE_SHEET) {
+      const sheet = await this.buildAttendanceSheet(user, params);
+      const job = await this.prisma.reportJob.create({
+        data: {
+          organizationId: user.organizationId,
+          requestedBy: user.userId,
+          reportType: dto.reportType,
+          format: dto.format,
+          params: params as Prisma.InputJsonValue,
+          status: 'DONE',
+          completedAt: new Date(),
+        },
+      });
+      const base = { jobId: job.id, status: job.status, rowCount: sheet.rows.length };
+      const stem = `attendance-sheet-${job.id}`;
+      if (dto.format === 'XLSX') {
+        const buffer = await renderAttendanceSheetXlsx(sheet.months, sheet.infoHeaders, sheet.rows);
+        return {
+          ...base,
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          contentBase64: buffer.toString('base64'),
+          filename: `${stem}.xlsx`,
+        };
+      }
+      if (dto.format === 'PDF') {
+        const buffer = await renderPdf('Attendance sheet', sheet.flatHeaders, sheet.flatRows);
+        return {
+          ...base,
+          contentType: 'application/pdf',
+          contentBase64: buffer.toString('base64'),
+          filename: `${stem}.pdf`,
+        };
+      }
+      return {
+        ...base,
+        contentType: 'text/csv',
+        content: toCsv(sheet.flatHeaders, sheet.flatRows),
+        filename: `${stem}.csv`,
+      };
+    }
+
     const { headers, rows } = await this.buildRows(user, dto.reportType, params);
 
     const job = await this.prisma.reportJob.create({
@@ -66,6 +116,10 @@ export class ReportsService {
 
   /** Build the report rows without persisting a job — powers the admin preview. */
   async preview(user: AuthUser, reportType: ReportType, params: Record<string, unknown> = {}) {
+    if (reportType === ReportType.ATTENDANCE_SHEET) {
+      const sheet = await this.buildAttendanceSheet(user, params);
+      return { headers: sheet.flatHeaders, rows: sheet.flatRows, rowCount: sheet.flatRows.length };
+    }
     const { headers, rows } = await this.buildRows(user, reportType, params);
     return { headers, rows, rowCount: rows.length };
   }
@@ -213,5 +267,159 @@ export class ReportsService {
       rows.push(toRow(s));
     }
     return { headers, rows };
+  }
+
+  /**
+   * Build the muster-roll grid: every worker as a row, with IN/Out times per day
+   * across one or more month blocks. Supports a single `month` (YYYY-MM) or a
+   * `from`/`to` range (each month in range becomes a block, like the template).
+   */
+  private async buildAttendanceSheet(user: AuthUser, params: Record<string, unknown>) {
+    const orgId = user.organizationId;
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    const tz = org?.timezone || 'Asia/Kolkata';
+
+    // Resolve the list of month blocks to render.
+    const monthName = (y: number, m: number) =>
+      new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+        new Date(Date.UTC(y, m - 1, 1)),
+      );
+    const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const blocks: { year: number; month: number; label: string; days: number }[] = [];
+    if (params.month) {
+      const [y, m] = String(params.month)
+        .split('-')
+        .map((n) => parseInt(n, 10));
+      blocks.push({ year: y, month: m, label: monthName(y, m), days: daysInMonth(y, m) });
+    } else {
+      const from = params.from ? new Date(String(params.from)) : new Date();
+      const to = params.to ? new Date(String(params.to)) : from;
+      let y = from.getUTCFullYear();
+      let m = from.getUTCMonth() + 1;
+      const endY = to.getUTCFullYear();
+      const endM = to.getUTCMonth() + 1;
+      while ((y < endY || (y === endY && m <= endM)) && blocks.length < 24) {
+        blocks.push({ year: y, month: m, label: monthName(y, m), days: daysInMonth(y, m) });
+        m += 1;
+        if (m > 12) {
+          m = 1;
+          y += 1;
+        }
+      }
+    }
+    const periodStart = new Date(Date.UTC(blocks[0].year, blocks[0].month - 1, 1));
+    const lastBlock = blocks[blocks.length - 1];
+    const periodEnd = new Date(Date.UTC(lastBlock.year, lastBlock.month, 1)); // exclusive
+
+    // Workers (the workforce — exclude visitors), with optional vendor/site filters.
+    const where: Prisma.WorkerWhereInput = {
+      organizationId: orgId,
+      deletedAt: null,
+      category: { in: ['WORKER', 'STAFF'] },
+    };
+    if (params.vendorId) where.vendorId = String(params.vendorId);
+    if (params.siteId) {
+      where.assignments = { some: { siteId: String(params.siteId), endDate: null } };
+    }
+    const workers = await this.prisma.worker.findMany({
+      where,
+      include: { vendor: true },
+      orderBy: [{ category: 'asc' }, { fullName: 'asc' }],
+    });
+
+    // Per-worker, per-day first IN / last Out across the whole period.
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: orgId,
+        workerId: { in: workers.map((w) => w.id) },
+        workDate: { gte: periodStart, lt: periodEnd },
+      },
+      select: { workerId: true, workDate: true, loginAt: true, logoutAt: true },
+    });
+    const byWorkerDay = new Map<string, Map<string, { inAt: Date | null; outAt: Date | null }>>();
+    for (const s of sessions) {
+      const dkey = s.workDate.toISOString().slice(0, 10);
+      let wm = byWorkerDay.get(s.workerId);
+      if (!wm) {
+        wm = new Map();
+        byWorkerDay.set(s.workerId, wm);
+      }
+      let e = wm.get(dkey);
+      if (!e) {
+        e = { inAt: null, outAt: null };
+        wm.set(dkey, e);
+      }
+      if (s.loginAt && (!e.inAt || s.loginAt < e.inAt)) e.inAt = s.loginAt;
+      if (s.logoutAt && (!e.outAt || s.logoutAt > e.outAt)) e.outAt = s.logoutAt;
+    }
+
+    const timeFmt = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: tz,
+    });
+    const fmtTime = (d: Date | null) => (d ? timeFmt.format(d) : null);
+    const dateFmt = new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    const fmtDate = (d: Date | null) => (d ? dateFmt.format(d) : '');
+    const sex = (g: string | null) => (g === 'M' ? 'Male' : g === 'F' ? 'Female' : (g ?? ''));
+
+    const infoHeaders = [
+      'SL No',
+      'Workers Name',
+      "Father's Name",
+      'EMP - ID NO',
+      'Contractor',
+      'Nature of Contractor',
+      'DOB',
+      'Date of Joining',
+      'Gender',
+      'Mobile number',
+    ];
+
+    const months: AttSheetMonth[] = blocks.map((b) => ({ label: b.label, daysInMonth: b.days }));
+
+    const rows: AttSheetRow[] = workers.map((w, idx) => {
+      const wm = byWorkerDay.get(w.id);
+      const info: (string | number | null)[] = [
+        idx + 1,
+        w.fullName,
+        w.fatherName ?? '',
+        w.workerCode,
+        w.vendor?.name ?? '',
+        w.natureOfContractor ?? '',
+        fmtDate(w.dateOfBirth),
+        fmtDate(w.joinDate),
+        sex(w.gender),
+        w.mobileNumber ?? '',
+      ];
+      const cells: (string | null)[] = [];
+      for (const b of blocks) {
+        for (let day = 1; day <= b.days; day++) {
+          const dkey = `${b.year}-${String(b.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const e = wm?.get(dkey);
+          cells.push(fmtTime(e?.inAt ?? null));
+          cells.push(fmtTime(e?.outAt ?? null));
+        }
+      }
+      return { info, cells };
+    });
+
+    // Flat representation for the preview table and CSV/PDF exports.
+    const flatHeaders = [...infoHeaders];
+    for (const b of blocks) {
+      for (let day = 1; day <= b.days; day++) {
+        flatHeaders.push(`${b.label} ${day} IN`);
+        flatHeaders.push(`${b.label} ${day} Out`);
+      }
+    }
+    const flatRows = rows.map((r) => [...r.info, ...r.cells]);
+
+    return { months, infoHeaders, rows, flatHeaders, flatRows };
   }
 }

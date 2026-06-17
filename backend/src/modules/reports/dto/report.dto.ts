@@ -9,6 +9,9 @@ export enum ReportType {
   SITE = 'SITE',
   OVERTIME = 'OVERTIME',
   CORRECTION = 'CORRECTION',
+  // Monthly muster-roll grid: worker rows × per-day IN/Out columns, matching the
+  // "Attendance" sheet of the workforce workbook.
+  ATTENDANCE_SHEET = 'ATTENDANCE_SHEET',
 }
 
 export enum ReportFormat {

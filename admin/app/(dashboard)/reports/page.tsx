@@ -31,7 +31,19 @@ import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { Site, Vendor } from '@/lib/types';
 
-const REPORT_TYPES = ['DAILY', 'MONTHLY', 'WORKER', 'VENDOR', 'SITE', 'OVERTIME', 'CORRECTION'];
+const REPORT_TYPES = [
+  'DAILY',
+  'MONTHLY',
+  'WORKER',
+  'VENDOR',
+  'SITE',
+  'OVERTIME',
+  'CORRECTION',
+  'ATTENDANCE_SHEET',
+];
+const REPORT_TYPE_LABELS: Record<string, string> = {
+  ATTENDANCE_SHEET: 'Attendance sheet (muster roll)',
+};
 const PREVIEW_LIMIT = 500;
 
 interface PreviewResult {
@@ -75,7 +87,7 @@ export default function ReportsPage() {
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
 
-  const showMonth = reportType === 'MONTHLY';
+  const showMonth = reportType === 'MONTHLY' || reportType === 'ATTENDANCE_SHEET';
   const showDate = reportType === 'DAILY';
   const showRange = !showMonth && !showDate && reportType !== 'CORRECTION';
   const showVendorTools = reportType !== 'CORRECTION';
@@ -149,13 +161,16 @@ export default function ReportsPage() {
                 fullWidth
                 value={reportType}
                 onChange={(e) => {
-                  setReportType(e.target.value);
+                  const t = e.target.value;
+                  setReportType(t);
+                  // The muster-roll grid is meant for spreadsheets — default to XLSX.
+                  if (t === 'ATTENDANCE_SHEET') setFormat('XLSX');
                   preview.reset();
                 }}
               >
                 {REPORT_TYPES.map((t) => (
                   <MenuItem key={t} value={t}>
-                    {t}
+                    {REPORT_TYPE_LABELS[t] ?? t}
                   </MenuItem>
                 ))}
               </TextField>
