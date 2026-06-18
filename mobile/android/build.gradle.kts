@@ -15,16 +15,20 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+// Force every Android subproject (Flutter plugins) to a recent compileSdk so
+// transitive AndroidX deps (fragment 1.7.1, geolocator, sqflite) pass the
+// checkReleaseAarMetadata gate. The afterEvaluate callbacks are registered for
+// ALL subprojects first, then evaluation is forced — otherwise forcing :app
+// evaluation can evaluate a plugin subproject before its callback is attached
+// ("Cannot run afterEvaluate when the project is already evaluated").
 subprojects {
-    // Force every Android subproject (Flutter plugins) to a recent compileSdk so
-    // transitive AndroidX deps (fragment 1.7.1, geolocator, sqflite) pass the
-    // checkReleaseAarMetadata gate. Registered before evaluationDependsOn so the
-    // callback is attached before the project is evaluated.
     afterEvaluate {
         extensions.findByName("android")?.let { ext ->
             (ext as com.android.build.gradle.BaseExtension).compileSdkVersion(36)
         }
     }
+}
+subprojects {
     project.evaluationDependsOn(":app")
 }
 
