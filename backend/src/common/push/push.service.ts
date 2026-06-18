@@ -57,8 +57,8 @@ export class PushService implements OnModuleInit {
       android: {
         priority: 'high',
         notification: {
-          channelId: 'sos_alarm',
-          sound: 'default',
+          channelId: 'sos_siren',
+          sound: 'sos_siren',
           priority: 'max',
           defaultVibrateTimings: true,
           visibility: 'public',

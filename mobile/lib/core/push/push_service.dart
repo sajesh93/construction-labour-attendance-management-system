@@ -3,14 +3,17 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-/// High-importance channel so an SOS rings and shows full-screen even when the
-/// phone is locked or the app is closed.
+/// High-importance channel that plays a loud siren at ALARM volume and shows
+/// full-screen, even when the phone is locked or the app is closed.
 const AndroidNotificationChannel _sosChannel = AndroidNotificationChannel(
-  'sos_alarm',
+  // New id (channel sound can't be changed after creation, so we use a fresh one).
+  'sos_siren',
   'SOS Alerts',
   description: 'Emergency SOS alerts',
   importance: Importance.max,
   playSound: true,
+  sound: RawResourceAndroidNotificationSound('sos_siren'),
+  audioAttributesUsage: AudioAttributesUsage.alarm,
   enableVibration: true,
 );
 
@@ -50,6 +53,8 @@ Future<void> _showSosNotification(Map<String, dynamic> data) async {
         category: AndroidNotificationCategory.alarm,
         fullScreenIntent: true,
         playSound: true,
+        sound: const RawResourceAndroidNotificationSound('sos_siren'),
+        audioAttributesUsage: AudioAttributesUsage.alarm,
         enableVibration: true,
         ticker: 'SOS',
       ),

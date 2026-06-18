@@ -77,16 +77,17 @@ export class NotificationsService {
     });
   }
 
-  /** Push tokens to alert for an SOS — everyone in the org except the sender's device. */
+  /** Push tokens to alert for an SOS — everyone in the org except the sender's
+   * device. Filtered in code so tokens with a NULL deviceUid are still alerted
+   * (a SQL `deviceUid != x` would silently drop NULL rows). */
   async sosTokens(organizationId: string, excludeDeviceUid?: string | null): Promise<string[]> {
     const rows = await this.prisma.pushToken.findMany({
-      where: {
-        organizationId,
-        ...(excludeDeviceUid ? { NOT: { deviceUid: excludeDeviceUid } } : {}),
-      },
-      select: { token: true },
+      where: { organizationId },
+      select: { token: true, deviceUid: true },
     });
-    return rows.map((r) => r.token);
+    return rows
+      .filter((r) => !excludeDeviceUid || r.deviceUid !== excludeDeviceUid)
+      .map((r) => r.token);
   }
 
   /** Drop tokens FCM reported as no longer valid. */
