@@ -8,6 +8,10 @@ import '../../core/config/env.dart';
 import '../../core/providers.dart';
 import '../auth/auth_controller.dart';
 
+/// Outcome of an SOS attempt — lets the UI message be accurate (a recent-resend
+/// block is not the same as having no network).
+enum SosResult { sent, throttled, failed }
+
 /// Sends an SOS to the backend. Works WITHOUT login (public endpoint) so the
 /// button is usable straight from the login screen.
 ///
@@ -33,7 +37,7 @@ class SosService {
     return null;
   }
 
-  Future<bool> trigger({String? message}) async {
+  Future<SosResult> trigger({String? message}) async {
     double? lat;
     double? lng;
     double? accuracyM;
@@ -75,9 +79,14 @@ class SosService {
         if (loggedIn && auth.email != null) 'senderEmail': auth.email,
         if (message != null && message.isNotEmpty) 'message': message,
       });
-      return true;
+      return SosResult.sent;
+    } on DioException catch (e) {
+      // 429 = a recent SOS from this device is still within the cooldown — the
+      // alert already went out; this is NOT a network failure.
+      if (e.response?.statusCode == 429) return SosResult.throttled;
+      return SosResult.failed;
     } catch (_) {
-      return false;
+      return SosResult.failed;
     }
   }
 }

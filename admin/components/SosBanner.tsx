@@ -52,6 +52,9 @@ export function SosBanner() {
     queryKey: ['notifications', since],
     queryFn: () => api.get<AppNotification[]>(`/notifications?since=${encodeURIComponent(since)}`),
     refetchInterval: POLL_MS,
+    // Keep polling even when the tab is in the background, so an SOS still
+    // surfaces promptly when the admin isn't actively looking at the tab.
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
   });
 

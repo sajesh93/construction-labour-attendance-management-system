@@ -28,11 +28,11 @@ export class SosService {
    * registered site.
    */
   async trigger(dto: TriggerSosDto) {
-    // Per-device cooldown on top of the global rate limit: one SOS per minute
-    // per phone, so a stuck/abused button can't flood alerts.
+    // Short per-device cooldown so a stuck/abused button can't flood alerts,
+    // but a responder can re-raise quickly if the first wasn't acknowledged.
     if (dto.deviceUid) {
       const recent = await this.prisma.sosEvent.findFirst({
-        where: { deviceUid: dto.deviceUid, createdAt: { gt: new Date(Date.now() - 60_000) } },
+        where: { deviceUid: dto.deviceUid, createdAt: { gt: new Date(Date.now() - 15_000) } },
         select: { id: true },
       });
       if (recent) throw Errors.rateLimited();

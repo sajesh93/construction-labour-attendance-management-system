@@ -42,15 +42,28 @@ export class PushService implements OnModuleInit {
     payload: { title: string; body: string; sosEventId: string },
   ): Promise<string[]> {
     if (!this.app || tokens.length === 0) return [];
+    // Include a notification block (not just data) so Android's system tray
+    // shows + rings it on the high-importance 'sos_alarm' channel even when the
+    // app is killed; the data is kept for the foreground handler + tap routing.
     const message: MulticastMessage = {
       tokens,
+      notification: { title: payload.title, body: payload.body },
       data: {
         type: 'SOS',
         title: payload.title,
         body: payload.body,
         sosEventId: payload.sosEventId,
       },
-      android: { priority: 'high' },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'sos_alarm',
+          sound: 'default',
+          priority: 'max',
+          defaultVibrateTimings: true,
+          visibility: 'public',
+        },
+      },
     };
     const stale: string[] = [];
     try {

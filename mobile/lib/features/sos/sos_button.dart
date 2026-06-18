@@ -47,18 +47,24 @@ class SosButton extends ConsumerWidget {
 
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(const SnackBar(content: Text('Sending SOS…')));
-    final ok = await ref.read(sosServiceProvider).trigger(message: messageController.text.trim());
+    final result = await ref.read(sosServiceProvider).trigger(message: messageController.text.trim());
     messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        backgroundColor: ok ? Colors.green.shade700 : Colors.red.shade700,
-        content: Text(
-          ok
-              ? 'SOS sent — safety officers and admins have been alerted.'
-              : 'SOS could not be sent (no network). Try again or call directly.',
+    final (color, text) = switch (result) {
+      SosResult.sent => (
+          Colors.green.shade700,
+          'SOS sent — safety officers and admins have been alerted.',
         ),
-      ),
-    );
+      SosResult.throttled => (
+          Colors.orange.shade800,
+          'An SOS from this device just went out — responders are already alerted. '
+              'You can resend in a few seconds.',
+        ),
+      SosResult.failed => (
+          Colors.red.shade700,
+          'SOS could not be sent (no network). Try again or call directly.',
+        ),
+    };
+    messenger.showSnackBar(SnackBar(backgroundColor: color, content: Text(text)));
   }
 
   @override
