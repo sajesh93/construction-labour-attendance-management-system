@@ -44,7 +44,10 @@ export class ReportsService {
       actorRole: user.role,
       action: 'WORKER_AADHAAR_REVEAL',
       entityType: 'Report',
-      entityId: reportType,
+      // entityId is a UUID column — a report has no single entity, so leave it
+      // null and carry the report type in newValue instead.
+      entityId: null,
+      newValue: { reportType },
       reason: 'Full-profile report (sensitive data)',
     });
     return true;
