@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:android_id/android_id.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
@@ -46,6 +47,19 @@ class DeviceService {
     return 'CLAMS terminal';
   }
 
+  /// A device id that survives app reinstalls (so the device stays authorized
+  /// without re-approval). Uses Android's ANDROID_ID — stable per device for a
+  /// given signing key. Falls back to a random UUID if unavailable.
+  Future<String> _stableDeviceUid() async {
+    try {
+      if (Platform.isAndroid) {
+        final id = await const AndroidId().getId();
+        if (id != null && id.trim().isNotEmpty) return 'and-${id.trim()}';
+      }
+    } catch (_) {}
+    return const Uuid().v4();
+  }
+
   Future<DeviceStatus> ensureRegisteredAndAuthorized() async {
     // Credentials from a previous session (they survive logout).
     final storedId = await _store.deviceId;
@@ -53,7 +67,7 @@ class DeviceService {
     try {
       var uid = await _db.getMeta('device_uid');
       if (uid == null) {
-        uid = const Uuid().v4();
+        uid = await _stableDeviceUid();
         await _db.setMeta('device_uid', uid);
       }
 

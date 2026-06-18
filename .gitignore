@@ -15,6 +15,10 @@ infra/.env
 # Firebase service-account key (server secret — NEVER commit; set as the API env var)
 *firebase-adminsdk*.json
 serviceAccount*.json
+# Android release signing — keystore + credentials must NEVER be committed
+*.jks
+*.keystore
+mobile/android/key.properties
 
 # Prisma
 backend/prisma/*.db

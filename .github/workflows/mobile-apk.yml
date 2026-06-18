@@ -31,6 +31,25 @@ jobs:
         with:
           channel: stable
       - run: flutter pub get
+      - name: Configure release signing (if secrets present)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret — building debug-signed."
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > android/clams-release.jks
+          cat > android/key.properties <<EOF
+          storeFile=clams-release.jks
+          storePassword=$STORE_PASS
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASS
+          EOF
+          echo "Release signing configured."
       - name: Build release APK
         run: flutter build apk --release --dart-define=API_BASE_URL=$API_URL
       - name: Upload APK artifact
