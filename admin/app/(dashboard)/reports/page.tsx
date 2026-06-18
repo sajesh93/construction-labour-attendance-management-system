@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   CardContent,
+  Divider,
   FormControlLabel,
   Grid,
   MenuItem,
@@ -167,8 +168,9 @@ export default function ReportsPage() {
       <PageHeader title="Reports" subtitle="Generate attendance, overtime and correction reports" />
       <Card>
         <CardContent>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={3}>
+          {/* 1 — Report type & reporting period */}
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={4}>
               <TextField
                 select
                 label="Report type"
@@ -190,7 +192,7 @@ export default function ReportsPage() {
               </TextField>
             </Grid>
             {showMonth && (
-              <Grid item xs={12} md={3}>
+              <Grid item xs={12} sm={6} md={4}>
                 <DatePicker
                   label="Month"
                   views={['year', 'month']}
@@ -201,7 +203,7 @@ export default function ReportsPage() {
               </Grid>
             )}
             {showDate && (
-              <Grid item xs={12} md={3}>
+              <Grid item xs={12} sm={6} md={4}>
                 <DatePicker
                   label="Date"
                   value={date}
@@ -212,7 +214,7 @@ export default function ReportsPage() {
             )}
             {showRange && (
               <>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} sm={6} md={4}>
                   <DateTimePicker
                     label="Start date & time"
                     value={from}
@@ -220,7 +222,7 @@ export default function ReportsPage() {
                     slotProps={{ textField: { fullWidth: true } }}
                   />
                 </Grid>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} sm={6} md={4}>
                   <DateTimePicker
                     label="End date & time"
                     value={to}
@@ -232,7 +234,7 @@ export default function ReportsPage() {
             )}
             {showAttSheet && (
               <>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} sm={6} md={4}>
                   <DatePicker
                     label="From date"
                     value={from}
@@ -240,7 +242,7 @@ export default function ReportsPage() {
                     slotProps={{ textField: { fullWidth: true } }}
                   />
                 </Grid>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} sm={6} md={4}>
                   <DatePicker
                     label="To date"
                     value={to}
@@ -248,23 +250,21 @@ export default function ReportsPage() {
                     slotProps={{ textField: { fullWidth: true } }}
                   />
                 </Grid>
-                <Grid item xs={12} md={3}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={presenceMode}
-                        onChange={(e) => setPresenceMode(e.target.checked)}
-                      />
-                    }
-                    label="P/A marking (one column per day)"
-                  />
-                </Grid>
               </>
             )}
-            <Grid item xs={12} md={3}>
+          </Grid>
+
+          {/* 2 — Filters */}
+          <Divider textAlign="left" sx={{ my: 2.5 }}>
+            <Typography variant="overline" color="text.secondary">
+              Filters
+            </Typography>
+          </Divider>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={4}>
               <TextField
                 select
-                label="Site (optional)"
+                label="Site"
                 fullWidth
                 value={siteId}
                 onChange={(e) => setSiteId(e.target.value)}
@@ -279,10 +279,10 @@ export default function ReportsPage() {
               </TextField>
             </Grid>
             {showVendorTools && (
-              <Grid item xs={12} md={3}>
+              <Grid item xs={12} sm={6} md={4}>
                 <TextField
                   select
-                  label="Vendor (optional)"
+                  label="Vendor"
                   fullWidth
                   value={vendorId}
                   onChange={(e) => setVendorId(e.target.value)}
@@ -297,7 +297,7 @@ export default function ReportsPage() {
               </Grid>
             )}
             {showVendorTools && (
-              <Grid item xs={12} md={3}>
+              <Grid item xs={12} sm={6} md={4}>
                 <TextField
                   select
                   label="Person type"
@@ -312,21 +312,44 @@ export default function ReportsPage() {
                 </TextField>
               </Grid>
             )}
-            {showVendorTools && (
-              <Grid item xs={12} md={2}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={sortByVendor}
-                      onChange={(e) => setSortByVendor(e.target.checked)}
-                    />
-                  }
-                  label="Sort by vendor"
-                />
-              </Grid>
-            )}
-            {reportType !== 'CORRECTION' && (
-              <Grid item xs={12} md={4}>
+          </Grid>
+
+          {/* 3 — Options (only when any apply) */}
+          {reportType !== 'CORRECTION' && (
+            <>
+              <Divider textAlign="left" sx={{ my: 2.5 }}>
+                <Typography variant="overline" color="text.secondary">
+                  Options
+                </Typography>
+              </Divider>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                rowGap={0.5}
+                columnGap={3}
+                flexWrap="wrap"
+              >
+                {showVendorTools && (
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={sortByVendor}
+                        onChange={(e) => setSortByVendor(e.target.checked)}
+                      />
+                    }
+                    label="Sort by vendor"
+                  />
+                )}
+                {showAttSheet && (
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={presenceMode}
+                        onChange={(e) => setPresenceMode(e.target.checked)}
+                      />
+                    }
+                    label="P/A marking (one column per day)"
+                  />
+                )}
                 <FormControlLabel
                   control={
                     <Switch
@@ -336,24 +359,27 @@ export default function ReportsPage() {
                   }
                   label="Full profile (include sensitive data)"
                 />
-              </Grid>
-            )}
-            <Grid item xs={12} md={2}>
-              <Button
-                variant="contained"
-                startIcon={<PlayArrowIcon />}
-                disabled={preview.isPending}
-                onClick={() => preview.mutate()}
-              >
-                Run report
-              </Button>
-            </Grid>
-          </Grid>
+              </Stack>
+            </>
+          )}
+
           {error && (
             <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>
               {error}
             </Alert>
           )}
+
+          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<PlayArrowIcon />}
+              disabled={preview.isPending}
+              onClick={() => preview.mutate()}
+            >
+              Run report
+            </Button>
+          </Stack>
         </CardContent>
       </Card>
 
