@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,14 +17,32 @@ class ManualSearchSheet extends ConsumerStatefulWidget {
 
 class _ManualSearchSheetState extends ConsumerState<ManualSearchSheet> {
   List<WorkerCard> _results = [];
+  Timer? _debounce;
+  bool _searching = false;
 
-  Future<void> _search(String q) async {
-    if (q.length < 2) {
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onChanged(String q) {
+    _debounce?.cancel();
+    if (q.trim().length < 2) {
       setState(() => _results = []);
       return;
     }
+    _debounce = Timer(const Duration(milliseconds: 300), () => _runSearch(q.trim()));
+  }
+
+  Future<void> _runSearch(String q) async {
+    setState(() => _searching = true);
     final results = await ref.read(attendanceRepositoryProvider).search(q);
-    setState(() => _results = results);
+    if (!mounted) return;
+    setState(() {
+      _results = results;
+      _searching = false;
+    });
   }
 
   @override
@@ -39,27 +59,46 @@ class _ManualSearchSheetState extends ConsumerState<ManualSearchSheet> {
         children: [
           TextField(
             autofocus: true,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Search name or worker code',
-              prefixIcon: Icon(Icons.search),
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searching
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
             ),
-            onChanged: _search,
+            onChanged: _onChanged,
           ),
           const SizedBox(height: 8),
           SizedBox(
             height: 320,
-            child: ListView.builder(
-              itemCount: _results.length,
-              itemBuilder: (_, i) {
-                final w = _results[i];
-                return ListTile(
-                  leading: const Icon(Icons.person),
-                  title: Text(w.fullName),
-                  subtitle: Text(w.workerCode),
-                  onTap: () => Navigator.pop(context, w),
-                );
-              },
-            ),
+            child: _results.isEmpty
+                ? Center(
+                    child: Text(
+                      _searching ? 'Searching…' : 'Type a name or ID to search',
+                      style: TextStyle(color: Theme.of(context).hintColor),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _results.length,
+                    itemBuilder: (_, i) {
+                      final w = _results[i];
+                      final subtitle = [w.workerCode, if (w.category == 'STAFF') 'Staff', if (w.category == 'VISITOR') 'Visitor']
+                          .join(' · ');
+                      return ListTile(
+                        leading: const Icon(Icons.person),
+                        title: Text(w.fullName),
+                        subtitle: Text(subtitle),
+                        onTap: () => Navigator.pop(context, w),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

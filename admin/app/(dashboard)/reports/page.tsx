@@ -81,6 +81,7 @@ export default function ReportsPage() {
   const [to, setTo] = React.useState<Dayjs | null>(dayjs().endOf('day'));
   const [vendorId, setVendorId] = React.useState('');
   const [siteId, setSiteId] = React.useState('');
+  const [category, setCategory] = React.useState('');
   const [sortByVendor, setSortByVendor] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -108,6 +109,7 @@ export default function ReportsPage() {
     }
     if (showVendorTools && vendorId) params.vendorId = vendorId;
     if (siteId) params.siteId = siteId;
+    if (showVendorTools && category) params.category = category;
     if (showVendorTools && sortByVendor) params.sortBy = 'vendor';
     return params;
   };
@@ -274,6 +276,22 @@ export default function ReportsPage() {
                       {v.name}
                     </MenuItem>
                   ))}
+                </TextField>
+              </Grid>
+            )}
+            {showVendorTools && (
+              <Grid item xs={12} md={3}>
+                <TextField
+                  select
+                  label="Person type"
+                  fullWidth
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <MenuItem value="">All people</MenuItem>
+                  <MenuItem value="WORKER">Workers only</MenuItem>
+                  <MenuItem value="STAFF">Staff only</MenuItem>
+                  <MenuItem value="VISITOR">Visitors only</MenuItem>
                 </TextField>
               </Grid>
             )}

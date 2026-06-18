@@ -171,7 +171,12 @@ export class ReportsService {
     const where: Prisma.AttendanceSessionWhereInput = { organizationId: org };
     if (params.siteId) where.siteId = String(params.siteId);
     if (params.workerId) where.workerId = String(params.workerId);
-    if (params.vendorId) where.worker = { vendorId: String(params.vendorId) };
+    // vendor and/or person-type (WORKER/STAFF/VISITOR) filters on the worker.
+    const workerFilter: Prisma.WorkerWhereInput = {};
+    if (params.vendorId) workerFilter.vendorId = String(params.vendorId);
+    if (params.category)
+      workerFilter.category = String(params.category) as Prisma.WorkerWhereInput['category'];
+    if (Object.keys(workerFilter).length) where.worker = workerFilter;
     if (type === ReportType.DAILY && params.date) {
       where.workDate = new Date(String(params.date));
     }
@@ -341,7 +346,10 @@ export class ReportsService {
     const where: Prisma.WorkerWhereInput = {
       organizationId: orgId,
       deletedAt: null,
-      category: { in: ['WORKER', 'STAFF'] },
+      // Default to the workforce (workers + staff); a Person-type filter narrows it.
+      category: params.category
+        ? (String(params.category) as Prisma.WorkerWhereInput['category'])
+        : { in: ['WORKER', 'STAFF'] },
     };
     if (params.vendorId) where.vendorId = String(params.vendorId);
     if (params.siteId) {

@@ -178,7 +178,21 @@ class AttendanceRepository {
     );
   }
 
-  Future<List<WorkerCard>> search(String q) => _db.search(q);
+  /// Manual-backup search. Hits the server (finds any worker in the org, not
+  /// just the site cache) and falls back to the offline cache when there's no
+  /// network — so a name/code always resolves when online.
+  Future<List<WorkerCard>> search(String q) async {
+    try {
+      final res = await _api.dio.get('/workers/search', queryParameters: {'q': q});
+      final data = res.data;
+      if (data is List) {
+        return data.cast<Map<String, dynamic>>().map(WorkerCard.fromMap).toList();
+      }
+    } catch (_) {
+      // Offline or error — use the cached site list.
+    }
+    return _db.search(q);
+  }
 
   Future<int> pendingCount() => _db.pendingCount();
 }
