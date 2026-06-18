@@ -1,7 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import { PhotoKind } from '@prisma/client';
 
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+export const PHOTO_KINDS: PhotoKind[] = ['PROFILE', 'AADHAAR_FRONT', 'AADHAAR_BACK'];
 
 export class UploadFileDto {
   @ApiProperty({ description: 'Base64-encoded image bytes (no data: prefix)' })
@@ -11,4 +13,14 @@ export class UploadFileDto {
   @ApiProperty({ enum: ALLOWED_IMAGE_TYPES })
   @IsIn(ALLOWED_IMAGE_TYPES)
   mimeType!: string;
+
+  @ApiProperty({
+    enum: PHOTO_KINDS,
+    required: false,
+    description:
+      'PROFILE (default) is compressed only; AADHAAR_FRONT/AADHAAR_BACK are compressed AND encrypted at rest.',
+  })
+  @IsOptional()
+  @IsIn(PHOTO_KINDS)
+  kind?: PhotoKind;
 }

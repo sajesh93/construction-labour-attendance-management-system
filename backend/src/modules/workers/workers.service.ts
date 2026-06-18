@@ -170,12 +170,19 @@ export class WorkersService {
 
     let aadhaar: string | undefined;
     let pan: string | undefined;
-    if (reveal && (worker.aadhaarCiphertext || worker.panCiphertext)) {
+    let bankAccount: string | undefined;
+    if (
+      reveal &&
+      (worker.aadhaarCiphertext || worker.panCiphertext || worker.bankAccountCiphertext)
+    ) {
       if (worker.aadhaarCiphertext) {
         aadhaar = this.crypto.decrypt(Buffer.from(worker.aadhaarCiphertext));
       }
       if (worker.panCiphertext) {
         pan = this.crypto.decrypt(Buffer.from(worker.panCiphertext));
+      }
+      if (worker.bankAccountCiphertext) {
+        bankAccount = this.crypto.decrypt(Buffer.from(worker.bankAccountCiphertext));
       }
       await this.audit.record({
         organizationId: user.organizationId,
@@ -187,10 +194,19 @@ export class WorkersService {
       });
     }
 
-    const { aadhaarCiphertext: _omit, panCiphertext: _omit2, ...rest } = worker;
+    // Never return raw ciphertext or the legacy plaintext bank column.
+    const {
+      aadhaarCiphertext: _omit,
+      panCiphertext: _omit2,
+      bankAccountCiphertext: _omit3,
+      bankAccountNumber: _omit4,
+      ...rest
+    } = worker;
     void _omit;
     void _omit2;
-    return { ...rest, aadhaar, pan };
+    void _omit3;
+    void _omit4;
+    return { ...rest, aadhaar, pan, bankAccount };
   }
 
   // ---- Mutations -----------------------------------------------------------
@@ -244,6 +260,9 @@ export class WorkersService {
     const pan = dto.pan?.replace(/\s/g, '').toUpperCase();
     const panCiphertext = pan ? this.crypto.encrypt(pan) : undefined;
     const panLast4 = pan ? pan.slice(-4) : undefined;
+    const bankAcct = dto.bankAccountNumber?.replace(/\s/g, '');
+    const bankAccountCiphertext = bankAcct ? this.crypto.encrypt(bankAcct) : undefined;
+    const bankAccountLast4 = bankAcct ? bankAcct.slice(-4) : undefined;
 
     return this.prisma.$transaction(async (tx) => {
       const w = await tx.worker.create({
@@ -274,13 +293,16 @@ export class WorkersService {
           vendorId: dto.vendorId,
           natureOfContractor: dto.natureOfContractor,
           bankName: dto.bankName,
-          bankAccountNumber: dto.bankAccountNumber,
+          bankAccountCiphertext,
+          bankAccountLast4,
           ifscCode: dto.ifscCode,
           pfNumber: dto.pfNumber,
           esiNumber: dto.esiNumber,
           govIdType: dto.govIdType,
           aadhaarCiphertext,
           aadhaarLast4,
+          aadhaarFrontPhotoId: dto.aadhaarFrontPhotoId,
+          aadhaarBackPhotoId: dto.aadhaarBackPhotoId,
           panCiphertext,
           panLast4,
           joinDate,
@@ -341,13 +363,14 @@ export class WorkersService {
       nomineeRelation: dto.nomineeRelation,
       natureOfContractor: dto.natureOfContractor,
       bankName: dto.bankName,
-      bankAccountNumber: dto.bankAccountNumber,
       ifscCode: dto.ifscCode,
       pfNumber: dto.pfNumber,
       esiNumber: dto.esiNumber,
       govIdType: dto.govIdType,
       notes: dto.notes,
       photoUrl: dto.photoUrl,
+      aadhaarFrontPhotoId: dto.aadhaarFrontPhotoId,
+      aadhaarBackPhotoId: dto.aadhaarBackPhotoId,
       status: dto.status,
       category: dto.category,
       updatedById: user.userId,
@@ -367,11 +390,31 @@ export class WorkersService {
       data.panCiphertext = this.crypto.encrypt(pan);
       data.panLast4 = pan.slice(-4);
     }
+    if (dto.bankAccountNumber !== undefined) {
+      const bankAcct = dto.bankAccountNumber.replace(/\s/g, '');
+      data.bankAccountCiphertext = bankAcct ? this.crypto.encrypt(bankAcct) : null;
+      data.bankAccountLast4 = bankAcct ? bankAcct.slice(-4) : null;
+    }
 
     await this.prisma.worker.update({ where: { id }, data });
     // Drop the previous photo blob when the photo changed (avoids DB bloat).
     if (dto.photoUrl !== undefined && before.photoUrl && before.photoUrl !== dto.photoUrl) {
       await this.deletePhotoBlobIfOrphan(user.organizationId, before.photoUrl);
+    }
+    // Same for replaced Aadhaar images (referenced by blob id, not URL).
+    if (
+      dto.aadhaarFrontPhotoId !== undefined &&
+      before.aadhaarFrontPhotoId &&
+      before.aadhaarFrontPhotoId !== dto.aadhaarFrontPhotoId
+    ) {
+      await this.deletePhotoBlobById(user.organizationId, before.aadhaarFrontPhotoId);
+    }
+    if (
+      dto.aadhaarBackPhotoId !== undefined &&
+      before.aadhaarBackPhotoId &&
+      before.aadhaarBackPhotoId !== dto.aadhaarBackPhotoId
+    ) {
+      await this.deletePhotoBlobById(user.organizationId, before.aadhaarBackPhotoId);
     }
     await this.audit.record({
       organizationId: user.organizationId,
@@ -405,6 +448,8 @@ export class WorkersService {
     ]);
 
     await this.deletePhotoBlobIfOrphan(user.organizationId, worker.photoUrl);
+    await this.deletePhotoBlobById(user.organizationId, worker.aadhaarFrontPhotoId);
+    await this.deletePhotoBlobById(user.organizationId, worker.aadhaarBackPhotoId);
 
     await this.audit.record({
       organizationId: user.organizationId,
@@ -428,6 +473,14 @@ export class WorkersService {
         .deleteMany({ where: { id: blobId, organizationId } })
         .catch(() => undefined);
     }
+  }
+
+  /** Deletes an Aadhaar image blob (referenced 1:1 by id, not URL). */
+  private async deletePhotoBlobById(organizationId: string, blobId: string | null) {
+    if (!blobId) return;
+    await this.prisma.photoBlob
+      .deleteMany({ where: { id: blobId, organizationId } })
+      .catch(() => undefined);
   }
 
   /** Bind a credential (UID/QR), revoking any prior active of the same kind. */

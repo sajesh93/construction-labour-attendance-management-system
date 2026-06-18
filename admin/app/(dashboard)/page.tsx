@@ -3,7 +3,17 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Button, Card, CardContent, Divider, Grid, Tooltip, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Divider,
+  Grid,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
@@ -24,6 +34,11 @@ interface StatBucket {
 interface DashboardStats {
   onSiteNow: { total: number; byCategory: Record<string, StatBucket> };
   missedLogout: { date: string; total: number; byCategory: Record<string, StatBucket> };
+}
+
+interface StorageUsageLite {
+  level: 'OK' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
+  usedPercent: number | null;
 }
 
 function PeopleTooltip({ title, bucket }: { title: string; bucket?: StatBucket }) {
@@ -106,6 +121,7 @@ function Kpi({
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
   const pending = useQuery({
     queryKey: ['corrections', 'PENDING'],
@@ -116,6 +132,15 @@ export default function DashboardPage() {
     queryFn: () => api.get<DashboardStats>('/attendance/dashboard-stats'),
     refetchInterval: 30000,
   });
+  const storage = useQuery({
+    queryKey: ['storage-usage'],
+    queryFn: () => api.get<StorageUsageLite>('/storage/usage'),
+    refetchInterval: 120000,
+  });
+
+  const storageLevel = storage.data?.level;
+  const storagePct =
+    storage.data?.usedPercent != null ? Math.round(storage.data.usedPercent * 100) : null;
 
   const on = stats.data?.onSiteNow;
   const missed = stats.data?.missedLogout;
@@ -124,6 +149,21 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader title="Dashboard" subtitle="Overview of attendance operations" />
+
+      {(storageLevel === 'WARNING' || storageLevel === 'CRITICAL') && (
+        <Alert
+          severity={storageLevel === 'CRITICAL' ? 'error' : 'warning'}
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => router.push('/storage')}>
+              Manage storage
+            </Button>
+          }
+        >
+          Server storage is {storageLevel === 'CRITICAL' ? 'critically low' : 'running low'} (
+          {storagePct}% used). Back up and clear the oldest site to free space.
+        </Alert>
+      )}
 
       <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
         On site right now

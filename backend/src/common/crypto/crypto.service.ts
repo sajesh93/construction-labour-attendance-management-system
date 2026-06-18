@@ -34,12 +34,29 @@ export class CryptoService {
   }
 
   decrypt(blob: Buffer): string {
+    return this.decryptBuffer(blob).toString('utf8');
+  }
+
+  /**
+   * Encrypt raw bytes (e.g. a compressed Aadhaar image) with the same
+   * [IV][tag][ciphertext] layout as {@link encrypt}.
+   */
+  encryptBuffer(plaintext: Buffer): Buffer {
+    const iv = randomBytes(this.IV_LEN);
+    const cipher = createCipheriv('aes-256-gcm', this.key, iv);
+    const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return Buffer.concat([iv, tag, enc]);
+  }
+
+  /** Inverse of {@link encryptBuffer}; returns the original bytes. */
+  decryptBuffer(blob: Buffer): Buffer {
     const iv = blob.subarray(0, this.IV_LEN);
     const tag = blob.subarray(this.IV_LEN, this.IV_LEN + this.TAG_LEN);
     const data = blob.subarray(this.IV_LEN + this.TAG_LEN);
     const decipher = createDecipheriv('aes-256-gcm', this.key, iv);
     decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+    return Buffer.concat([decipher.update(data), decipher.final()]);
   }
 
   async hashPassword(password: string): Promise<string> {

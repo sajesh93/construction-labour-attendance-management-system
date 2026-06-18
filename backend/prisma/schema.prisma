@@ -101,6 +101,12 @@ enum PersonCategory {
   VISITOR
 }
 
+enum PhotoKind {
+  PROFILE
+  AADHAAR_FRONT
+  AADHAAR_BACK
+}
+
 // ---------------- Master data ----------------
 model Organization {
   id           String   @id @default(uuid()) @db.Uuid
@@ -274,13 +280,21 @@ model Worker {
   category               PersonCategory @default(WORKER)
   natureOfContractor     String?        @map("nature_of_contractor")
   bankName               String?        @map("bank_name")
+  // bankAccountNumber is being migrated to bankAccountCiphertext (encrypted at
+  // rest); kept temporarily as the backfill source, dropped after migration.
   bankAccountNumber      String?        @map("bank_account_number")
+  bankAccountCiphertext  Bytes?         @map("bank_account_ciphertext")
+  bankAccountLast4       String?        @map("bank_account_last4")
   ifscCode               String?        @map("ifsc_code")
   pfNumber               String?        @map("pf_number")
   esiNumber              String?        @map("esi_number")
   govIdType              String?        @map("gov_id_type")
   aadhaarCiphertext      Bytes?         @map("aadhaar_ciphertext")
   aadhaarLast4           String?        @map("aadhaar_last4")
+  // Aadhaar card images (compressed + encrypted PhotoBlobs). Front is the
+  // primary; back is optional and may be added/updated independently.
+  aadhaarFrontPhotoId    String?        @map("aadhaar_front_photo_id") @db.Uuid
+  aadhaarBackPhotoId     String?        @map("aadhaar_back_photo_id") @db.Uuid
   panCiphertext          Bytes?         @map("pan_ciphertext")
   panLast4               String?        @map("pan_last4")
   status                 WorkerStatus   @default(ACTIVE)
@@ -558,13 +572,19 @@ model RefreshToken {
 
 // ---------------- Files (photos stored in Postgres) ----------------
 model PhotoBlob {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  mimeType       String   @map("mime_type")
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  mimeType       String    @map("mime_type")
   data           Bytes
-  sizeBytes      Int      @map("size_bytes")
-  createdBy      String?  @map("created_by") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  sizeBytes      Int       @map("size_bytes")
+  // Storage-management metadata. `sizeBytes` is the stored (compressed +
+  // possibly encrypted) length; `originalSizeBytes` is what the client sent.
+  kind           PhotoKind @default(PROFILE)
+  isCompressed   Boolean   @default(false) @map("is_compressed")
+  isEncrypted    Boolean   @default(false) @map("is_encrypted")
+  originalSizeBytes Int?   @map("original_size_bytes")
+  createdBy      String?   @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@map("photo_blobs")
 }

@@ -83,6 +83,10 @@ export default function ReportsPage() {
   const [siteId, setSiteId] = React.useState('');
   const [category, setCategory] = React.useState('');
   const [sortByVendor, setSortByVendor] = React.useState(false);
+  // Full-profile report (adds decrypted Aadhaar/PAN/bank/etc. columns).
+  const [includeSensitive, setIncludeSensitive] = React.useState(false);
+  // Attendance sheet: P/A presence grid vs IN/Out times.
+  const [presenceMode, setPresenceMode] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
@@ -111,6 +115,8 @@ export default function ReportsPage() {
     if (siteId) params.siteId = siteId;
     if (showVendorTools && category) params.category = category;
     if (showVendorTools && sortByVendor) params.sortBy = 'vendor';
+    if (reportType !== 'CORRECTION' && includeSensitive) params.includeSensitive = true;
+    if (showAttSheet && presenceMode) params.attendanceMode = 'PRESENCE';
     return params;
   };
 
@@ -242,6 +248,17 @@ export default function ReportsPage() {
                     slotProps={{ textField: { fullWidth: true } }}
                   />
                 </Grid>
+                <Grid item xs={12} md={3}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={presenceMode}
+                        onChange={(e) => setPresenceMode(e.target.checked)}
+                      />
+                    }
+                    label="P/A marking (one column per day)"
+                  />
+                </Grid>
               </>
             )}
             <Grid item xs={12} md={3}>
@@ -305,6 +322,19 @@ export default function ReportsPage() {
                     />
                   }
                   label="Sort by vendor"
+                />
+              </Grid>
+            )}
+            {reportType !== 'CORRECTION' && (
+              <Grid item xs={12} md={4}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={includeSensitive}
+                      onChange={(e) => setIncludeSensitive(e.target.checked)}
+                    />
+                  }
+                  label="Full profile (include sensitive data)"
                 />
               </Grid>
             )}

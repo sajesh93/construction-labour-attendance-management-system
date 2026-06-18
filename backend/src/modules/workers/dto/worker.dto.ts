@@ -207,6 +207,23 @@ export class CreateWorkerDto {
   @IsOptional()
   @IsString()
   photoUrl?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'PhotoBlob id of the Aadhaar front image (upload via POST /files kind=AADHAAR_FRONT)',
+  })
+  @IsOptional()
+  @IsString()
+  aadhaarFrontPhotoId?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'PhotoBlob id of the Aadhaar back image (optional)',
+  })
+  @IsOptional()
+  @IsString()
+  aadhaarBackPhotoId?: string;
 }
 
 export class UpdateWorkerDto extends PartialType(CreateWorkerDto) {

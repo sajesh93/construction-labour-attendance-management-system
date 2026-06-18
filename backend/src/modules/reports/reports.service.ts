@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { CryptoService } from '../../common/crypto/crypto.service';
+import { AuditService } from '../../common/audit/audit.service';
+import { Permission, roleHasPermission } from '../../common/rbac/permissions';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
 import { minutesToHours, toCsv } from './report.builder';
@@ -8,6 +11,7 @@ import {
   AttSheetMonth,
   AttSheetRow,
   renderAttendanceSheetXlsx,
+  renderPresenceSheetXlsx,
   renderPdf,
   renderXlsx,
 } from './report.renderer';
@@ -15,7 +19,45 @@ import { CreateReportDto, ReportType } from './dto/report.dto';
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly crypto: CryptoService,
+    private readonly audit: AuditService,
+  ) {}
+
+  /**
+   * Whether to include sensitive (joining) columns: caller opted in via
+   * params.includeSensitive AND holds WORKER_VIEW_SENSITIVE. Records an audit
+   * entry the first time it resolves true for a request.
+   */
+  private async resolveSensitive(
+    user: AuthUser,
+    params: Record<string, unknown>,
+    reportType: ReportType,
+  ): Promise<boolean> {
+    const wants = params.includeSensitive === true || params.includeSensitive === 'true';
+    if (!wants) return false;
+    if (!roleHasPermission(user.role, Permission.WORKER_VIEW_SENSITIVE)) return false;
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.userId,
+      actorRole: user.role,
+      action: 'WORKER_AADHAAR_REVEAL',
+      entityType: 'Report',
+      entityId: reportType,
+      reason: 'Full-profile report (sensitive data)',
+    });
+    return true;
+  }
+
+  private decryptOrBlank(blob: Uint8Array | null): string {
+    if (!blob) return '';
+    try {
+      return this.crypto.decrypt(Buffer.from(blob));
+    } catch {
+      return '';
+    }
+  }
 
   /**
    * Generate a report. All formats render inline in the API process — CSV as
@@ -23,11 +65,12 @@ export class ReportsService {
    */
   async create(user: AuthUser, dto: CreateReportDto) {
     const params = dto.params ?? {};
+    const sensitive = await this.resolveSensitive(user, params, dto.reportType);
 
     // The attendance grid has a bespoke (merged-header) XLSX layout, so it gets
     // its own build + render path; CSV/PDF fall back to a flat representation.
     if (dto.reportType === ReportType.ATTENDANCE_SHEET) {
-      const sheet = await this.buildAttendanceSheet(user, params);
+      const sheet = await this.buildAttendanceSheet(user, params, sensitive);
       const job = await this.prisma.reportJob.create({
         data: {
           organizationId: user.organizationId,
@@ -42,7 +85,9 @@ export class ReportsService {
       const base = { jobId: job.id, status: job.status, rowCount: sheet.rows.length };
       const stem = `attendance-sheet-${job.id}`;
       if (dto.format === 'XLSX') {
-        const buffer = await renderAttendanceSheetXlsx(sheet.months, sheet.infoHeaders, sheet.rows);
+        const buffer = sheet.presence
+          ? await renderPresenceSheetXlsx(sheet.months, sheet.infoHeaders, sheet.rows)
+          : await renderAttendanceSheetXlsx(sheet.months, sheet.infoHeaders, sheet.rows);
         return {
           ...base,
           contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -67,7 +112,7 @@ export class ReportsService {
       };
     }
 
-    const { headers, rows } = await this.buildRows(user, dto.reportType, params);
+    const { headers, rows } = await this.buildRows(user, dto.reportType, params, sensitive);
 
     const job = await this.prisma.reportJob.create({
       data: {
@@ -116,11 +161,12 @@ export class ReportsService {
 
   /** Build the report rows without persisting a job — powers the admin preview. */
   async preview(user: AuthUser, reportType: ReportType, params: Record<string, unknown> = {}) {
+    const sensitive = await this.resolveSensitive(user, params, reportType);
     if (reportType === ReportType.ATTENDANCE_SHEET) {
-      const sheet = await this.buildAttendanceSheet(user, params);
+      const sheet = await this.buildAttendanceSheet(user, params, sensitive);
       return { headers: sheet.flatHeaders, rows: sheet.flatRows, rowCount: sheet.flatRows.length };
     }
-    const { headers, rows } = await this.buildRows(user, reportType, params);
+    const { headers, rows } = await this.buildRows(user, reportType, params, sensitive);
     return { headers, rows, rowCount: rows.length };
   }
 
@@ -145,6 +191,7 @@ export class ReportsService {
     user: AuthUser,
     type: ReportType,
     params: Record<string, unknown>,
+    sensitive = false,
   ): Promise<{ headers: string[]; rows: (string | number | null)[][] }> {
     const org = user.organizationId;
 
@@ -218,6 +265,23 @@ export class ReportsService {
       ],
     });
 
+    const sensitiveHeaders = [
+      "Father's Name",
+      'DOB',
+      'Gender',
+      'Blood Group',
+      'Mobile',
+      'Aadhaar',
+      'PAN',
+      'Bank Name',
+      'Bank Account',
+      'IFSC',
+      'PF No',
+      'ESI No',
+      'Emergency Contact',
+      'Emergency Number',
+      'Join Date',
+    ];
     const headers = [
       'Date',
       'Worker Code',
@@ -232,6 +296,26 @@ export class ReportsService {
       'Overtime (h)',
       'Late (min)',
       'State',
+      ...(sensitive ? sensitiveHeaders : []),
+    ];
+
+    const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '');
+    const sensitiveCells = (w: (typeof sessions)[number]['worker']): (string | number | null)[] => [
+      w.fatherName ?? '',
+      day(w.dateOfBirth),
+      w.gender ?? '',
+      w.bloodGroup ?? '',
+      w.mobileNumber ?? '',
+      this.decryptOrBlank(w.aadhaarCiphertext),
+      this.decryptOrBlank(w.panCiphertext),
+      w.bankName ?? '',
+      this.decryptOrBlank(w.bankAccountCiphertext) || (w.bankAccountNumber ?? ''),
+      w.ifscCode ?? '',
+      w.pfNumber ?? '',
+      w.esiNumber ?? '',
+      w.emergencyContactName ?? '',
+      w.emergencyContactNumber ?? '',
+      day(w.joinDate),
     ];
 
     const toRow = (s: (typeof sessions)[number]): (string | number | null)[] => [
@@ -248,6 +332,7 @@ export class ReportsService {
       minutesToHours(s.overtimeMinutes),
       s.lateMinutes ?? 0,
       s.state,
+      ...(sensitive ? sensitiveCells(s.worker) : []),
     ];
 
     // Insert a section divider row when the report spans multiple categories
@@ -280,7 +365,11 @@ export class ReportsService {
    * which may be a few days or span several months (each month becomes a block,
    * clamped to the selected days).
    */
-  private async buildAttendanceSheet(user: AuthUser, params: Record<string, unknown>) {
+  private async buildAttendanceSheet(
+    user: AuthUser,
+    params: Record<string, unknown>,
+    sensitive = false,
+  ) {
     const orgId = user.organizationId;
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
     const tz = org?.timezone || 'Asia/Kolkata';
@@ -403,6 +492,20 @@ export class ReportsService {
     const fmtDate = (d: Date | null) => (d ? dateFmt.format(d) : '');
     const sex = (g: string | null) => (g === 'M' ? 'Male' : g === 'F' ? 'Female' : (g ?? ''));
 
+    // Extra joining/sensitive columns appended to the info block for the full
+    // profile report (demographics like Father's Name/DOB are already present).
+    const sensitiveInfoHeaders = [
+      'Blood Group',
+      'Aadhaar',
+      'PAN',
+      'Bank Name',
+      'Bank Account',
+      'IFSC',
+      'PF No',
+      'ESI No',
+      'Emergency Contact',
+      'Emergency Number',
+    ];
     const infoHeaders = [
       'SL No',
       'Workers Name',
@@ -414,9 +517,18 @@ export class ReportsService {
       'Date of Joining',
       'Gender',
       'Mobile number',
+      ...(sensitive ? sensitiveInfoHeaders : []),
     ];
 
     const months: AttSheetMonth[] = blocks.map((b) => ({ label: b.label, days: b.days }));
+
+    // PRESENCE mode: one column per day with P (present) / A (absent), blank for
+    // days the worker wasn't employed. TIMES mode (default): IN/Out per day.
+    const presence = String(params.attendanceMode ?? '').toUpperCase() === 'PRESENCE';
+    const dkeyOf = (w: { joinDate: Date | null; exitDate: Date | null }) => ({
+      join: w.joinDate ? w.joinDate.toISOString().slice(0, 10) : null,
+      exit: w.exitDate ? w.exitDate.toISOString().slice(0, 10) : null,
+    });
 
     const rows: AttSheetRow[] = workers.map((w, idx) => {
       const wm = byWorkerDay.get(w.id);
@@ -431,14 +543,34 @@ export class ReportsService {
         fmtDate(w.joinDate),
         sex(w.gender),
         w.mobileNumber ?? '',
+        ...(sensitive
+          ? [
+              w.bloodGroup ?? '',
+              this.decryptOrBlank(w.aadhaarCiphertext),
+              this.decryptOrBlank(w.panCiphertext),
+              w.bankName ?? '',
+              this.decryptOrBlank(w.bankAccountCiphertext) || (w.bankAccountNumber ?? ''),
+              w.ifscCode ?? '',
+              w.pfNumber ?? '',
+              w.esiNumber ?? '',
+              w.emergencyContactName ?? '',
+              w.emergencyContactNumber ?? '',
+            ]
+          : []),
       ];
       const cells: (string | null)[] = [];
+      const emp = dkeyOf(w);
       for (const b of blocks) {
         for (const day of b.days) {
           const dkey = `${b.year}-${String(b.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const e = wm?.get(dkey);
-          cells.push(fmtTime(e?.inAt ?? null));
-          cells.push(fmtTime(e?.outAt ?? null));
+          if (presence) {
+            const employed = (!emp.join || dkey >= emp.join) && (!emp.exit || dkey <= emp.exit);
+            cells.push(employed ? (e ? 'P' : 'A') : '');
+          } else {
+            cells.push(fmtTime(e?.inAt ?? null));
+            cells.push(fmtTime(e?.outAt ?? null));
+          }
         }
       }
       return { info, cells };
@@ -448,12 +580,16 @@ export class ReportsService {
     const flatHeaders = [...infoHeaders];
     for (const b of blocks) {
       for (const day of b.days) {
-        flatHeaders.push(`${b.label} ${day} IN`);
-        flatHeaders.push(`${b.label} ${day} Out`);
+        if (presence) {
+          flatHeaders.push(`${b.label} ${day}`);
+        } else {
+          flatHeaders.push(`${b.label} ${day} IN`);
+          flatHeaders.push(`${b.label} ${day} Out`);
+        }
       }
     }
     const flatRows = rows.map((r) => [...r.info, ...r.cells]);
 
-    return { months, infoHeaders, rows, flatHeaders, flatRows };
+    return { months, infoHeaders, rows, flatHeaders, flatRows, presence };
   }
 }

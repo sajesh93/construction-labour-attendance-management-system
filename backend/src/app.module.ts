@@ -30,6 +30,7 @@ import { DesignationsModule } from './modules/designations/designations.module';
 import { FilesModule } from './modules/files/files.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SosModule } from './modules/sos/sos.module';
+import { StorageModule } from './modules/storage/storage.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { SosModule } from './modules/sos/sos.module';
     FilesModule,
     NotificationsModule,
     SosModule,
+    StorageModule,
   ],
   controllers: [HealthController],
   providers: [

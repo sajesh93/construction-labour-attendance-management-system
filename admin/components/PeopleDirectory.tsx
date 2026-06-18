@@ -31,6 +31,7 @@ import QrCode2Icon from '@mui/icons-material/QrCode2';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
+import CreditCardIcon from '@mui/icons-material/CreditCard';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { QrBadge } from '@/components/QrBadge';
@@ -72,6 +73,8 @@ interface PersonForm {
   joinDate?: string;
   status?: string;
   photoUrl?: string;
+  aadhaarFrontPhotoId?: string;
+  aadhaarBackPhotoId?: string;
 }
 
 type WorkerDetail = Worker & {
@@ -79,6 +82,8 @@ type WorkerDetail = Worker & {
   qrIdentifier?: string | null;
   joinDate?: string | null;
   assignments?: { siteId: string }[];
+  aadhaarFrontPhotoId?: string | null;
+  aadhaarBackPhotoId?: string | null;
 };
 
 const EMPTY_FORM: PersonForm = { workerCode: '', fullName: '' };
@@ -138,6 +143,8 @@ function toForm(w: WorkerDetail): PersonForm {
     joinDate: w.joinDate ? w.joinDate.slice(0, 10) : '',
     status: w.status,
     photoUrl: w.photoUrl ?? '',
+    aadhaarFrontPhotoId: w.aadhaarFrontPhotoId ?? '',
+    aadhaarBackPhotoId: w.aadhaarBackPhotoId ?? '',
   };
 }
 
@@ -149,8 +156,17 @@ export function photoSrc(photoUrl?: string | null): string | undefined {
     : photoUrl;
 }
 
-/** Downscale to ≤800px JPEG and upload to /files; returns the stored url. */
-async function uploadPhoto(file: File): Promise<string> {
+type PhotoKind = 'PROFILE' | 'AADHAAR_FRONT' | 'AADHAAR_BACK';
+
+/**
+ * Downscale + JPEG-compress client-side, then upload to /files. The server
+ * re-compresses (and encrypts Aadhaar kinds) as the authoritative step; this
+ * just saves bandwidth. Returns the stored { url, id }.
+ */
+async function uploadImage(
+  file: File,
+  kind: PhotoKind = 'PROFILE',
+): Promise<{ url: string; id: string }> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -163,19 +179,20 @@ async function uploadPhoto(file: File): Promise<string> {
     i.onerror = reject;
     i.src = dataUrl;
   });
-  const maxDim = 800;
+  // Aadhaar cards keep more pixels so the text/QR stay legible.
+  const maxDim = kind === 'PROFILE' ? 800 : 1600;
   const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(img.width * scale);
   canvas.height = Math.round(img.height * scale);
   canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-  const jpeg = canvas.toDataURL('image/jpeg', 0.85);
+  const jpeg = canvas.toDataURL('image/jpeg', kind === 'PROFILE' ? 0.85 : 0.82);
   const base64 = jpeg.split(',')[1];
-  const res = await api.post<{ url: string }>('/files', {
+  return api.post<{ url: string; id: string }>('/files', {
     dataBase64: base64,
     mimeType: 'image/jpeg',
+    kind,
   });
-  return res.url;
 }
 
 export function PeopleDirectory({ category }: { category: PersonCategory }) {
@@ -192,6 +209,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     defaultValues: EMPTY_FORM,
   });
   const photoUrl = watch('photoUrl');
+  const aadhaarFrontPhotoId = watch('aadhaarFrontPhotoId');
+  const aadhaarBackPhotoId = watch('aadhaarBackPhotoId');
 
   const [sortBy, setSortBy] = React.useState('');
   const listUrl = `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200${
@@ -339,7 +358,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     if (!file) return;
     setUploading(true);
     try {
-      const url = await uploadPhoto(file);
+      const { url } = await uploadImage(file, 'PROFILE');
       setValue('photoUrl', url, { shouldDirty: true });
     } catch {
       setError('Photo upload failed');
@@ -347,6 +366,24 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       setUploading(false);
     }
   };
+
+  const onPickAadhaar =
+    (side: 'AADHAAR_FRONT' | 'AADHAAR_BACK') => async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      setUploading(true);
+      try {
+        const { id } = await uploadImage(file, side);
+        setValue(side === 'AADHAAR_FRONT' ? 'aadhaarFrontPhotoId' : 'aadhaarBackPhotoId', id, {
+          shouldDirty: true,
+        });
+      } catch {
+        setError('Aadhaar image upload failed');
+      } finally {
+        setUploading(false);
+      }
+    };
 
   const field = (
     name: keyof PersonForm,
@@ -559,6 +596,64 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 Optional
               </Typography>
             </Stack>
+
+            {category === 'WORKER' && (
+              <>
+                <Typography variant="subtitle2" gutterBottom>
+                  Aadhaar card images
+                </Typography>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  {(
+                    [
+                      ['AADHAAR_FRONT', 'Front *', aadhaarFrontPhotoId, 'aadhaarFrontPhotoId'],
+                      ['AADHAAR_BACK', 'Back', aadhaarBackPhotoId, 'aadhaarBackPhotoId'],
+                    ] as const
+                  ).map(([side, label, id, field]) => (
+                    <Grid item xs={12} sm={6} key={side}>
+                      <Stack direction="row" spacing={2} alignItems="center">
+                        <Avatar
+                          variant="rounded"
+                          src={id ? photoSrc(`/files/${id}`) : undefined}
+                          sx={{ width: 88, height: 56 }}
+                        >
+                          <CreditCardIcon fontSize="small" />
+                        </Avatar>
+                        <Stack spacing={0.5}>
+                          <Typography variant="caption" color="text.secondary">
+                            Aadhaar {label}
+                          </Typography>
+                          <Stack direction="row" spacing={1}>
+                            <Button
+                              component="label"
+                              variant="outlined"
+                              size="small"
+                              disabled={uploading}
+                            >
+                              {id ? 'Replace' : 'Upload'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                onChange={onPickAadhaar(side)}
+                              />
+                            </Button>
+                            {id && (
+                              <Button size="small" color="inherit" onClick={() => setValue(field, '')}>
+                                Remove
+                              </Button>
+                            )}
+                          </Stack>
+                        </Stack>
+                      </Stack>
+                    </Grid>
+                  ))}
+                </Grid>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Encrypted and compressed at rest. Front is required; back is optional and can be
+                  added later.
+                </Typography>
+              </>
+            )}
 
             <Typography variant="subtitle2" gutterBottom>
               Identity

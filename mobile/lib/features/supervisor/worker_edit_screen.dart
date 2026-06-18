@@ -65,9 +65,12 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   String? _designationId;
   String? _vendorId;
   String? _photoUrl;
+  String? _aadhaarFrontPhotoId;
+  String? _aadhaarBackPhotoId;
   String _workerCode = '';
   bool _saving = false;
   bool _uploadingPhoto = false;
+  bool _uploadingAadhaar = false;
   bool _loading = true;
   String? _error;
 
@@ -165,6 +168,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         _designationId = w['designationId'] as String?;
         _vendorId = w['vendorId'] as String?;
         _photoUrl = w['photoUrl'] as String?;
+        _aadhaarFrontPhotoId = w['aadhaarFrontPhotoId'] as String?;
+        _aadhaarBackPhotoId = w['aadhaarBackPhotoId'] as String?;
         final dobStr = w['dateOfBirth'] as String?;
         if (dobStr != null) _dob = DateTime.tryParse(dobStr);
       }
@@ -215,6 +220,102 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
     }
+  }
+
+  /// Capture/upload an Aadhaar card image. Larger than the profile photo so the
+  /// card text/QR stay legible; the server compresses + encrypts it at rest.
+  Future<void> _pickAadhaar(ImageSource source, String kind) async {
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 82,
+    );
+    if (picked == null) return;
+    setState(() => _uploadingAadhaar = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      final dio = ref.read(apiClientProvider).dio;
+      final res = await dio.post('/files', data: {
+        'dataBase64': base64Encode(bytes),
+        'mimeType': 'image/jpeg',
+        'kind': kind,
+      });
+      final id = res.data['id'] as String;
+      if (mounted) {
+        setState(() {
+          if (kind == 'AADHAAR_FRONT') {
+            _aadhaarFrontPhotoId = id;
+          } else {
+            _aadhaarBackPhotoId = id;
+          }
+        });
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Aadhaar upload failed: ${e.message ?? 'network'}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingAadhaar = false);
+    }
+  }
+
+  void _chooseAadhaarSource(String kind) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Take photo'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAadhaar(ImageSource.camera, kind);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from gallery'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAadhaar(ImageSource.gallery, kind);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _aadhaarTile(String label, String kind, String? id) {
+    return Expanded(
+      child: Column(
+        children: [
+          GestureDetector(
+            onTap: _uploadingAadhaar ? null : () => _chooseAadhaarSource(kind),
+            child: Container(
+              height: 70,
+              decoration: BoxDecoration(
+                border: Border.all(color: Theme.of(context).dividerColor),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              alignment: Alignment.center,
+              child: id != null
+                  ? ApiCircleAvatar(photoUrl: '/files/$id', radius: 28)
+                  : const Icon(Icons.add_a_photo_outlined),
+            ),
+          ),
+          const SizedBox(height: 4),
+          OutlinedButton(
+            onPressed: _uploadingAadhaar ? null : () => _chooseAadhaarSource(kind),
+            child: Text(id == null ? label : 'Replace $label'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _choosePhotoSource() {
@@ -327,6 +428,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (_vendorId != null) 'vendorId': _vendorId,
       // On edit, always send photoUrl: null clears a removed photo.
       if (_isEdit) 'photoUrl': _photoUrl else if (_photoUrl != null) 'photoUrl': _photoUrl,
+      if (_aadhaarFrontPhotoId != null) 'aadhaarFrontPhotoId': _aadhaarFrontPhotoId,
+      if (_aadhaarBackPhotoId != null) 'aadhaarBackPhotoId': _aadhaarBackPhotoId,
       if (text(_aadhaar) != null) ...{
         'govIdType': 'Aadhaar',
         'aadhaar': text(_aadhaar),
@@ -480,6 +583,43 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.badge_outlined, size: 18),
+                              const SizedBox(width: 8),
+                              const Expanded(child: Text('Aadhaar card images')),
+                              if (_uploadingAadhaar)
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              _aadhaarTile('Front *', 'AADHAAR_FRONT', _aadhaarFrontPhotoId),
+                              const SizedBox(width: 12),
+                              _aadhaarTile('Back', 'AADHAAR_BACK', _aadhaarBackPhotoId),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Encrypted & compressed at rest. Front required; back optional.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   if (_isEdit)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
