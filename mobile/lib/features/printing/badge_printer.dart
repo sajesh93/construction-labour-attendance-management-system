@@ -152,7 +152,6 @@ pw.Widget _bar(String text, double u, {bool title = false}) {
     width: double.infinity,
     color: _navy,
     padding: pw.EdgeInsets.symmetric(vertical: title ? 3.4 * u : 2.6 * u),
-    alignment: pw.Alignment.center,
     child: pw.Text(
       text,
       textAlign: pw.TextAlign.center,
@@ -175,14 +174,12 @@ pw.Widget _row(String label, String value, double u, {double labelW = 62, bool g
         width: labelW * u,
         color: _labelBg,
         padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2 * u),
-        alignment: pw.Alignment.centerLeft,
         child: pw.Text(label,
             style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 5.8 * u)),
       ),
       pw.Expanded(
         child: pw.Container(
           padding: pw.EdgeInsets.symmetric(horizontal: 3 * u, vertical: 2 * u),
-          alignment: pw.Alignment.centerLeft,
           child: pw.Text(value, maxLines: 1, overflow: pw.TextOverflow.clip,
               style: pw.TextStyle(fontSize: 6.2 * u)),
         ),
@@ -394,57 +391,73 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
       border: pw.Border.all(color: PdfColors.grey700, width: 0.6),
       color: PdfColors.white,
     ),
+    // Rows must sit inside a bounded height: the pdf Column measures non-flex
+    // children with UNBOUNDED height, and a `stretch` Row resolves to infinite
+    // height there — which makes the Column drop every later child (the front
+    // avoids this because all its rows live inside Expanded). So each row/section
+    // below is given an explicit height; the seals section absorbs the slack.
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
         _bar('SCREENING & INDUCTION CARD', u, title: true),
         // Company + screening rows | QR
-        pw.Container(
-          decoration: const pw.BoxDecoration(
-            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
-          ),
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: [
-              pw.Expanded(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    _row('Name of the Company', org?.name ?? '', u, labelW: 86),
-                    _row('Screening Done on', _fmtDate(b.screeningDoneOn), u, labelW: 86),
-                    _row('Screening Done by', b.screeningDoneBy ?? '', u, labelW: 86),
-                  ],
+        pw.SizedBox(
+          height: 37.5 * u,
+          child: pw.Container(
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
+            ),
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    children: [
+                      pw.Expanded(
+                          child: _row('Name of the Company', org?.name ?? '', u, labelW: 86)),
+                      pw.Expanded(
+                          child: _row('Screening Done on', _fmtDate(b.screeningDoneOn), u,
+                              labelW: 86)),
+                      pw.Expanded(
+                          child: _row('Screening Done by', b.screeningDoneBy ?? '', u, labelW: 86)),
+                    ],
+                  ),
                 ),
-              ),
-              pw.Container(
-                width: 46 * u,
-                padding: pw.EdgeInsets.all(2.5 * u),
-                decoration: const pw.BoxDecoration(
-                  border: pw.Border(left: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
+                pw.Container(
+                  width: 46 * u,
+                  padding: pw.EdgeInsets.all(2.5 * u),
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(left: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
+                  ),
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      pw.BarcodeWidget(
+                        barcode: pw.Barcode.qrCode(),
+                        data: 'CLAMS:${b.workerCode}',
+                        width: 30 * u,
+                        height: 30 * u,
+                      ),
+                      pw.SizedBox(height: 1 * u),
+                      pw.Text(b.workerCode,
+                          style: pw.TextStyle(fontSize: 5 * u, fontWeight: pw.FontWeight.bold)),
+                    ],
+                  ),
                 ),
-                child: pw.Column(
-                  mainAxisAlignment: pw.MainAxisAlignment.center,
-                  children: [
-                    pw.BarcodeWidget(
-                      barcode: pw.Barcode.qrCode(),
-                      data: 'CLAMS:${b.workerCode}',
-                      width: 32 * u,
-                      height: 32 * u,
-                    ),
-                    pw.SizedBox(height: 1 * u),
-                    pw.Text(b.workerCode,
-                        style: pw.TextStyle(fontSize: 5 * u, fontWeight: pw.FontWeight.bold)),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         // Induction details.
-        pw.Row(children: [
-          pw.Expanded(child: _row('Induction Done on', _fmtDate(b.inductionDoneOn), u, labelW: 86)),
-          pw.Expanded(child: _row('Inducted By', b.inductedBy ?? '', u, labelW: 56)),
-        ]),
+        pw.SizedBox(
+          height: 12.5 * u,
+          child: pw.Row(children: [
+            pw.Expanded(
+                child: _row('Induction Done on', _fmtDate(b.inductionDoneOn), u, labelW: 62)),
+            pw.Expanded(child: _row('Inducted By', b.inductedBy ?? '', u, labelW: 50)),
+          ]),
+        ),
         // Computer-generated note (comes right after the induction details).
         pw.Container(
           width: double.infinity,
@@ -482,20 +495,23 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
             ),
           ),
         ),
-        _row('Validity till', _fmtDate(b.validityTill), u, labelW: 60),
+        pw.SizedBox(
+          height: 12.5 * u,
+          child: _row('Validity till', _fmtDate(b.validityTill), u, labelW: 60),
+        ),
         _bar('If Found, Please Return to Project Office', u),
       ],
     ),
   );
 }
 
-/// Opens the system print dialog with two-sided ID cards (front + back kept
-/// together as a pair so each can be cut out and laminated double-sided).
-Future<void> printCards(
+/// Builds the printable ID-card document (front + back pairs). Exposed so it
+/// can be rendered/tested without the platform print dialog.
+pw.Document buildCardsDocument(
   List<BadgeData> badges, {
   OrgInfo? org,
   CardSize size = CardSize.medium,
-}) async {
+}) {
   final u = _sizeScale(size);
   final doc = pw.Document();
   doc.addPage(
@@ -522,5 +538,16 @@ Future<void> printCards(
       ],
     ),
   );
+  return doc;
+}
+
+/// Opens the system print dialog with two-sided ID cards (front + back kept
+/// together as a pair so each can be cut out and laminated double-sided).
+Future<void> printCards(
+  List<BadgeData> badges, {
+  OrgInfo? org,
+  CardSize size = CardSize.medium,
+}) async {
+  final doc = buildCardsDocument(badges, org: org, size: size);
   await Printing.layoutPdf(onLayout: (_) => doc.save(), name: 'clams-id-cards.pdf');
 }
