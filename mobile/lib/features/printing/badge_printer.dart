@@ -255,7 +255,7 @@ pw.Widget _disciplinary(double u) {
 
 /// A job-specific training seal: coloured ring with an abbreviation, name below.
 pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
-  final d = 23 * u;
+  final d = 18 * u;
   return pw.Column(
     mainAxisSize: pw.MainAxisSize.min,
     children: [
@@ -279,7 +279,7 @@ pw.Widget _seal(String abbr, String name, PdfColor color, double u) {
           alignment: pw.Alignment.center,
           child: pw.Text(abbr,
               style: pw.TextStyle(
-                  color: color, fontWeight: pw.FontWeight.bold, fontSize: 7.5 * u)),
+                  color: color, fontWeight: pw.FontWeight.bold, fontSize: 6 * u)),
         ),
       ),
       pw.SizedBox(height: 1.2 * u),
@@ -417,7 +417,7 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
                 ),
               ),
               pw.Container(
-                width: 58 * u,
+                width: 46 * u,
                 padding: pw.EdgeInsets.all(2.5 * u),
                 decoration: const pw.BoxDecoration(
                   border: pw.Border(left: pw.BorderSide(color: PdfColors.grey700, width: 0.4)),
@@ -428,8 +428,8 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
                     pw.BarcodeWidget(
                       barcode: pw.Barcode.qrCode(),
                       data: 'CLAMS:${b.workerCode}',
-                      width: 44 * u,
-                      height: 44 * u,
+                      width: 32 * u,
+                      height: 32 * u,
                     ),
                     pw.SizedBox(height: 1 * u),
                     pw.Text(b.workerCode,

@@ -43,3 +43,8 @@ Thumbs.db
 
 acrlog.txt
 calog.txt
+
+# Slide decks / scratch scripts (not part of the app)
+*.pptx
+*.py
+deck/
