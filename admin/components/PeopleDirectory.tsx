@@ -31,10 +31,12 @@ import QrCode2Icon from '@mui/icons-material/QrCode2';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { QrBadge } from '@/components/QrBadge';
+import { CameraCaptureDialog } from '@/components/CameraCaptureDialog';
 import { Designation, Paginated, PersonCategory, Site, Vendor, Worker } from '@/lib/types';
 
 interface PersonForm {
@@ -352,37 +354,39 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     },
   });
 
-  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  // Which image slot, if any, is currently being captured from the camera.
+  const [capture, setCapture] = React.useState<PhotoKind | null>(null);
+
+  // Shared upload path for both file-input picks and camera captures.
+  const handleImageFile = async (file: File, kind: PhotoKind) => {
     setUploading(true);
     try {
-      const { url } = await uploadImage(file, 'PROFILE');
-      setValue('photoUrl', url, { shouldDirty: true });
+      const { url, id } = await uploadImage(file, kind);
+      if (kind === 'PROFILE') {
+        setValue('photoUrl', url, { shouldDirty: true });
+      } else {
+        setValue(kind === 'AADHAAR_FRONT' ? 'aadhaarFrontPhotoId' : 'aadhaarBackPhotoId', id, {
+          shouldDirty: true,
+        });
+      }
     } catch {
-      setError('Photo upload failed');
+      setError(kind === 'PROFILE' ? 'Photo upload failed' : 'Aadhaar image upload failed');
     } finally {
       setUploading(false);
     }
+  };
+
+  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await handleImageFile(file, 'PROFILE');
   };
 
   const onPickAadhaar =
     (side: 'AADHAAR_FRONT' | 'AADHAAR_BACK') => async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       e.target.value = '';
-      if (!file) return;
-      setUploading(true);
-      try {
-        const { id } = await uploadImage(file, side);
-        setValue(side === 'AADHAAR_FRONT' ? 'aadhaarFrontPhotoId' : 'aadhaarBackPhotoId', id, {
-          shouldDirty: true,
-        });
-      } catch {
-        setError('Aadhaar image upload failed');
-      } finally {
-        setUploading(false);
-      }
+      if (file) await handleImageFile(file, side);
     };
 
   const field = (
@@ -587,6 +591,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 {uploading ? 'Uploading…' : photoUrl ? 'Change photo' : 'Upload photo'}
                 <input type="file" accept="image/*" hidden onChange={onPickPhoto} />
               </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<CameraAltIcon />}
+                disabled={uploading}
+                onClick={() => setCapture('PROFILE')}
+              >
+                Capture
+              </Button>
               {photoUrl && (
                 <Button size="small" onClick={() => setValue('photoUrl', '')}>
                   Remove
@@ -636,6 +649,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                                 hidden
                                 onChange={onPickAadhaar(side)}
                               />
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              startIcon={<CameraAltIcon />}
+                              disabled={uploading}
+                              onClick={() => setCapture(side)}
+                            >
+                              Capture
                             </Button>
                             {id && (
                               <Button size="small" color="inherit" onClick={() => setValue(field, '')}>
@@ -793,6 +815,23 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           </DialogActions>
         </form>
       </Dialog>
+
+      <CameraCaptureDialog
+        open={capture !== null}
+        title={
+          capture === 'AADHAAR_FRONT'
+            ? 'Capture Aadhaar front'
+            : capture === 'AADHAAR_BACK'
+              ? 'Capture Aadhaar back'
+              : 'Capture photo'
+        }
+        onClose={() => setCapture(null)}
+        onCapture={(file) => {
+          const kind = capture;
+          setCapture(null);
+          if (kind) void handleImageFile(file, kind);
+        }}
+      />
 
       <Dialog open={!!qrWorker} onClose={() => setQrWorker(null)}>
         <DialogTitle>QR badge</DialogTitle>
