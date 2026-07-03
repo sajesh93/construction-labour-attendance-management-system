@@ -20,6 +20,7 @@ export const config = {
   matcher: [
     // Protect everything except login, the auth routes, and public/static assets
     // (logo.png must be reachable on the unauthenticated login page).
-    '/((?!login|api/auth|_next/static|_next/image|favicon.ico|logo.png).*)',
+    // /download serves the Android APK and must stay public.
+    '/((?!login|api/auth|download|_next/static|_next/image|favicon.ico|logo.png).*)',
   ],
 };
