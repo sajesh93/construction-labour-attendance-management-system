@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Box, Button, Checkbox, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { api } from '@/lib/api/browser';
 import { Organization, Paginated, PersonCategory, Site, Worker } from '@/lib/types';
-import { CardOrientation, CardSize, IdCard } from '@/components/IdCard';
+import { cardDimsMm, CardOrientation, CardSize, IdCard, PVC_SIZES } from '@/components/IdCard';
 
 const CATEGORY_TITLES: Record<PersonCategory, string> = {
   WORKER: 'Worker ID cards',
@@ -29,18 +29,23 @@ export default function BadgesPage() {
   const [siteId, setSiteId] = React.useState('');
   const [q, setQ] = React.useState('');
 
-  // Card size, restored from localStorage after mount (avoids SSR hydration
+  // PVC card stock, restored from localStorage after mount (avoids SSR hydration
   // mismatch), and written back whenever the admin changes it.
-  const [size, setSize] = React.useState<CardSize>('M');
+  const [size, setSize] = React.useState<CardSize>('CR80');
   React.useEffect(() => {
     const s = localStorage.getItem(SIZE_KEY) as CardSize | null;
-    if (s === 'S' || s === 'M' || s === 'L') setSize(s);
+    if (s && s in PVC_SIZES) setSize(s);
   }, []);
   const chooseSize = (s: CardSize) => {
     setSize(s);
     localStorage.setItem(SIZE_KEY, s);
   };
   const orientation = ORIENTATION;
+  const isVisitor = category === 'VISITOR';
+
+  // Sized to the selected PVC stock so the print dialog targets one card per
+  // page (no A4 sheet of badges). margin:0 lets the card print edge-to-edge.
+  const { w: pageW, h: pageH } = cardDimsMm(size, orientation);
 
   const org = useQuery({
     queryKey: ['org-current'],
@@ -72,6 +77,16 @@ export default function BadgesPage() {
       return next;
     });
   const selectedCount = list.filter((w) => selected.has(w.id)).length;
+
+  // The last selected card's final face must NOT force a page break, otherwise
+  // the printer ejects a blank trailing card. Mark its wrapper so print.css can
+  // single it out.
+  const lastSelectedId = React.useMemo(() => {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (selected.has(list[i].id)) return list[i].id;
+    }
+    return null;
+  }, [list, selected]);
 
   return (
     <Box>
@@ -124,14 +139,16 @@ export default function BadgesPage() {
         <TextField
           select
           size="small"
-          label="Size"
+          label="PVC card size"
           value={size}
           onChange={(e) => chooseSize(e.target.value as CardSize)}
-          sx={{ width: 120 }}
+          sx={{ width: 230 }}
         >
-          <MenuItem value="S">Small</MenuItem>
-          <MenuItem value="M">Medium</MenuItem>
-          <MenuItem value="L">Large</MenuItem>
+          {(Object.keys(PVC_SIZES) as CardSize[]).map((key) => (
+            <MenuItem key={key} value={key}>
+              {PVC_SIZES[key].label}
+            </MenuItem>
+          ))}
         </TextField>
         <Button size="small" onClick={() => setSelected(new Set(list.map((w) => w.id)))}>
           Select all
@@ -150,14 +167,18 @@ export default function BadgesPage() {
         </Typography>
       )}
 
+      {/* Drives the print dialog's paper size to the exact PVC card so each face
+          prints alone, edge-to-edge — no A4 sheet of badges to cut out. */}
+      <style>{`@media print { @page { size: ${pageW}mm ${pageH}mm; margin: 0; } }`}</style>
+
       <Box
         className="print-area"
         sx={{
           display: 'flex',
           flexWrap: 'wrap',
           gap: 2,
-          // Wider gaps between cards on paper leave room to cut them apart.
-          '@media print': { gap: '10mm' },
+          // On screen only — a roomy gap between the on-screen preview cards.
+          // In print each face is its own page (see print.css .pvc-face).
         }}
       >
         {list.map((w) => {
@@ -166,6 +187,7 @@ export default function BadgesPage() {
             <Box
               key={w.id}
               onClick={() => toggle(w.id)}
+              className={w.id === lastSelectedId ? 'pvc-last' : undefined}
               sx={{
                 position: 'relative',
                 cursor: 'pointer',
@@ -193,14 +215,18 @@ export default function BadgesPage() {
                   '@media print': { display: 'none' },
                 }}
               />
-              {/* Front + back kept together so the pair can be cut out and laminated double-sided. */}
-              <Stack
-                direction="row"
-                spacing={0.5}
-                sx={{ breakInside: 'avoid', '@media print': { gap: '6mm' } }}
-              >
-                <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="front" />
-                <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="back" />
+              {/* Visitor passes are single-sided (name + number only); worker/
+                  staff cards keep their front + back faces. Each face is wrapped
+                  in .pvc-face so it prints on its own card-sized page. */}
+              <Stack direction="row" spacing={0.5}>
+                <div className="pvc-face">
+                  <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="front" />
+                </div>
+                {!isVisitor && (
+                  <div className="pvc-face">
+                    <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="back" />
+                  </div>
+                )}
               </Stack>
             </Box>
           );

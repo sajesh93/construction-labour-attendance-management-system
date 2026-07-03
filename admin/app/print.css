@@ -19,5 +19,22 @@
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    /* One card face per page — no flex wrapping/gaps on PVC stock. */
+    display: block !important;
+  }
+  /* Each card face prints alone on its own (card-sized) page so a PVC card
+     printer feeds one blank per face. The @page size itself is injected by the
+     badges page to match the selected PVC stock. */
+  .pvc-face {
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Suppress the trailing blank page after the very last selected face so the
+     printer doesn't eject (and waste) one extra card. */
+  .pvc-last .pvc-face:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 }

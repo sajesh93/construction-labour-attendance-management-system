@@ -7,19 +7,23 @@ import { qrPayload } from '@/components/QrBadge';
 import { photoSrc } from '@/components/PeopleDirectory';
 import { DisciplinaryBadges, SafetySeal, TRAINING_SEALS } from '@/components/SafetySeals';
 
-export type CardSize = 'S' | 'M' | 'L';
+// Standard PVC card stock sizes (long edge × short edge, in mm). These match the
+// blank cards that desktop PVC card printers (Evolis, Fargo, Magicard, Zebra…)
+// feed, so the printout lands edge-to-edge on the card.
+export type CardSize = 'CR80' | 'CR79' | 'CR100';
 export type CardOrientation = 'portrait' | 'landscape';
 
-// Base ID card = CR80 (85.6 × 54 mm). Cards are landscape only; size scales the
-// whole card.
-const SIZE_SCALE: Record<CardSize, number> = { S: 0.82, M: 1, L: 1.22 };
-const BASE_LONG = 85.6;
-const BASE_SHORT = 54;
+export const PVC_SIZES: Record<CardSize, { long: number; short: number; label: string }> = {
+  CR80: { long: 85.6, short: 54, label: 'CR80 — Standard (85.6 × 54 mm)' },
+  CR79: { long: 83.9, short: 51, label: 'CR79 (83.9 × 51 mm)' },
+  CR100: { long: 98.5, short: 67, label: 'CR100 — Oversized (98.5 × 67 mm)' },
+};
+
+// CR80 is the reference; everything (text, QR, logo) scales off its short edge.
+const BASE_SHORT = PVC_SIZES.CR80.short;
 
 export function cardDimsMm(size: CardSize, orientation: CardOrientation) {
-  const s = SIZE_SCALE[size];
-  const long = BASE_LONG * s;
-  const short = BASE_SHORT * s;
+  const { long, short } = PVC_SIZES[size];
   return orientation === 'portrait' ? { w: short, h: long } : { w: long, h: short };
 }
 
@@ -62,8 +66,8 @@ export function IdCard({
   side: 'front' | 'back';
 }) {
   const { w, h } = cardDimsMm(size, orientation);
-  // A unit scale so text/QR grow with the card. 1 == Medium.
-  const u = SIZE_SCALE[size];
+  // A unit scale so text/QR grow with the card. 1 == CR80 (the reference size).
+  const u = PVC_SIZES[size].short / BASE_SHORT;
   const logoScale = org?.logoScale ?? 1;
 
   const shell: React.CSSProperties = {
@@ -188,6 +192,49 @@ export function IdCard({
         />
       </div>
     ) : null;
+
+  // ---- Visitor pass: deliberately minimal — name + mobile + a QR for sign-in.
+  // Single-sided, so it renders the same regardless of `side`. ----
+  if (worker.category === 'VISITOR') {
+    return (
+      <div style={shell}>
+        {titleBar('VISITOR PASS')}
+        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              borderRight: `0.5px solid ${BORDER}`,
+              minWidth: 0,
+            }}
+          >
+            {org?.name ? <Row cells={[{ label: 'Company', value: org.name, labelW: 22 }]} grow={1} /> : null}
+            <Row cells={[{ label: 'Name', value: worker.fullName, labelW: 22 }]} grow={1} />
+            <Row cells={[{ label: 'Mobile', value: worker.mobileNumber ?? '', labelW: 22 }]} grow={1} />
+            <Row cells={[{ label: 'Pass No', value: worker.workerCode, labelW: 22 }]} grow={1} />
+          </div>
+          <div
+            style={{
+              width: `${27 * u}mm`,
+              flexShrink: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: `${1 * u}mm`,
+              padding: `${1.2 * u}mm`,
+            }}
+          >
+            {logoBox()}
+            <QRCodeSVG value={qrPayload(worker.workerCode)} size={Math.round(11 * u * 3.78)} includeMargin={false} />
+            <div style={{ fontSize: `${1.8 * u}mm`, fontWeight: 700, lineHeight: 1 }}>{worker.workerCode}</div>
+          </div>
+        </div>
+        {footerBar('Valid for day of issue · Return at exit')}
+      </div>
+    );
+  }
 
   if (side === 'front') {
     const project = worker.assignments?.[0]?.site?.name ?? '';
