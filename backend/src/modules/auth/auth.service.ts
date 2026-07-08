@@ -207,7 +207,8 @@ export class AuthService {
     if (user.role === 'WATCHMAN') {
       return {
         emailSent: false,
-        message: 'Watchman accounts cannot reset the password here. Please ask your Admin to reset it.',
+        message:
+          'Watchman accounts cannot reset the password here. Please ask your Admin to reset it.',
       };
     }
     if (!user.email) {
