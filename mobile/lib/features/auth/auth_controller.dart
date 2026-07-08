@@ -66,14 +66,19 @@ class AuthController extends StateNotifier<AuthState> {
 
   /// On app start: if a token is stored, validate it via /auth/me (the API
   /// client auto-refreshes on 401), restoring the session + role across restarts.
+  ///
+  /// EVERYTHING here is guarded — bootstrap must always end with
+  /// `initialized: true`, otherwise the router keeps showing the splash
+  /// spinner forever (secure-storage reads can throw after app upgrades, and
+  /// network calls can stall).
   Future<void> bootstrap() async {
-    final token = await _store.accessToken;
-    if (token == null) {
-      state = state.copyWith(initialized: true, authenticated: false);
-      return;
-    }
     try {
-      final me = await _dio.get('/auth/me');
+      final token = await _store.accessToken.timeout(const Duration(seconds: 5));
+      if (token == null) {
+        state = state.copyWith(initialized: true, authenticated: false);
+        return;
+      }
+      final me = await _dio.get('/auth/me').timeout(const Duration(seconds: 15));
       state = state.copyWith(
         initialized: true,
         authenticated: true,
@@ -82,10 +87,20 @@ class AuthController extends StateNotifier<AuthState> {
         email: me.data['email'] as String?,
       );
       unawaited(_registerPush());
+    } on DioException catch (e) {
+      // The server explicitly rejected the session — drop tokens but KEEP
+      // device credentials so this phone stays authorized after re-login.
+      // On pure network errors the tokens are kept for the next start.
+      if (e.response != null) {
+        try {
+          await _store.clearAuth();
+        } catch (_) {}
+      }
+      state = state.copyWith(initialized: true, authenticated: false, role: null);
     } catch (_) {
-      // Session invalid — drop tokens but KEEP device credentials so this
-      // phone stays authorized for attendance after the next login.
-      await _store.clearAuth();
+      try {
+        await _store.clearAuth();
+      } catch (_) {}
       state = state.copyWith(initialized: true, authenticated: false, role: null);
     }
   }

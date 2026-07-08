@@ -5,8 +5,17 @@ import '../storage/secure_store.dart';
 
 /// Dio-based API client. Attaches the bearer + device headers and transparently
 /// refreshes the access token on 401.
+/// Timeouts keep the app responsive when the server is slow/unreachable —
+/// without them a dead connection spins forever (e.g. splash never leaving).
+final _baseOptions = BaseOptions(
+  baseUrl: Env.apiBaseUrl,
+  connectTimeout: const Duration(seconds: 12),
+  receiveTimeout: const Duration(seconds: 20),
+  sendTimeout: const Duration(seconds: 20),
+);
+
 class ApiClient {
-  ApiClient(this._store) : _dio = Dio(BaseOptions(baseUrl: Env.apiBaseUrl)) {
+  ApiClient(this._store) : _dio = Dio(_baseOptions) {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
@@ -43,8 +52,8 @@ class ApiClient {
     final refresh = await _store.refreshToken;
     if (refresh == null) return false;
     try {
-      final res = await Dio(BaseOptions(baseUrl: Env.apiBaseUrl))
-          .post('/auth/refresh', data: {'refreshToken': refresh});
+      final res =
+          await Dio(_baseOptions).post('/auth/refresh', data: {'refreshToken': refresh});
       await _store.saveTokens(
         res.data['accessToken'] as String,
         res.data['refreshToken'] as String,
