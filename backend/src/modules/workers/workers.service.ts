@@ -126,6 +126,9 @@ export class WorkersService {
         vendorId: true,
         vendor: { select: { name: true } },
         category: true,
+        escortName: true,
+        visitorCompany: true,
+        idProofPhotoId: true,
         designationId: true,
         designation: { select: { name: true } },
         natureOfContractor: true,
@@ -212,6 +215,10 @@ export class WorkersService {
   // ---- Mutations -----------------------------------------------------------
   async create(user: AuthUser, dto: CreateWorkerDto) {
     const category = dto.category ?? 'WORKER';
+    // Every visitor must have an escort recorded.
+    if (category === 'VISITOR' && !dto.escortName?.trim()) {
+      throw Errors.businessRule('Escort name is required for visitors.');
+    }
     // Visitors are day passes — default the visit date to today so the pass
     // can auto-expire at end of day.
     const joinDate = dto.joinDate
@@ -306,6 +313,9 @@ export class WorkersService {
           panCiphertext,
           panLast4,
           joinDate,
+          escortName: dto.escortName,
+          visitorCompany: dto.visitorCompany,
+          idProofPhotoId: dto.idProofPhotoId,
           notes: dto.notes,
           nfcUid: dto.nfcUid,
           qrIdentifier: dto.qrIdentifier,
@@ -367,6 +377,9 @@ export class WorkersService {
       pfNumber: dto.pfNumber,
       esiNumber: dto.esiNumber,
       govIdType: dto.govIdType,
+      escortName: dto.escortName,
+      visitorCompany: dto.visitorCompany,
+      idProofPhotoId: dto.idProofPhotoId,
       notes: dto.notes,
       photoUrl: dto.photoUrl,
       aadhaarFrontPhotoId: dto.aadhaarFrontPhotoId,

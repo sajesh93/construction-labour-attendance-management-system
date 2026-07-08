@@ -3,20 +3,25 @@
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert,
   Avatar,
   Box,
   Button,
   Card,
   CardContent,
+  Divider,
   Grid,
   Slider,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
+import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
+import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
+import ContactPhoneOutlinedIcon from '@mui/icons-material/ContactPhoneOutlined';
+import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { useToast } from '@/components/ui/Toast';
 import { photoSrc } from '@/components/PeopleDirectory';
 import { Organization } from '@/lib/types';
 
@@ -77,11 +82,43 @@ async function uploadLogo(file: File): Promise<string> {
   return res.url;
 }
 
+/** Card with a titled section header — settings-page building block. */
+function SectionCard({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <Box sx={{ px: 2.5, pt: 2, pb: 1.5, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box sx={{ color: 'text.secondary', display: 'flex', '& svg': { fontSize: 20 } }}>
+          {icon}
+        </Box>
+        <Box>
+          <Typography variant="subtitle1">{title}</Typography>
+          {subtitle && (
+            <Typography variant="caption" color="text.secondary">
+              {subtitle}
+            </Typography>
+          )}
+        </Box>
+      </Box>
+      <Divider />
+      <CardContent sx={{ px: 2.5 }}>{children}</CardContent>
+    </Card>
+  );
+}
+
 export default function CompanyPage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const [form, setForm] = React.useState<ProfileForm>(EMPTY);
-  const [error, setError] = React.useState<string | null>(null);
-  const [saved, setSaved] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
 
   const org = useQuery({
@@ -109,7 +146,6 @@ export default function CompanyPage() {
 
   const set = (k: keyof ProfileForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((f) => ({ ...f, [k]: e.target.value }));
-    setSaved(false);
   };
 
   const save = useMutation({
@@ -122,13 +158,12 @@ export default function CompanyPage() {
       return api.patch<Organization>('/organizations/current', body);
     },
     onSuccess: () => {
-      setError(null);
-      setSaved(true);
+      toast.success('Saved — new cards will use these details');
       qc.invalidateQueries({ queryKey: ['org-current'] });
     },
     onError: (e) => {
       const err = e as BrowserApiError;
-      setError(err.body?.detail ?? err.body?.title ?? 'Failed to save');
+      toast.error(err.body?.detail ?? err.body?.title ?? 'Failed to save');
     },
   });
 
@@ -139,45 +174,61 @@ export default function CompanyPage() {
     try {
       const url = await uploadLogo(file);
       setForm((f) => ({ ...f, logoUrl: url }));
-      setSaved(false);
     } catch {
-      setError('Logo upload failed');
+      toast.error('Logo upload failed');
     } finally {
       setUploading(false);
       e.target.value = '';
     }
   };
 
+  const saveButton = (
+    <Button
+      variant="contained"
+      disabled={save.isPending || org.isLoading}
+      onClick={() => save.mutate()}
+    >
+      {save.isPending ? 'Saving…' : 'Save changes'}
+    </Button>
+  );
+
   return (
     <>
       <PageHeader
         title="Company details"
         subtitle="Name, address and logo — printed on every worker ID card."
+        action={saveButton}
       />
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-      {saved && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaved(false)}>
-          Saved. New cards will use these details.
-        </Alert>
-      )}
-
-      <Card sx={{ maxWidth: 760 }}>
-        <CardContent>
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
+      <Stack spacing={2.5} sx={{ maxWidth: 860 }}>
+        <SectionCard
+          icon={<ImageOutlinedIcon />}
+          title="Branding"
+          subtitle="Logo shown on printed worker ID cards"
+        >
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: form.logoUrl ? 3 : 0 }}>
             <Avatar
               src={photoSrc(form.logoUrl)}
               variant="rounded"
-              sx={{ width: 72, height: 72, bgcolor: 'grey.100' }}
+              sx={{
+                width: 72,
+                height: 72,
+                bgcolor: 'grey.100',
+                color: 'text.secondary',
+                fontSize: '0.8rem',
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
             >
               Logo
             </Avatar>
             <Box>
-              <Button variant="outlined" component="label" disabled={uploading}>
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<FileUploadOutlinedIcon />}
+                disabled={uploading}
+              >
                 {uploading ? 'Uploading…' : 'Upload logo'}
                 <input hidden type="file" accept="image/*" onChange={onLogo} />
               </Button>
@@ -191,11 +242,14 @@ export default function CompanyPage() {
                   Remove
                 </Button>
               )}
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+                PNG or JPEG — automatically resized to fit the card.
+              </Typography>
             </Box>
           </Stack>
 
           {form.logoUrl && (
-            <Stack direction="row" spacing={3} alignItems="center" sx={{ mb: 3 }}>
+            <Stack direction="row" spacing={3} alignItems="center">
               {/* Clipped preview mimics the logo box on the ID card. */}
               <Box
                 sx={{
@@ -241,13 +295,18 @@ export default function CompanyPage() {
                   valueLabelDisplay="auto"
                   onChange={(_, v) => {
                     setForm((f) => ({ ...f, logoScale: v as number }));
-                    setSaved(false);
                   }}
                 />
               </Box>
             </Stack>
           )}
+        </SectionCard>
 
+        <SectionCard
+          icon={<BusinessOutlinedIcon />}
+          title="Company details"
+          subtitle="Registered name and address"
+        >
           <Grid container spacing={2}>
             <Grid item xs={12}>
               <TextField
@@ -287,6 +346,15 @@ export default function CompanyPage() {
                 onChange={set('pincode')}
               />
             </Grid>
+          </Grid>
+        </SectionCard>
+
+        <SectionCard
+          icon={<ContactPhoneOutlinedIcon />}
+          title="Contact"
+          subtitle="Shown on ID cards and documents"
+        >
+          <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
               <TextField fullWidth label="Phone" value={form.phone} onChange={set('phone')} />
             </Grid>
@@ -307,18 +375,10 @@ export default function CompanyPage() {
               />
             </Grid>
           </Grid>
+        </SectionCard>
 
-          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
-            <Button
-              variant="contained"
-              disabled={save.isPending || org.isLoading}
-              onClick={() => save.mutate()}
-            >
-              {save.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+        <Stack direction="row" justifyContent="flex-end">{saveButton}</Stack>
+      </Stack>
     </>
   );
 }

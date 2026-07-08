@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/theme.dart';
 import '../../../core/providers.dart';
 import '../../../core/time/clock_guard.dart';
+import '../../../core/widgets/section_header.dart';
 import '../attendance_providers.dart';
 import '../../auth/auth_controller.dart';
 import '../../device/device_service.dart';
@@ -191,7 +193,7 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.schedule, color: Colors.red, size: 40),
+          icon: const Icon(Icons.schedule, color: ClamsColors.error, size: 40),
           title: const Text('Phone clock is wrong'),
           content: const Text(
             'This phone\'s time differs from the server by more than 10 minutes, '
@@ -256,9 +258,21 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
             child: Center(
               child: pending.when(
                 data: (n) => ActionChip(
-                  avatar: Icon(n == 0 ? Icons.cloud_done : Icons.cloud_upload, size: 18),
-                  label: Text(n == 0 ? 'Synced' : '$n to sync'),
-                  backgroundColor: n == 0 ? Colors.green.shade100 : Colors.orange.shade100,
+                  avatar: Icon(
+                    n == 0 ? Icons.cloud_done : Icons.cloud_upload,
+                    size: 18,
+                    color: n == 0 ? ClamsColors.success : ClamsColors.warning,
+                  ),
+                  label: Text(
+                    n == 0 ? 'Synced' : '$n to sync',
+                    style: TextStyle(
+                      color: n == 0 ? ClamsColors.success : ClamsColors.warning,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  backgroundColor:
+                      n == 0 ? ClamsColors.successTint : ClamsColors.warningTint,
+                  side: BorderSide.none,
                   tooltip: n == 0
                       ? 'All punches uploaded — tap to sync now'
                       : '$n punch(es) waiting to upload — tap to sync now',
@@ -289,53 +303,53 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (_deviceState == DeviceState.pending || _deviceState == DeviceState.error)
-              Card(
-                color: Colors.orange.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.warning_amber, color: Colors.orange.shade800),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _deviceState == DeviceState.pending
-                                  ? 'Device awaiting authorization'
-                                  : 'Could not reach server',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                        ],
+              StatusBanner(
+                color: ClamsColors.warning,
+                icon: Icons.warning_amber,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _deviceState == DeviceState.pending
+                          ? 'Device awaiting authorization'
+                          : 'Could not reach server',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                    ClamsSpacing.gapSm,
+                    if (_deviceState == DeviceState.pending && _deviceId != null)
+                      Text(
+                        'Ask an admin to authorize this device in Admin → Devices, '
+                        'then tap Retry.\nDevice ID: $_deviceId',
+                        style: const TextStyle(color: ClamsColors.textSecondary),
                       ),
-                      const SizedBox(height: 8),
-                      if (_deviceState == DeviceState.pending && _deviceId != null)
-                        Text('Ask an admin to authorize this device in Admin → Devices, '
-                            'then tap Retry.\nDevice ID: $_deviceId'),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(onPressed: _ensureDevice, child: const Text('Retry')),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _ensureDevice,
+                        style: TextButton.styleFrom(
+                            foregroundColor: ClamsColors.accent),
+                        child: const Text('Retry'),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            const SizedBox(height: 12),
-            Icon(Icons.contactless, size: 96, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 24),
+            ClamsSpacing.gapMd,
+            const Icon(Icons.contactless, size: 96, color: ClamsColors.primary),
+            ClamsSpacing.gapXl,
             Text(_status, textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 32),
+            ClamsSpacing.gapXxl,
             if (_nfcAvailable) ...[
               FilledButton.icon(
                 onPressed: _busy ? null : _onNfc,
                 icon: const Icon(Icons.nfc),
                 label: const Text('Tap NFC card'),
               ),
-              const SizedBox(height: 12),
+              ClamsSpacing.gapMd,
             ],
             // QR is the primary action when there is no NFC.
             _nfcAvailable
@@ -349,7 +363,7 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
                     icon: const Icon(Icons.qr_code_scanner),
                     label: const Text('Scan QR code'),
                   ),
-            const SizedBox(height: 12),
+            ClamsSpacing.gapMd,
             OutlinedButton.icon(
               onPressed: _busy ? null : _onManual,
               icon: const Icon(Icons.search),

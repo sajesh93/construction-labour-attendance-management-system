@@ -6,10 +6,10 @@ import {
   Box,
   Button,
   Card,
-  Chip,
   Collapse,
   IconButton,
   MenuItem,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -21,12 +21,16 @@ import {
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { FilterBar } from '@/components/ui/FilterBar';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { StatusBadge, BadgeTone } from '@/components/ui/StatusBadge';
 import { Paginated } from '@/lib/types';
 
 interface AuditRow {
@@ -44,43 +48,41 @@ interface AuditRow {
   createdAt: string;
 }
 
-type ChipColor = 'default' | 'success' | 'info' | 'warning' | 'error' | 'secondary';
-
-/** Friendly label + colour per audit action; anything unknown falls back to title-case. */
-const ACTIONS: Record<string, { label: string; color: ChipColor }> = {
-  AUTH_LOGIN: { label: 'Signed in', color: 'default' },
-  WORKER_CREATE: { label: 'Person added', color: 'success' },
-  WORKER_UPDATE: { label: 'Person updated', color: 'info' },
-  WORKER_DELETE: { label: 'Person deleted', color: 'error' },
-  WORKER_EXIT: { label: 'Person exited', color: 'warning' },
-  WORKER_REHIRE: { label: 'Person rehired', color: 'success' },
-  WORKER_ASSIGN_SITE: { label: 'Site assigned', color: 'info' },
-  WORKER_CREDENTIAL_BIND: { label: 'Badge / NFC bound', color: 'info' },
-  WORKER_AADHAAR_REVEAL: { label: 'ID number viewed', color: 'warning' },
-  ATTENDANCE_MANUAL_BACKUP: { label: 'Manual attendance entry', color: 'warning' },
-  CORRECTION_REQUEST: { label: 'Correction requested', color: 'info' },
-  CORRECTION_APPROVE: { label: 'Correction approved', color: 'success' },
-  CORRECTION_REJECT: { label: 'Correction rejected', color: 'error' },
-  CORRECTION_CANCEL: { label: 'Correction cancelled', color: 'default' },
-  VENDOR_CREATE: { label: 'Vendor added', color: 'success' },
-  VENDOR_UPDATE: { label: 'Vendor updated', color: 'info' },
-  VENDOR_DEACTIVATE: { label: 'Vendor deactivated', color: 'warning' },
-  VENDOR_DELETE: { label: 'Vendor deleted', color: 'error' },
-  DESIGNATION_CREATE: { label: 'Designation added', color: 'success' },
-  DESIGNATION_UPDATE: { label: 'Designation updated', color: 'info' },
-  DESIGNATION_DEACTIVATE: { label: 'Designation deactivated', color: 'warning' },
-  DESIGNATION_DELETE: { label: 'Designation deleted', color: 'error' },
-  SITE_CREATE: { label: 'Site created', color: 'success' },
-  SITE_UPDATE: { label: 'Site updated', color: 'info' },
-  SITE_SETTINGS_UPDATE: { label: 'Site settings changed', color: 'info' },
-  SHIFT_CREATE: { label: 'Shift created', color: 'success' },
-  SHIFT_UPDATE: { label: 'Shift updated', color: 'info' },
-  USER_CREATE: { label: 'User account created', color: 'success' },
-  USER_UPDATE: { label: 'User account updated', color: 'info' },
-  USER_SCOPES_SET: { label: 'User site access changed', color: 'info' },
-  DEVICE_UPDATE: { label: 'Device updated', color: 'info' },
-  ORG_CREATE: { label: 'Organization created', color: 'success' },
-  ORG_UPDATE: { label: 'Organization updated', color: 'info' },
+/** Friendly label + tone per audit action; anything unknown falls back to title-case. */
+const ACTIONS: Record<string, { label: string; tone: BadgeTone }> = {
+  AUTH_LOGIN: { label: 'Signed in', tone: 'neutral' },
+  WORKER_CREATE: { label: 'Person added', tone: 'success' },
+  WORKER_UPDATE: { label: 'Person updated', tone: 'info' },
+  WORKER_DELETE: { label: 'Person deleted', tone: 'error' },
+  WORKER_EXIT: { label: 'Person exited', tone: 'warning' },
+  WORKER_REHIRE: { label: 'Person rehired', tone: 'success' },
+  WORKER_ASSIGN_SITE: { label: 'Site assigned', tone: 'info' },
+  WORKER_CREDENTIAL_BIND: { label: 'Badge / NFC bound', tone: 'info' },
+  WORKER_AADHAAR_REVEAL: { label: 'ID number viewed', tone: 'warning' },
+  ATTENDANCE_MANUAL_BACKUP: { label: 'Manual attendance entry', tone: 'warning' },
+  CORRECTION_REQUEST: { label: 'Correction requested', tone: 'info' },
+  CORRECTION_APPROVE: { label: 'Correction approved', tone: 'success' },
+  CORRECTION_REJECT: { label: 'Correction rejected', tone: 'error' },
+  CORRECTION_CANCEL: { label: 'Correction cancelled', tone: 'neutral' },
+  VENDOR_CREATE: { label: 'Vendor added', tone: 'success' },
+  VENDOR_UPDATE: { label: 'Vendor updated', tone: 'info' },
+  VENDOR_DEACTIVATE: { label: 'Vendor deactivated', tone: 'warning' },
+  VENDOR_DELETE: { label: 'Vendor deleted', tone: 'error' },
+  DESIGNATION_CREATE: { label: 'Designation added', tone: 'success' },
+  DESIGNATION_UPDATE: { label: 'Designation updated', tone: 'info' },
+  DESIGNATION_DEACTIVATE: { label: 'Designation deactivated', tone: 'warning' },
+  DESIGNATION_DELETE: { label: 'Designation deleted', tone: 'error' },
+  SITE_CREATE: { label: 'Site created', tone: 'success' },
+  SITE_UPDATE: { label: 'Site updated', tone: 'info' },
+  SITE_SETTINGS_UPDATE: { label: 'Site settings changed', tone: 'info' },
+  SHIFT_CREATE: { label: 'Shift created', tone: 'success' },
+  SHIFT_UPDATE: { label: 'Shift updated', tone: 'info' },
+  USER_CREATE: { label: 'User account created', tone: 'success' },
+  USER_UPDATE: { label: 'User account updated', tone: 'info' },
+  USER_SCOPES_SET: { label: 'User site access changed', tone: 'info' },
+  DEVICE_UPDATE: { label: 'Device updated', tone: 'info' },
+  ORG_CREATE: { label: 'Organization created', tone: 'success' },
+  ORG_UPDATE: { label: 'Organization updated', tone: 'info' },
 };
 
 const ENTITY_TYPES = [
@@ -97,7 +99,7 @@ const ENTITY_TYPES = [
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin',
-  SITE_ADMIN: 'Site Admin',
+  SITE_ADMIN: 'Admin',
   SUPERVISOR: 'Safety Officer',
   WATCHMAN: 'Watchman',
 };
@@ -109,7 +111,7 @@ function actionMeta(action: string) {
         .toLowerCase()
         .replace(/_/g, ' ')
         .replace(/^./, (c) => c.toUpperCase()),
-      color: 'default' as ChipColor,
+      tone: 'neutral' as BadgeTone,
     }
   );
 }
@@ -183,7 +185,15 @@ function Row({ r }: { r: AuditRow }) {
   return (
     <>
       <TableRow hover onClick={() => hasRaw && setOpen(!open)} sx={hasRaw ? { cursor: 'pointer' } : undefined}>
-        <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(r.createdAt).toLocaleString()}</TableCell>
+        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+          {new Date(r.createdAt).toLocaleString(undefined, {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </TableCell>
         <TableCell sx={{ whiteSpace: 'nowrap' }}>
           {r.actorName ?? '—'}
           {r.actorRole && (
@@ -193,7 +203,7 @@ function Row({ r }: { r: AuditRow }) {
           )}
         </TableCell>
         <TableCell>
-          <Chip size="small" color={meta.color} label={meta.label} />
+          <StatusBadge label={meta.label} tone={meta.tone} />
         </TableCell>
         <TableCell>{target}</TableCell>
         <TableCell sx={{ maxWidth: 420 }}>
@@ -224,21 +234,45 @@ function Row({ r }: { r: AuditRow }) {
                 )}
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
                   {r.oldValue && (
-                    <Box sx={{ flex: 1 }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="caption" color="text.secondary">
                         Before
                       </Typography>
-                      <Box component="pre" sx={{ m: 0, p: 1, bgcolor: 'grey.100', borderRadius: 1, fontSize: 12, overflowX: 'auto' }}>
+                      <Box
+                        component="pre"
+                        sx={{
+                          m: 0,
+                          p: 1.25,
+                          bgcolor: 'background.default',
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1.5,
+                          fontSize: 12,
+                          overflowX: 'auto',
+                        }}
+                      >
                         {JSON.stringify(r.oldValue, null, 2)}
                       </Box>
                     </Box>
                   )}
                   {r.newValue && (
-                    <Box sx={{ flex: 1 }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="caption" color="text.secondary">
                         After
                       </Typography>
-                      <Box component="pre" sx={{ m: 0, p: 1, bgcolor: 'grey.100', borderRadius: 1, fontSize: 12, overflowX: 'auto' }}>
+                      <Box
+                        component="pre"
+                        sx={{
+                          m: 0,
+                          p: 1.25,
+                          bgcolor: 'background.default',
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1.5,
+                          fontSize: 12,
+                          overflowX: 'auto',
+                        }}
+                      >
                         {JSON.stringify(r.newValue, null, 2)}
                       </Box>
                     </Box>
@@ -252,6 +286,8 @@ function Row({ r }: { r: AuditRow }) {
     </>
   );
 }
+
+const COLUMN_COUNT = 6;
 
 export default function AuditPage() {
   const [entityType, setEntityType] = React.useState('');
@@ -296,7 +332,7 @@ export default function AuditPage() {
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <PageHeader title="Audit trail" subtitle="Who did what, when — every change is recorded" />
-      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+      <FilterBar>
         <TextField
           select
           size="small"
@@ -351,34 +387,43 @@ export default function AuditPage() {
             Clear filters
           </Button>
         )}
-      </Stack>
-      <Card sx={{ overflowX: 'auto' }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Time</TableCell>
-              <TableCell>Who</TableCell>
-              <TableCell>Action</TableCell>
-              <TableCell>Target</TableCell>
-              <TableCell>What changed</TableCell>
-              <TableCell padding="checkbox" />
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((r) => (
-              <Row key={r.id} r={r} />
-            ))}
-            {rows.length === 0 && !audit.isLoading && (
+      </FilterBar>
+      <Card>
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 720 }}>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={6}>
-                  <Typography color="text.secondary">
-                    No audit records match these filters.
-                  </Typography>
-                </TableCell>
+                <TableCell>Time</TableCell>
+                <TableCell>Who</TableCell>
+                <TableCell>Action</TableCell>
+                <TableCell>Target</TableCell>
+                <TableCell>What changed</TableCell>
+                <TableCell padding="checkbox" />
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {audit.isLoading &&
+                Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={`skeleton-${i}`}>
+                    {Array.from({ length: COLUMN_COUNT }).map((_, j) => (
+                      <TableCell key={j} padding={j === COLUMN_COUNT - 1 ? 'checkbox' : undefined}>
+                        {j < COLUMN_COUNT - 1 && <Skeleton width={j === 0 ? '70%' : '50%'} />}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              {!audit.isLoading && rows.map((r) => <Row key={r.id} r={r} />)}
+            </TableBody>
+          </Table>
+        </Box>
+        {!audit.isLoading && rows.length === 0 && (
+          <EmptyState
+            compact
+            icon={<HistoryOutlinedIcon />}
+            title="No audit records"
+            description="Nothing matches these filters — try widening the date range or clearing the filters."
+          />
+        )}
         {nextCursor && (
           <Stack alignItems="center" sx={{ p: 1.5 }}>
             <Button size="small" onClick={loadMore} disabled={loadingMore}>

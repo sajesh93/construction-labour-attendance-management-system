@@ -90,6 +90,10 @@ export interface Worker {
   govIdType?: string | null;
   aadhaarLast4?: string | null;
   panLast4?: string | null;
+  // Visitor-only fields.
+  escortName?: string | null;
+  visitorCompany?: string | null;
+  idProofPhotoId?: string | null;
 }
 
 export interface Vendor {
@@ -136,6 +140,8 @@ export interface Device {
   siteId?: string | null;
   lastSeenAt?: string | null;
   createdAt: string;
+  /** Owning user (web browsers and personal devices); null for shared/legacy devices. */
+  user?: { id: string; fullName: string; role: UserRole } | null;
 }
 
 export interface CorrectionRequest {

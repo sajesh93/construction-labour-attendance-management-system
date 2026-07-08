@@ -5,26 +5,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
-  Card,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   IconButton,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
+  Tooltip,
+  Typography,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
 import { useForm } from 'react-hook-form';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { DataTable, Column } from '@/components/ui/DataTable';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/Toast';
 import { Vendor } from '@/lib/types';
 
 interface VendorForm {
@@ -34,19 +34,23 @@ interface VendorForm {
   contactNumber?: string;
 }
 
+type PendingAction = { kind: 'delete' | 'deactivate'; vendor: Vendor } | null;
+
 export default function VendorsPage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const [open, setOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Vendor | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
+  const [formError, setFormError] = React.useState<string | null>(null);
+  const [pending, setPending] = React.useState<PendingAction>(null);
   const { register, handleSubmit, reset } = useForm<VendorForm>();
 
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['vendors'] });
-  const fail = (e: unknown, fallback: string) => {
+  const errMessage = (e: unknown, fallback: string) => {
     const err = e as BrowserApiError;
-    setError(err.body?.detail ?? err.body?.title ?? fallback);
+    return err.body?.detail ?? err.body?.title ?? fallback;
   };
 
   const save = useMutation({
@@ -57,16 +61,21 @@ export default function VendorsPage() {
     onSuccess: () => {
       refresh();
       setOpen(false);
-      setError(null);
+      setFormError(null);
       reset();
+      toast.success(editing ? 'Vendor updated' : 'Vendor created');
     },
-    onError: (e) => fail(e, 'Failed to save vendor'),
+    onError: (e) => setFormError(errMessage(e, 'Failed to save vendor')),
   });
 
   const toggleActive = useMutation({
     mutationFn: (v: Vendor) => api.patch(`/vendors/${v.id}`, { isActive: !v.isActive }),
-    onSuccess: refresh,
-    onError: (e) => fail(e, 'Failed to update vendor'),
+    onSuccess: (_res, v) => {
+      refresh();
+      setPending(null);
+      toast.success(v.isActive ? `Vendor "${v.name}" deactivated` : `Vendor "${v.name}" activated`);
+    },
+    onError: (e) => toast.error(errMessage(e, 'Failed to update vendor')),
   });
 
   const remove = useMutation({
@@ -74,26 +83,30 @@ export default function VendorsPage() {
       api.del<{ deleted: boolean; deactivated?: boolean; workersAssigned?: number }>(
         `/vendors/${v.id}`,
       ),
-    onSuccess: (res) => {
+    onSuccess: (res, v) => {
       refresh();
+      setPending(null);
       if (res && !res.deleted) {
-        setError(
+        toast.show(
           `Vendor still has ${res.workersAssigned ?? 'some'} worker(s) — it was deactivated instead of deleted.`,
+          'warning',
         );
+      } else {
+        toast.success(`Vendor "${v.name}" deleted`);
       }
     },
-    onError: (e) => fail(e, 'Failed to delete vendor'),
+    onError: (e) => toast.error(errMessage(e, 'Failed to delete vendor')),
   });
 
   const openCreate = () => {
     setEditing(null);
-    setError(null);
+    setFormError(null);
     reset({ name: '', code: '', contactPerson: '', contactNumber: '' });
     setOpen(true);
   };
   const openEdit = (v: Vendor) => {
     setEditing(v);
-    setError(null);
+    setFormError(null);
     reset({
       name: v.name,
       code: v.code,
@@ -103,75 +116,105 @@ export default function VendorsPage() {
     setOpen(true);
   };
 
+  const columns: Column<Vendor>[] = [
+    { key: 'name', label: 'Name', render: (v) => <Typography variant="body2" fontWeight={600}>{v.name}</Typography> },
+    { key: 'code', label: 'Code', render: (v) => v.code },
+    {
+      key: 'contact',
+      label: 'Contact',
+      render: (v) => (
+        <>
+          {v.contactPerson || '—'}
+          {v.contactNumber ? ` · ${v.contactNumber}` : ''}
+        </>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (v) => (
+        <Tooltip title={v.isActive ? 'Click to deactivate' : 'Click to activate'}>
+          <StatusBadge
+            label={v.isActive ? 'Active' : 'Inactive'}
+            tone={v.isActive ? 'success' : 'neutral'}
+            onClick={() =>
+              v.isActive ? setPending({ kind: 'deactivate', vendor: v }) : toggleActive.mutate(v)
+            }
+          />
+        </Tooltip>
+      ),
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      align: 'right',
+      render: (v) => (
+        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+          <Tooltip title="Edit vendor">
+            <IconButton size="small" onClick={() => openEdit(v)}>
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Delete vendor">
+            <IconButton size="small" onClick={() => setPending({ kind: 'delete', vendor: v })}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      ),
+    },
+  ];
+
   return (
     <>
       <PageHeader
         title="Vendors"
+        subtitle="Labour contractors and their contact details"
         action={
-          <Button variant="contained" onClick={openCreate}>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
             New vendor
           </Button>
         }
       />
-      {error && (
-        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-      <Card>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Code</TableCell>
-              <TableCell>Contact</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {vendors.data?.map((v) => (
-              <TableRow key={v.id} hover>
-                <TableCell>{v.name}</TableCell>
-                <TableCell>{v.code}</TableCell>
-                <TableCell>
-                  {v.contactPerson || '—'}
-                  {v.contactNumber ? ` · ${v.contactNumber}` : ''}
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    color={v.isActive ? 'success' : 'default'}
-                    label={v.isActive ? 'Active' : 'Inactive'}
-                    onClick={() => toggleActive.mutate(v)}
-                  />
-                </TableCell>
-                <TableCell align="right">
-                  <IconButton size="small" title="Edit vendor" onClick={() => openEdit(v)}>
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    title="Delete vendor"
-                    onClick={() => {
-                      if (confirm(`Delete vendor "${v.name}"?`)) remove.mutate(v);
-                    }}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+      <DataTable
+        columns={columns}
+        rows={vendors.data}
+        loading={vendors.isLoading}
+        rowKey={(v) => v.id}
+        emptyTitle="No vendors yet"
+        emptyDescription="Add the labour contractors you work with to assign workers to them."
+        emptyAction={
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+            New vendor
+          </Button>
+        }
+      />
+
+      <ConfirmDialog
+        open={!!pending}
+        title={pending?.kind === 'delete' ? 'Delete vendor?' : 'Deactivate vendor?'}
+        message={
+          pending?.kind === 'delete'
+            ? `Delete vendor "${pending?.vendor.name}"? If workers are still assigned, it will be deactivated instead.`
+            : `Deactivate vendor "${pending?.vendor.name}"? It will no longer be selectable for new workers.`
+        }
+        confirmLabel={pending?.kind === 'delete' ? 'Delete' : 'Deactivate'}
+        danger
+        busy={remove.isPending || toggleActive.isPending}
+        onConfirm={() => {
+          if (!pending) return;
+          if (pending.kind === 'delete') remove.mutate(pending.vendor);
+          else toggleActive.mutate(pending.vendor);
+        }}
+        onClose={() => setPending(null)}
+      />
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>{editing ? `Edit vendor — ${editing.name}` : 'New vendor'}</DialogTitle>
         <form onSubmit={handleSubmit((v) => save.mutate(v))}>
           <DialogContent>
             <Stack spacing={2} sx={{ mt: 1 }}>
-              {error && <Alert severity="error">{error}</Alert>}
+              {formError && <Alert severity="error">{formError}</Alert>}
               <TextField label="Name" fullWidth InputLabelProps={{ shrink: true }} {...register('name')} />
               <TextField
                 label="Code"
@@ -194,8 +237,10 @@ export default function VendorsPage() {
               />
             </Stack>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button color="inherit" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
             <Button type="submit" variant="contained" disabled={save.isPending}>
               {editing ? 'Save changes' : 'Create'}
             </Button>

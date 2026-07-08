@@ -1,23 +1,25 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { MailService } from '../../common/mail/mail.service';
+import { PushService } from '../../common/push/push.service';
 import { businessDate } from '../../common/time/time.util';
 import { NotificationsService } from './notifications.service';
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // every 10 minutes
-const AUTO_CREDIT_MINUTES = 8 * 60; // forgotten sessions are credited 8h flat
 const NOTIFICATION_RETENTION_DAYS = 30;
 const SOS_RETENTION_DAYS = 180;
+// Missed-logout alerts go to Admins + Safety Officers, NOT the Super Admin.
+const MISSED_LOGOUT_ROLES: UserRole[] = ['SITE_ADMIN', 'SUPERVISOR'];
 
 /**
  * Housekeeping monitor (runs in API + worker; all actions are claim-guarded
  * or idempotent, so replicas never double-act):
  *
  * 1. Forgot-logout: sessions OPEN longer than FORGOT_LOGOUT_AFTER_HOURS
- *    (default 12h) are AUTO-CLOSED with exactly 8h credited and no overtime,
- *    marked "no logout". Super admins get an email; the admin panel shows a
- *    warning banner via the notification feed.
+ *    (default 12h) are NOT auto-closed — they stay OPEN and Admins + Safety
+ *    Officers are alerted (email + in-app feed + push) to log the person out
+ *    or raise a correction.
  * 2. Visitor passes: visitors whose visit date has passed are marked EXITED —
  *    their QR stops working (taps resolve ACTIVE people only).
  * 3. Retention: notifications older than 30 days and SOS events older than
@@ -31,6 +33,7 @@ export class ForgotLogoutMonitor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly push: PushService,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -46,7 +49,7 @@ export class ForgotLogoutMonitor implements OnModuleInit, OnModuleDestroy {
 
   async check() {
     try {
-      await this.autoCloseForgotten();
+      await this.notifyForgotten();
       await this.expireVisitors();
       await this.pruneOldRows();
     } catch (e) {
@@ -54,7 +57,7 @@ export class ForgotLogoutMonitor implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async autoCloseForgotten() {
+  private async notifyForgotten() {
     const hours = Number(process.env.FORGOT_LOGOUT_AFTER_HOURS ?? 12);
     const cutoff = new Date(Date.now() - hours * 3600_000);
 
@@ -85,21 +88,8 @@ export class ForgotLogoutMonitor implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) continue;
 
-      // Auto log-out: credit exactly 8 hours, no overtime, marked "no logout".
-      const logoutAt = new Date(s.loginAt.getTime() + AUTO_CREDIT_MINUTES * 60_000);
-      await this.prisma.attendanceSession.update({
-        where: { id: s.id },
-        data: {
-          state: 'AUTO_CLOSED',
-          logoutAt,
-          workedMinutes: AUTO_CREDIT_MINUTES,
-          overtimeMinutes: 0,
-          lateMinutes: 0,
-          earlyLeaveMinutes: 0,
-          closedReason: 'no logout — auto-closed with 8h credited',
-        },
-      });
-
+      // The session deliberately stays OPEN — no auto-logout. Admins/safety
+      // officers are notified below and close it via logout or a correction.
       const list = byOrg.get(s.organizationId) ?? [];
       list.push({
         sessionId: s.id,
@@ -127,33 +117,53 @@ export class ForgotLogoutMonitor implements OnModuleInit, OnModuleDestroy {
         .slice(0, 5)
         .map((m) => `${m.workerName} (${m.workerCode}) at ${m.siteName}`)
         .join(', ');
+      const body =
+        `${preview}${sessions.length > 5 ? ` and ${sessions.length - 5} more` : ''}. ` +
+        `Their sessions are still open — log them out or raise a correction.`;
       await this.notifications.create({
         organizationId: orgId,
         type: 'FORGOT_LOGOUT',
         title,
-        body:
-          `${preview}${sessions.length > 5 ? ` and ${sessions.length - 5} more` : ''}. ` +
-          `All were auto-logged out with 8h credited (no overtime).`,
+        body,
         siteId: null,
-        data: { sessions, autoClosed: true } as unknown as Prisma.InputJsonValue,
+        data: { sessions, autoClosed: false } as unknown as Prisma.InputJsonValue,
       });
 
-      // Forgot-logout summaries go to SUPER_ADMINs only (per policy).
+      // Missed-logout alerts go to Admins + Safety Officers (not the Super Admin).
       const lines = sessions.map(
-        (m) =>
-          `${m.workerName} (${m.workerCode}) at ${m.siteName} — login ${m.loginAt}, auto-credited 8h`,
+        (m) => `${m.workerName} (${m.workerCode}) at ${m.siteName} — login ${m.loginAt}`,
       );
-      const emails = await this.notifications.alertEmails(orgId, ['SUPER_ADMIN']);
+      const emails = await this.notifications.alertEmails(orgId, MISSED_LOGOUT_ROLES);
       await this.mail.send(
         emails,
-        `CLAMS: ${lines.length} worker(s) auto-logged out (no logout)`,
-        `The following open sessions exceeded ${hours} hours and were auto-closed ` +
-          `with exactly 8 hours credited and no overtime:\n\n` +
+        `CLAMS: ${lines.length} person(s) didn't log out`,
+        `The following sessions have been open for more than ${hours} hours ` +
+          `(no logout recorded). They have NOT been closed automatically:\n\n` +
           lines.join('\n') +
-          `\n\nRaise a correction if the actual hours differ.`,
+          `\n\nPlease log them out or raise an attendance correction.`,
       );
+
+      // Push to the same roles so the alert reaches phones/web too.
+      const recipients = await this.prisma.user.findMany({
+        where: {
+          organizationId: orgId,
+          isActive: true,
+          deletedAt: null,
+          role: { in: MISSED_LOGOUT_ROLES },
+        },
+        select: { id: true },
+      });
+      const tokens = await this.prisma.pushToken.findMany({
+        where: { organizationId: orgId, userId: { in: recipients.map((u) => u.id) } },
+        select: { token: true },
+      });
+      const stale2 = await this.push.sendAlert(
+        tokens.map((t) => t.token),
+        { title, body, data: { kind: 'FORGOT_LOGOUT' } },
+      );
+      if (stale2.length) await this.notifications.pruneTokens(stale2);
     }
-    this.logger.log(`Auto-closed ${stale.length} forgotten session(s)`);
+    this.logger.log(`Notified about ${stale.length} forgotten session(s) (left open)`);
   }
 
   /** Visitors are day passes: once the visit date has passed, mark EXITED. */

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme.dart';
+import '../../core/widgets/section_header.dart';
 import 'aadhaar_decoder.dart';
 import 'aadhaar_scan_screen.dart';
 
@@ -55,7 +57,8 @@ class _AadhaarVerifyScreenState extends State<AadhaarVerifyScreen> {
         children: [
           SizedBox(
             width: 120,
-            child: Text(label, style: const TextStyle(color: Colors.black54)),
+            child: Text(label,
+                style: const TextStyle(color: ClamsColors.textSecondary)),
           ),
           Expanded(
             child: Text(
@@ -81,10 +84,11 @@ class _AadhaarVerifyScreenState extends State<AadhaarVerifyScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (_error != null) ...[
-                      Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
-                      const SizedBox(height: 12),
+                      const Icon(Icons.error_outline,
+                          size: 48, color: ClamsColors.error),
+                      ClamsSpacing.gapMd,
                       Text(_error!, textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
+                      ClamsSpacing.gapLg,
                     ],
                     FilledButton.icon(
                       onPressed: _scan,
@@ -96,32 +100,19 @@ class _AadhaarVerifyScreenState extends State<AadhaarVerifyScreen> {
               )
             : ListView(
                 children: [
-                  Card(
-                    color: d.secure ? Colors.green.shade50 : Colors.orange.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            d.secure ? Icons.verified_user : Icons.warning_amber,
-                            color: d.secure ? Colors.green.shade700 : Colors.orange.shade800,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              d.secure
-                                  ? 'UIDAI Secure QR decoded. Cross-check every field below '
-                                      'against the printed card — any mismatch means the card '
-                                      'was modified.'
-                                  : 'Legacy XML QR (older card). Details below come from the '
-                                      'QR itself — cross-check against the printed card.',
-                            ),
-                          ),
-                        ],
-                      ),
+                  StatusBanner(
+                    color: d.secure ? ClamsColors.success : ClamsColors.warning,
+                    icon: d.secure ? Icons.verified_user : Icons.warning_amber,
+                    child: Text(
+                      d.secure
+                          ? 'UIDAI Secure QR decoded. Cross-check every field below '
+                              'against the printed card — any mismatch means the card '
+                              'was modified.'
+                          : 'Legacy XML QR (older card). Details below come from the '
+                              'QR itself — cross-check against the printed card.',
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  ClamsSpacing.gapMd,
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),

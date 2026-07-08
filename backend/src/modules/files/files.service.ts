@@ -47,9 +47,10 @@ export class FilesService {
       compressed: didCompress,
     } = await this.compress(raw, dto.mimeType);
 
-    // 2) Aadhaar images are encrypted at rest; profile photos are not (they are
-    //    streamed to many viewers / cached on devices, so we keep them cheap).
-    const encrypt = kind === 'AADHAAR_FRONT' || kind === 'AADHAAR_BACK';
+    // 2) Aadhaar and ID-proof images are encrypted at rest; profile photos are
+    //    not (they are streamed to many viewers / cached on devices, so we
+    //    keep them cheap).
+    const encrypt = kind === 'AADHAAR_FRONT' || kind === 'AADHAAR_BACK' || kind === 'ID_PROOF';
     const stored = encrypt ? this.crypto.encryptBuffer(compressed) : compressed;
 
     const blob = await this.prisma.photoBlob.create({

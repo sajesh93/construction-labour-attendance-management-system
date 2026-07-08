@@ -2,7 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme.dart';
 import '../../core/providers.dart';
+import '../../core/widgets/section_header.dart';
 import '../attendance/domain/models.dart';
 import 'correction_request_screen.dart';
 
@@ -77,14 +79,17 @@ class _SupervisorSummaryScreenState extends ConsumerState<SupervisorSummaryScree
           : _error != null
               ? Center(child: Text(_error!))
               : ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(ClamsSpacing.lg),
                   children: [
                     Text('${widget.worker.workerCode} · $_month',
-                        style: Theme.of(context).textTheme.bodyMedium),
-                    const SizedBox(height: 12),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: ClamsColors.textSecondary)),
+                    ClamsSpacing.gapMd,
                     Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
+                      spacing: ClamsSpacing.md,
+                      runSpacing: ClamsSpacing.md,
                       children: [
                         _kpi('Total hours', _h(_data?['totalMonthlyMinutes'] as num?)),
                         _kpi('Overtime hours', _h(_data?['overtimeMinutes'] as num?)),
@@ -92,25 +97,42 @@ class _SupervisorSummaryScreenState extends ConsumerState<SupervisorSummaryScree
                         _kpi('Late arrivals', '${_data?['lateArrivals'] ?? 0}'),
                       ],
                     ),
-                    const SizedBox(height: 20),
-                    Text('Daily records', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
+                    ClamsSpacing.gapXl,
+                    const SectionHeader('Daily records'),
+                    ClamsSpacing.gapSm,
                     if (daily.isEmpty)
                       const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Text('No attendance recorded this month.'),
+                        padding: EdgeInsets.symmetric(vertical: ClamsSpacing.lg),
+                        child: Text('No attendance recorded this month.',
+                            style: TextStyle(color: ClamsColors.textSecondary)),
                       ),
-                    ...daily.map((d) => Card(
-                          child: ListTile(
-                            title: Text(d['date'] as String? ?? ''),
-                            subtitle: Text(
-                              'In: ${_fmt(d['loginAt'])}   Out: ${_fmt(d['logoutAt'])}   '
-                              '${_h(d['workedMinutes'] as num?)}h'
-                              '${(d['overtimeMinutes'] ?? 0) != 0 ? '  +${_h(d['overtimeMinutes'] as num?)}h OT' : ''}',
+                    ...daily.map((d) => Padding(
+                          padding: const EdgeInsets.only(bottom: ClamsSpacing.sm),
+                          child: Card(
+                            child: ListTile(
+                              title: Text(d['date'] as String? ?? '',
+                                  style:
+                                      const TextStyle(fontWeight: FontWeight.w500)),
+                              subtitle: Text(
+                                'In: ${_fmt(d['loginAt'])}   Out: ${_fmt(d['logoutAt'])}   '
+                                '${_h(d['workedMinutes'] as num?)}h'
+                                '${(d['overtimeMinutes'] ?? 0) != 0 ? '  +${_h(d['overtimeMinutes'] as num?)}h OT' : ''}',
+                                style: const TextStyle(
+                                    color: ClamsColors.textSecondary),
+                              ),
+                              trailing: (d['late'] == true)
+                                  ? Chip(
+                                      label: const Text('Late'),
+                                      backgroundColor: ClamsColors.warningTint,
+                                      side: BorderSide.none,
+                                      labelStyle: const TextStyle(
+                                        color: ClamsColors.warning,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    )
+                                  : null,
                             ),
-                            trailing: (d['late'] == true)
-                                ? const Chip(label: Text('Late'))
-                                : null,
                           ),
                         )),
                   ],
@@ -133,9 +155,21 @@ class _SupervisorSummaryScreenState extends ConsumerState<SupervisorSummaryScree
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: Theme.of(context).textTheme.bodySmall),
+                Text(
+                  label.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: ClamsColors.textSecondary,
+                  ),
+                ),
                 const SizedBox(height: 6),
-                Text(value, style: Theme.of(context).textTheme.headlineSmall),
+                Text(value,
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
           ),

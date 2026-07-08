@@ -188,6 +188,25 @@ export class CreateWorkerDto {
   @IsDateString()
   joinDate?: string;
 
+  @ApiProperty({ required: false, description: 'Visitor escort (mandatory for VISITOR)' })
+  @IsOptional()
+  @IsString()
+  @Length(2, 120)
+  escortName?: string;
+
+  @ApiProperty({ required: false, description: "Visitor's company (free text)" })
+  @IsOptional()
+  @IsString()
+  visitorCompany?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'PhotoBlob id of the visitor ID-proof image (optional)',
+  })
+  @IsOptional()
+  @IsString()
+  idProofPhotoId?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()

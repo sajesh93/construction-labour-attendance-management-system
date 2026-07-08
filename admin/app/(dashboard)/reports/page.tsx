@@ -21,8 +21,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
+import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -30,6 +32,8 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import dayjs, { Dayjs } from 'dayjs';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useToast } from '@/components/ui/Toast';
 import { Site, Vendor } from '@/lib/types';
 
 const REPORT_TYPES = [
@@ -46,6 +50,12 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   ATTENDANCE_SHEET: 'Attendance sheet',
 };
 const PREVIEW_LIMIT = 500;
+
+const FORMATS: { value: string; label: string; icon: React.ReactNode }[] = [
+  { value: 'CSV', label: 'CSV', icon: <TableChartOutlinedIcon /> },
+  { value: 'XLSX', label: 'Excel (XLSX)', icon: <GridOnOutlinedIcon /> },
+  { value: 'PDF', label: 'PDF', icon: <PictureAsPdfOutlinedIcon /> },
+];
 
 interface PreviewResult {
   headers: string[];
@@ -74,8 +84,8 @@ function cell(header: string, value: string | number | null): string {
 }
 
 export default function ReportsPage() {
+  const toast = useToast();
   const [reportType, setReportType] = React.useState('MONTHLY');
-  const [format, setFormat] = React.useState('CSV');
   const [month, setMonth] = React.useState<Dayjs | null>(dayjs());
   const [date, setDate] = React.useState<Dayjs | null>(dayjs());
   const [from, setFrom] = React.useState<Dayjs | null>(dayjs().startOf('month'));
@@ -132,9 +142,9 @@ export default function ReportsPage() {
   });
 
   const download = useMutation({
-    mutationFn: () =>
+    mutationFn: (format: string) =>
       api.post<ReportResult>('/reports', { reportType, format, params: buildParams() }),
-    onSuccess: (res) => {
+    onSuccess: (res, format) => {
       setError(null);
       let blob: Blob | null = null;
       if (res.content) {
@@ -154,6 +164,7 @@ export default function ReportsPage() {
         res.filename ?? `report-${reportType.toLowerCase()}-${res.jobId}.${format.toLowerCase()}`;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success(`${format} report downloaded`);
     },
     onError: (e) => {
       const err = e as BrowserApiError;
@@ -177,10 +188,7 @@ export default function ReportsPage() {
                 fullWidth
                 value={reportType}
                 onChange={(e) => {
-                  const t = e.target.value;
-                  setReportType(t);
-                  // The muster-roll grid is meant for spreadsheets — default to XLSX.
-                  if (t === 'ATTENDANCE_SHEET') setFormat('XLSX');
+                  setReportType(e.target.value);
                   preview.reset();
                 }}
               >
@@ -377,7 +385,7 @@ export default function ReportsPage() {
               disabled={preview.isPending}
               onClick={() => preview.mutate()}
             >
-              Run report
+              {preview.isPending ? 'Running…' : 'Run report'}
             </Button>
           </Stack>
         </CardContent>
@@ -397,44 +405,34 @@ export default function ReportsPage() {
                 Preview — {data.rowCount} row{data.rowCount === 1 ? '' : 's'}
                 {data.rowCount > PREVIEW_LIMIT ? ` (showing first ${PREVIEW_LIMIT})` : ''}
               </Typography>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <TextField
-                  select
-                  size="small"
-                  label="Format"
-                  value={format}
-                  onChange={(e) => setFormat(e.target.value)}
-                  sx={{ width: 120 }}
-                >
-                  {['CSV', 'XLSX', 'PDF'].map((f) => (
-                    <MenuItem key={f} value={f}>
-                      {f}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <Button
-                  variant="contained"
-                  startIcon={<DownloadIcon />}
-                  disabled={download.isPending || data.rowCount === 0}
-                  onClick={() => download.mutate()}
-                >
-                  Download
-                </Button>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {FORMATS.map((f) => (
+                  <Button
+                    key={f.value}
+                    variant="contained"
+                    size="small"
+                    startIcon={f.icon}
+                    disabled={download.isPending || data.rowCount === 0}
+                    onClick={() => download.mutate(f.value)}
+                  >
+                    {f.value}
+                  </Button>
+                ))}
               </Stack>
             </Stack>
             {data.rowCount === 0 ? (
-              <Typography color="text.secondary">
-                No rows matched the selected period — nothing to download.
-              </Typography>
+              <EmptyState
+                compact
+                title="No rows matched"
+                description="Nothing matched the selected period and filters — nothing to download."
+              />
             ) : (
               <Card variant="outlined" sx={{ maxWidth: '100%', overflowX: 'auto' }}>
                 <Table size="small" sx={{ minWidth: 'max-content' }}>
                   <TableHead>
                     <TableRow>
                       {data.headers.map((h) => (
-                        <TableCell key={h} sx={{ fontWeight: 600 }}>
-                          {h}
-                        </TableCell>
+                        <TableCell key={h}>{h}</TableCell>
                       ))}
                     </TableRow>
                   </TableHead>

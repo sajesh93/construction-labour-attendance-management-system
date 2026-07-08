@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/theme.dart';
 import '../../../core/widgets/api_image.dart';
 import '../domain/models.dart';
 
@@ -11,7 +12,7 @@ class WorkerCardSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = action == 'LOGIN' ? Colors.green : Colors.blueGrey;
+    final color = action == 'LOGIN' ? ClamsColors.success : ClamsColors.info;
     final category = worker.category;
     return SafeArea(
       child: Padding(
@@ -29,22 +30,44 @@ class WorkerCardSheet extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(worker.fullName,
-                          style: Theme.of(context).textTheme.titleLarge),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w600)),
                       Text(worker.workerCode,
-                          style: Theme.of(context).textTheme.bodyMedium),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: ClamsColors.textSecondary)),
                       if (category != null && category != 'WORKER')
                         Padding(
-                          padding: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.only(top: ClamsSpacing.xs),
                           child: Chip(
                             label: Text(category),
                             visualDensity: VisualDensity.compact,
-                            backgroundColor: Colors.indigo.withValues(alpha: 0.12),
+                            backgroundColor: ClamsColors.primaryTint,
+                            side: BorderSide.none,
+                            labelStyle: const TextStyle(
+                              color: ClamsColors.primaryDark,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                     ],
                   ),
                 ),
-                Chip(label: Text(action), backgroundColor: color.withValues(alpha: 0.15)),
+                Chip(
+                  label: Text(action),
+                  backgroundColor: color.withValues(alpha: 0.12),
+                  side: BorderSide.none,
+                  labelStyle: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -91,9 +114,13 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        Icon(icon, size: 20, color: ClamsColors.primary),
         const SizedBox(width: 10),
-        Text('$label: ', style: Theme.of(context).textTheme.bodyMedium),
+        Text('$label: ',
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: ClamsColors.textSecondary)),
         Expanded(
           child: Text(
             value ?? '—',

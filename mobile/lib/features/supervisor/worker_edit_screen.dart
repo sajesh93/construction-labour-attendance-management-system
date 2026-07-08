@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../app/theme.dart';
 import '../../core/providers.dart';
 import '../../core/widgets/api_image.dart';
+import '../../core/widgets/section_header.dart';
 import '../aadhaar/aadhaar_decoder.dart';
 import '../aadhaar/aadhaar_verify_screen.dart';
 import '../printing/badge_printer.dart';
@@ -53,6 +55,9 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   final _natureOfContractor = TextEditingController();
   final _aadhaar = TextEditingController();
   final _pan = TextEditingController();
+  // Visitor
+  final _escortName = TextEditingController();
+  final _visitorCompany = TextEditingController();
 
   String _category = 'WORKER';
   String? _gender;
@@ -67,10 +72,12 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   String? _photoUrl;
   String? _aadhaarFrontPhotoId;
   String? _aadhaarBackPhotoId;
+  String? _idProofPhotoId;
   String _workerCode = '';
   bool _saving = false;
   bool _uploadingPhoto = false;
   bool _uploadingAadhaar = false;
+  bool _uploadingIdProof = false;
   bool _loading = true;
   String? _error;
 
@@ -112,6 +119,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       _natureOfContractor,
       _aadhaar,
       _pan,
+      _escortName,
+      _visitorCompany,
     ]) {
       c.dispose();
     }
@@ -170,6 +179,9 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         _photoUrl = w['photoUrl'] as String?;
         _aadhaarFrontPhotoId = w['aadhaarFrontPhotoId'] as String?;
         _aadhaarBackPhotoId = w['aadhaarBackPhotoId'] as String?;
+        _escortName.text = (w['escortName'] as String?) ?? '';
+        _visitorCompany.text = (w['visitorCompany'] as String?) ?? '';
+        _idProofPhotoId = w['idProofPhotoId'] as String?;
         final dobStr = w['dateOfBirth'] as String?;
         if (dobStr != null) _dob = DateTime.tryParse(dobStr);
       }
@@ -222,9 +234,10 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
     }
   }
 
-  /// Capture/upload an Aadhaar card image. Larger than the profile photo so the
-  /// card text/QR stay legible; the server compresses + encrypts it at rest.
-  Future<void> _pickAadhaar(ImageSource source, String kind) async {
+  /// Capture/upload a document image (Aadhaar card faces or visitor ID proof).
+  /// Larger than the profile photo so the card text/QR stay legible; the
+  /// server compresses + encrypts it at rest.
+  Future<void> _pickDocument(ImageSource source, String kind) async {
     final picked = await ImagePicker().pickImage(
       source: source,
       maxWidth: 1600,
@@ -232,7 +245,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       imageQuality: 82,
     );
     if (picked == null) return;
-    setState(() => _uploadingAadhaar = true);
+    final isIdProof = kind == 'ID_PROOF';
+    setState(() => isIdProof ? _uploadingIdProof = true : _uploadingAadhaar = true);
     try {
       final bytes = await picked.readAsBytes();
       final dio = ref.read(apiClientProvider).dio;
@@ -244,25 +258,30 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       final id = res.data['id'] as String;
       if (mounted) {
         setState(() {
-          if (kind == 'AADHAAR_FRONT') {
-            _aadhaarFrontPhotoId = id;
-          } else {
-            _aadhaarBackPhotoId = id;
+          switch (kind) {
+            case 'AADHAAR_FRONT':
+              _aadhaarFrontPhotoId = id;
+            case 'AADHAAR_BACK':
+              _aadhaarBackPhotoId = id;
+            case 'ID_PROOF':
+              _idProofPhotoId = id;
           }
         });
       }
     } on DioException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Aadhaar upload failed: ${e.message ?? 'network'}')),
+          SnackBar(content: Text('Upload failed: ${e.message ?? 'network'}')),
         );
       }
     } finally {
-      if (mounted) setState(() => _uploadingAadhaar = false);
+      if (mounted) {
+        setState(() => isIdProof ? _uploadingIdProof = false : _uploadingAadhaar = false);
+      }
     }
   }
 
-  void _chooseAadhaarSource(String kind) {
+  void _chooseDocumentSource(String kind) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -273,7 +292,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
               title: const Text('Take photo'),
               onTap: () {
                 Navigator.pop(ctx);
-                _pickAadhaar(ImageSource.camera, kind);
+                _pickDocument(ImageSource.camera, kind);
               },
             ),
             ListTile(
@@ -281,7 +300,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
               title: const Text('Choose from gallery'),
               onTap: () {
                 Navigator.pop(ctx);
-                _pickAadhaar(ImageSource.gallery, kind);
+                _pickDocument(ImageSource.gallery, kind);
               },
             ),
           ],
@@ -290,12 +309,12 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
     );
   }
 
-  Widget _aadhaarTile(String label, String kind, String? id) {
+  Widget _documentTile(String label, String kind, String? id, bool uploading) {
     return Expanded(
       child: Column(
         children: [
           GestureDetector(
-            onTap: _uploadingAadhaar ? null : () => _chooseAadhaarSource(kind),
+            onTap: uploading ? null : () => _chooseDocumentSource(kind),
             child: Container(
               height: 70,
               decoration: BoxDecoration(
@@ -310,7 +329,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
           ),
           const SizedBox(height: 4),
           OutlinedButton(
-            onPressed: _uploadingAadhaar ? null : () => _chooseAadhaarSource(kind),
+            onPressed: uploading ? null : () => _chooseDocumentSource(kind),
             child: Text(id == null ? label : 'Replace $label'),
           ),
         ],
@@ -399,42 +418,52 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
     final body = <String, dynamic>{
       'fullName': _name.text.trim(),
       'category': _category,
-      if (text(_fatherName) != null) 'fatherName': text(_fatherName),
+      if (!_isVisitor && text(_fatherName) != null) 'fatherName': text(_fatherName),
       if (_gender != null) 'gender': _gender,
-      if (_dob != null) 'dateOfBirth': _dob!.toIso8601String().substring(0, 10),
-      if (text(_language) != null) 'language': text(_language),
+      if (!_isVisitor && _dob != null)
+        'dateOfBirth': _dob!.toIso8601String().substring(0, 10),
+      if (!_isVisitor && text(_language) != null) 'language': text(_language),
       if (text(_mobile) != null) 'mobileNumber': text(_mobile),
-      if (text(_pincode) != null) 'pincode': text(_pincode),
+      if (!_isVisitor && text(_pincode) != null) 'pincode': text(_pincode),
       if (text(_bloodGroup) != null) 'bloodGroup': text(_bloodGroup),
       if (text(_emergencyName) != null) 'emergencyContactName': text(_emergencyName),
       if (text(_emergencyNumber) != null) 'emergencyContactNumber': text(_emergencyNumber),
       if (text(_nomineeName) != null) 'nomineeName': text(_nomineeName),
       if (text(_nomineeRelation) != null) 'nomineeRelation': text(_nomineeRelation),
-      if (_screeningOn != null)
-        'screeningDoneOn': _screeningOn!.toIso8601String().substring(0, 10),
-      if (text(_screeningBy) != null) 'screeningDoneBy': text(_screeningBy),
-      if (_inductionOn != null)
-        'inductionDoneOn': _inductionOn!.toIso8601String().substring(0, 10),
-      if (text(_inductedBy) != null) 'inductedBy': text(_inductedBy),
-      if (_validityTill != null)
-        'validityTill': _validityTill!.toIso8601String().substring(0, 10),
+      if (!_isVisitor) ...{
+        if (_screeningOn != null)
+          'screeningDoneOn': _screeningOn!.toIso8601String().substring(0, 10),
+        if (text(_screeningBy) != null) 'screeningDoneBy': text(_screeningBy),
+        if (_inductionOn != null)
+          'inductionDoneOn': _inductionOn!.toIso8601String().substring(0, 10),
+        if (text(_inductedBy) != null) 'inductedBy': text(_inductedBy),
+        if (_validityTill != null)
+          'validityTill': _validityTill!.toIso8601String().substring(0, 10),
+      },
       if (text(_bankName) != null) 'bankName': text(_bankName),
       if (text(_bankAccount) != null) 'bankAccountNumber': text(_bankAccount),
       if (text(_ifsc) != null) 'ifscCode': text(_ifsc),
       if (text(_pf) != null) 'pfNumber': text(_pf),
       if (text(_esi) != null) 'esiNumber': text(_esi),
       if (text(_natureOfContractor) != null) 'natureOfContractor': text(_natureOfContractor),
-      if (_designationId != null) 'designationId': _designationId,
-      if (_vendorId != null) 'vendorId': _vendorId,
+      if (!_isVisitor && _designationId != null) 'designationId': _designationId,
+      if (!_isVisitor && _vendorId != null) 'vendorId': _vendorId,
       // On edit, always send photoUrl: null clears a removed photo.
       if (_isEdit) 'photoUrl': _photoUrl else if (_photoUrl != null) 'photoUrl': _photoUrl,
-      if (_aadhaarFrontPhotoId != null) 'aadhaarFrontPhotoId': _aadhaarFrontPhotoId,
-      if (_aadhaarBackPhotoId != null) 'aadhaarBackPhotoId': _aadhaarBackPhotoId,
-      if (text(_aadhaar) != null) ...{
-        'govIdType': 'Aadhaar',
-        'aadhaar': text(_aadhaar),
+      if (!_isVisitor) ...{
+        if (_aadhaarFrontPhotoId != null) 'aadhaarFrontPhotoId': _aadhaarFrontPhotoId,
+        if (_aadhaarBackPhotoId != null) 'aadhaarBackPhotoId': _aadhaarBackPhotoId,
+        if (text(_aadhaar) != null) ...{
+          'govIdType': 'Aadhaar',
+          'aadhaar': text(_aadhaar),
+        },
+        if (text(_pan) != null) 'pan': text(_pan)!.toUpperCase(),
       },
-      if (text(_pan) != null) 'pan': text(_pan)!.toUpperCase(),
+      if (_isVisitor) ...{
+        'escortName': _escortName.text.trim(),
+        if (text(_visitorCompany) != null) 'visitorCompany': text(_visitorCompany),
+        if (_idProofPhotoId != null) 'idProofPhotoId': _idProofPhotoId,
+      },
       if (_isEdit && _status != null) 'status': _status,
       if (!_isEdit && _joinDate != null)
         'joinDate': _joinDate!.toIso8601String().substring(0, 10),
@@ -511,18 +540,21 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         controller: c,
         keyboardType: keyboard,
         validator: validator,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        decoration: InputDecoration(labelText: label),
       ),
     );
   }
 
   Widget _section(String title, List<Widget> children, {bool initiallyExpanded = false}) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: ClamsSpacing.md),
       child: ExpansionTile(
-        title: Text(title, style: Theme.of(context).textTheme.titleSmall),
+        title: SectionHeader(title),
+        shape: const Border(),
+        collapsedShape: const Border(),
         initiallyExpanded: initiallyExpanded,
-        childrenPadding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        childrenPadding: const EdgeInsets.fromLTRB(
+            ClamsSpacing.lg, ClamsSpacing.xs, ClamsSpacing.lg, ClamsSpacing.sm),
         children: children,
       ),
     );
@@ -562,7 +594,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Text(_error!,
-                          style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                          style: const TextStyle(color: ClamsColors.error)),
                     ),
                   Row(
                     children: [
@@ -583,56 +615,61 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.badge_outlined, size: 18),
-                              const SizedBox(width: 8),
-                              const Expanded(child: Text('Aadhaar card images')),
-                              if (_uploadingAadhaar)
-                                const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              _aadhaarTile('Front *', 'AADHAAR_FRONT', _aadhaarFrontPhotoId),
-                              const SizedBox(width: 12),
-                              _aadhaarTile('Back', 'AADHAAR_BACK', _aadhaarBackPhotoId),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Encrypted & compressed at rest. Front required; back optional.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
+                  if (!_isVisitor)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.badge_outlined, size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                    child: SectionHeader('Aadhaar card images')),
+                                if (_uploadingAadhaar)
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                _documentTile('Front *', 'AADHAAR_FRONT',
+                                    _aadhaarFrontPhotoId, _uploadingAadhaar),
+                                const SizedBox(width: 12),
+                                _documentTile('Back', 'AADHAAR_BACK', _aadhaarBackPhotoId,
+                                    _uploadingAadhaar),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Encrypted & compressed at rest. Front required; back optional.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: ClamsColors.textSecondary),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                   if (_isEdit)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: TextFormField(
                         enabled: false,
                         initialValue: _workerCode,
-                        decoration: const InputDecoration(
-                          labelText: 'ID (auto-generated)',
-                          border: OutlineInputBorder(),
-                        ),
+                        decoration:
+                            const InputDecoration(labelText: 'ID (auto-generated)'),
                       ),
                     ),
-                  if (!_isEdit) ...[
+                  if (!_isEdit && !_isVisitor) ...[
                     OutlinedButton.icon(
                       onPressed: _scanAadhaar,
                       icon: const Icon(Icons.qr_code_scanner),
@@ -642,8 +679,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                   ],
                   DropdownButtonFormField<String>(
                     initialValue: _category,
-                    decoration:
-                        const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Type'),
                     items: const [
                       DropdownMenuItem(value: 'WORKER', child: Text('Worker')),
                       DropdownMenuItem(value: 'STAFF', child: Text('Staff')),
@@ -655,14 +691,13 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                   _text(_name, 'Full name *',
                       validator: (v) =>
                           (v == null || v.trim().length < 2) ? 'Name is required' : null),
-                  _text(_fatherName, "Father's name"),
+                  if (!_isVisitor) _text(_fatherName, "Father's name"),
                   Row(
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           initialValue: _gender,
-                          decoration: const InputDecoration(
-                              labelText: 'Gender', border: OutlineInputBorder()),
+                          decoration: const InputDecoration(labelText: 'Gender'),
                           items: const [
                             DropdownMenuItem(value: 'M', child: Text('Male')),
                             DropdownMenuItem(value: 'F', child: Text('Female')),
@@ -671,40 +706,43 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                           onChanged: (v) => setState(() => _gender = v),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _pickDate(
-                            current: _dob,
-                            first: DateTime(1940),
-                            onPicked: (d) => setState(() => _dob = d),
-                          ),
-                          child: Text(
-                            _dob == null
-                                ? 'Date of birth'
-                                : 'DOB: ${_dob!.day}/${_dob!.month}/${_dob!.year}',
+                      if (!_isVisitor) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _pickDate(
+                              current: _dob,
+                              first: DateTime(1940),
+                              onPicked: (d) => setState(() => _dob = d),
+                            ),
+                            child: Text(
+                              _dob == null
+                                  ? 'Date of birth'
+                                  : 'DOB: ${_dob!.day}/${_dob!.month}/${_dob!.year}',
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 12),
                   _text(_mobile, 'Mobile number', keyboard: TextInputType.phone),
                   Row(
                     children: [
-                      Expanded(
-                          child:
-                              _text(_pincode, 'Pincode', keyboard: TextInputType.number)),
-                      const SizedBox(width: 12),
+                      if (!_isVisitor) ...[
+                        Expanded(
+                            child:
+                                _text(_pincode, 'Pincode', keyboard: TextInputType.number)),
+                        const SizedBox(width: 12),
+                      ],
                       Expanded(child: _text(_bloodGroup, 'Blood group')),
                     ],
                   ),
-                  _text(_language, 'Language'),
+                  if (!_isVisitor) _text(_language, 'Language'),
                   if (_isEdit) ...[
                     DropdownButtonFormField<String>(
                       initialValue: _status,
-                      decoration: const InputDecoration(
-                          labelText: 'Status', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(labelText: 'Status'),
                       items: const [
                         DropdownMenuItem(value: 'ACTIVE', child: Text('Active')),
                         DropdownMenuItem(value: 'INACTIVE', child: Text('Inactive')),
@@ -716,36 +754,49 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     const SizedBox(height: 12),
                   ],
 
-                  _section('Designation & assignment', initiallyExpanded: true, [
-                    DropdownButtonFormField<String>(
-                      initialValue: _designationId,
-                      decoration: const InputDecoration(
-                          labelText: 'Designation', border: OutlineInputBorder()),
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('—')),
-                        for (final d in _designations)
-                          DropdownMenuItem(
-                              value: d['id'] as String, child: Text(d['name'] as String)),
-                      ],
-                      onChanged: (v) => setState(() => _designationId = v),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: _vendorId,
-                      decoration: InputDecoration(
-                        labelText: _isVisitor ? 'Company (vendor)' : 'Contractor (vendor)',
-                        border: const OutlineInputBorder(),
+                  if (_isVisitor) ...[
+                    _text(_escortName, 'Escort name *',
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Escort name is required for visitors'
+                            : null),
+                    _text(_visitorCompany, 'Visitor company'),
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.badge_outlined, size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                    child: SectionHeader('ID proof (optional)')),
+                                if (_uploadingIdProof)
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                _documentTile('ID proof', 'ID_PROOF', _idProofPhotoId,
+                                    _uploadingIdProof),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Encrypted at rest.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
                       ),
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('—')),
-                        for (final v in _vendors)
-                          DropdownMenuItem(
-                              value: v['id'] as String, child: Text(v['name'] as String)),
-                      ],
-                      onChanged: (v) => setState(() => _vendorId = v),
                     ),
-                    const SizedBox(height: 12),
-                    if (_category == 'WORKER') _text(_natureOfContractor, 'Nature of contractor'),
                     if (!_isEdit)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
@@ -757,12 +808,59 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                           ),
                           child: Text(
                             _joinDate == null
-                                ? (_isVisitor ? 'Visit date (today)' : 'Joining date (today)')
-                                : 'Joining: ${_joinDate!.day}/${_joinDate!.month}/${_joinDate!.year}',
+                                ? 'Visit date (today)'
+                                : 'Visit: ${_joinDate!.day}/${_joinDate!.month}/${_joinDate!.year}',
                           ),
                         ),
                       ),
-                  ]),
+                  ],
+
+                  if (!_isVisitor)
+                    _section('Designation & assignment', initiallyExpanded: true, [
+                      DropdownButtonFormField<String>(
+                        initialValue: _designationId,
+                        decoration: const InputDecoration(labelText: 'Designation'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('—')),
+                          for (final d in _designations)
+                            DropdownMenuItem(
+                                value: d['id'] as String, child: Text(d['name'] as String)),
+                        ],
+                        onChanged: (v) => setState(() => _designationId = v),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: _vendorId,
+                        decoration:
+                            const InputDecoration(labelText: 'Contractor (vendor)'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('—')),
+                          for (final v in _vendors)
+                            DropdownMenuItem(
+                                value: v['id'] as String, child: Text(v['name'] as String)),
+                        ],
+                        onChanged: (v) => setState(() => _vendorId = v),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_category == 'WORKER')
+                        _text(_natureOfContractor, 'Nature of contractor'),
+                      if (!_isEdit)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: OutlinedButton(
+                            onPressed: () => _pickDate(
+                              current: _joinDate,
+                              first: DateTime(2000),
+                              onPicked: (d) => setState(() => _joinDate = d),
+                            ),
+                            child: Text(
+                              _joinDate == null
+                                  ? 'Joining date (today)'
+                                  : 'Joining: ${_joinDate!.day}/${_joinDate!.month}/${_joinDate!.year}',
+                            ),
+                          ),
+                        ),
+                    ]),
 
                   if (!_isVisitor)
                     _section('Emergency & nominee', [
@@ -773,7 +871,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       _text(_nomineeRelation, 'Nominee relation (e.g. Wife)'),
                     ]),
 
-                  _section('Screening & ID card', [
+                  if (!_isVisitor)
+                    _section('Screening & ID card', [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: OutlinedButton(
@@ -842,7 +941,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       _text(_esi, 'ESI number'),
                     ]),
 
-                  _section('Gov ID (Aadhaar / PAN)', [
+                  if (!_isVisitor)
+                    _section('Gov ID (Aadhaar / PAN)', [
                     _text(
                       _aadhaar,
                       _isEdit

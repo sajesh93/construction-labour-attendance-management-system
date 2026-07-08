@@ -66,6 +66,12 @@ export class AttendanceController {
     return this.attendance.dashboardStats(user);
   }
 
+  @Get('dashboard-charts')
+  @RequirePermissions(Permission.ATTENDANCE_VIEW)
+  dashboardCharts(@CurrentUser() user: AuthUser) {
+    return this.attendance.dashboardCharts(user);
+  }
+
   @Get('day-summary')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
   daySummary(

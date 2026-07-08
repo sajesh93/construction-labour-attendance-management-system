@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 
+import '../../app/theme.dart';
 import '../../core/providers.dart';
 
 /// Polls /notifications while the app is open and surfaces alerts:
@@ -106,7 +107,7 @@ class _NotificationWatcherState extends ConsumerState<NotificationWatcher> {
         } else if (type == 'FORGOT_LOGOUT' && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              backgroundColor: Colors.orange.shade800,
+              backgroundColor: ClamsColors.warning,
               duration: const Duration(seconds: 8),
               content: Text('${n['title']}\n${n['body']}'),
             ),
@@ -131,13 +132,13 @@ class _NotificationWatcherState extends ConsumerState<NotificationWatcher> {
         builder: (ctx) => PopScope(
           canPop: false,
           child: AlertDialog(
-            backgroundColor: Colors.red.shade50,
-            icon: const Icon(Icons.sos, color: Colors.red, size: 48),
+            backgroundColor: const Color(0xFFFBEDED),
+            icon: const Icon(Icons.sos, color: ClamsColors.error, size: 48),
             title: Text(n['title'] as String? ?? 'SOS'),
             content: Text(n['body'] as String? ?? ''),
             actions: [
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                style: FilledButton.styleFrom(backgroundColor: ClamsColors.error),
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('OK — responding'),
               ),

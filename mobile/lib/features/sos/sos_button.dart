@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme.dart';
 import 'sos_service.dart';
 
 /// Red SOS trigger. [compact] renders an AppBar icon; otherwise a full-width
@@ -14,7 +15,7 @@ class SosButton extends ConsumerWidget {
     final send = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.sos, color: Colors.red, size: 40),
+        icon: const Icon(Icons.sos, color: ClamsColors.error, size: 40),
         title: const Text('Send SOS alert?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -36,7 +37,7 @@ class SosButton extends ConsumerWidget {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: ClamsColors.error),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('SEND SOS'),
           ),
@@ -51,16 +52,16 @@ class SosButton extends ConsumerWidget {
     messenger.hideCurrentSnackBar();
     final (color, text) = switch (result) {
       SosResult.sent => (
-          Colors.green.shade700,
+          ClamsColors.success,
           'SOS sent — safety officers and admins have been alerted.',
         ),
       SosResult.throttled => (
-          Colors.orange.shade800,
+          ClamsColors.warning,
           'An SOS from this device just went out — responders are already alerted. '
               'You can resend in a few seconds.',
         ),
       SosResult.failed => (
-          Colors.red.shade700,
+          ClamsColors.error,
           'SOS could not be sent (no network). Try again or call directly.',
         ),
     };
@@ -72,14 +73,14 @@ class SosButton extends ConsumerWidget {
     if (compact) {
       return IconButton(
         tooltip: 'SOS — emergency alert',
-        icon: const Icon(Icons.sos, color: Colors.red),
+        icon: const Icon(Icons.sos, color: ClamsColors.error),
         onPressed: () => _confirmAndSend(context, ref),
       );
     }
     return OutlinedButton.icon(
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.red,
-        side: const BorderSide(color: Colors.red, width: 2),
+        foregroundColor: ClamsColors.error,
+        side: const BorderSide(color: ClamsColors.error, width: 2),
         padding: const EdgeInsets.symmetric(vertical: 14),
       ),
       onPressed: () => _confirmAndSend(context, ref),

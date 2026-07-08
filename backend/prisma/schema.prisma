@@ -105,6 +105,7 @@ enum PhotoKind {
   PROFILE
   AADHAAR_FRONT
   AADHAAR_BACK
+  ID_PROOF
 }
 
 // ---------------- Master data ----------------
@@ -202,18 +203,42 @@ model User {
   role           UserRole
   fullName       String    @map("full_name")
   email          String?   @unique
+  // Login handle for users without an email (watchmen). Globally unique so
+  // login can resolve it without an org context.
+  username       String?   @unique
   phone          String?
   passwordHash   String    @map("password_hash")
   isActive       Boolean   @default(true) @map("is_active")
   lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
 
-  organization  Organization    @relation(fields: [organizationId], references: [id])
-  siteScopes    UserSiteScope[]
-  refreshTokens RefreshToken[]
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  siteScopes     UserSiteScope[]
+  refreshTokens  RefreshToken[]
+  devices        Device[]
+  passwordResets PasswordReset[]
 
   @@map("users")
+}
+
+// One-time email OTP for self-service password reset (admins/safety officers).
+// Watchmen have no email — an admin resets their password instead.
+model PasswordReset {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  otpHash        String    @map("otp_hash")
+  resetTokenHash String?   @map("reset_token_hash")
+  attempts       Int       @default(0)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz
+  usedAt         DateTime? @map("used_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_resets")
 }
 
 model UserSiteScope {
@@ -234,6 +259,9 @@ model Device {
   deviceUid      String       @map("device_uid")
   label          String?
   platform       String?
+  // Owning user (set on register): approvals are role-gated — devices of a
+  // SITE_ADMIN can only be authorized by a SUPER_ADMIN.
+  userId         String?      @map("user_id") @db.Uuid
   status         DeviceStatus @default(PENDING)
   tokenHash      String?      @map("token_hash")
   authorizedBy   String?      @map("authorized_by") @db.Uuid
@@ -244,6 +272,7 @@ model Device {
 
   organization Organization    @relation(fields: [organizationId], references: [id])
   site         Site?           @relation(fields: [siteId], references: [id])
+  user         User?           @relation(fields: [userId], references: [id])
   taps         AttendanceTap[]
 
   @@unique([organizationId, deviceUid])
@@ -297,6 +326,11 @@ model Worker {
   aadhaarBackPhotoId     String?        @map("aadhaar_back_photo_id") @db.Uuid
   panCiphertext          Bytes?         @map("pan_ciphertext")
   panLast4               String?        @map("pan_last4")
+  // Visitor-only fields: escort is mandatory for visitors (enforced in the
+  // DTO/UI), company is free text, ID-proof photo is an optional PhotoBlob.
+  escortName             String?        @map("escort_name")
+  visitorCompany         String?        @map("visitor_company")
+  idProofPhotoId         String?        @map("id_proof_photo_id") @db.Uuid
   status                 WorkerStatus   @default(ACTIVE)
   joinDate               DateTime?      @map("join_date") @db.Date
   exitDate               DateTime?      @map("exit_date") @db.Date

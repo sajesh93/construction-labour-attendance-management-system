@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme.dart';
 import '../attendance_providers.dart';
 import '../domain/models.dart';
 
@@ -75,14 +76,14 @@ class _ManualSearchSheetState extends ConsumerState<ManualSearchSheet> {
             ),
             onChanged: _onChanged,
           ),
-          const SizedBox(height: 8),
+          ClamsSpacing.gapSm,
           SizedBox(
             height: 320,
             child: _results.isEmpty
                 ? Center(
                     child: Text(
                       _searching ? 'Searching…' : 'Type a name or ID to search',
-                      style: TextStyle(color: Theme.of(context).hintColor),
+                      style: const TextStyle(color: ClamsColors.textSecondary),
                     ),
                   )
                 : ListView.builder(
@@ -93,8 +94,10 @@ class _ManualSearchSheetState extends ConsumerState<ManualSearchSheet> {
                           .join(' · ');
                       return ListTile(
                         leading: const Icon(Icons.person),
-                        title: Text(w.fullName),
-                        subtitle: Text(subtitle),
+                        title: Text(w.fullName,
+                            style: const TextStyle(fontWeight: FontWeight.w500)),
+                        subtitle: Text(subtitle,
+                            style: const TextStyle(color: ClamsColors.textSecondary)),
                         onTap: () => Navigator.pop(context, w),
                       );
                     },

@@ -14,3 +14,11 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 
 /** Mark a route as requiring an authorized device (attendance/sync). */
 export const RequiresDevice = () => SetMetadata(DEVICE_AUTH_KEY, true);
+
+export const DEVICE_EXEMPT_KEY = 'device_exempt';
+
+/**
+ * Skip the role-based device-approval check (auth endpoints must stay
+ * reachable so a user on a pending device can register it / see its status).
+ */
+export const DeviceExempt = () => SetMetadata(DEVICE_EXEMPT_KEY, true);

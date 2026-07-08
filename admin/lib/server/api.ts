@@ -1,5 +1,10 @@
 import { API_INTERNAL_BASE_URL } from '../config';
-import { getAccessToken, getRefreshToken, setAuthCookies } from './session';
+import {
+  getAccessToken,
+  getDeviceCredentials,
+  getRefreshToken,
+  setAuthCookies,
+} from './session';
 
 interface ApiOptions {
   method?: string;
@@ -27,11 +32,17 @@ export async function serverApi<T = unknown>(path: string, opts: ApiOptions = {}
 }
 
 async function rawCall(path: string, opts: ApiOptions, token?: string): Promise<Response> {
+  // Approved-browser credentials ride along on every call: non-super-admin
+  // users are rejected by the API until their browser device is authorized.
+  const { deviceId, deviceToken } = getDeviceCredentials();
   return fetch(`${API_INTERNAL_BASE_URL}${path}`, {
     method: opts.method ?? 'GET',
     headers: {
       'content-type': 'application/json',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(deviceId && deviceToken
+        ? { 'x-device-id': deviceId, 'x-device-token': deviceToken }
+        : {}),
     },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     cache: 'no-store',

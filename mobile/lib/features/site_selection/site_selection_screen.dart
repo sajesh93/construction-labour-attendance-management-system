@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/theme.dart';
 import '../../core/providers.dart';
 import '../attendance/attendance_providers.dart';
 import '../attendance/domain/models.dart';
@@ -96,16 +97,28 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
                     ])
                   : ListView.separated(
                       physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(ClamsSpacing.lg),
                       itemCount: _sites.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, __) => ClamsSpacing.gapSm,
                       itemBuilder: (_, i) {
                         final s = _sites[i];
-                        return ListTile(
-                          leading: const Icon(Icons.location_city),
-                          title: Text(s['name'] as String),
-                          subtitle: Text(s['code'] as String),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _select(s),
+                        return Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.location_city,
+                                color: ClamsColors.primary),
+                            title: Text(
+                              s['name'] as String,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                            subtitle: Text(
+                              s['code'] as String,
+                              style:
+                                  const TextStyle(color: ClamsColors.textSecondary),
+                            ),
+                            trailing: const Icon(Icons.chevron_right,
+                                color: ClamsColors.textSecondary),
+                            onTap: () => _select(s),
+                          ),
                         );
                       },
                     ),

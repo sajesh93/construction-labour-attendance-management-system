@@ -90,10 +90,11 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<bool> login(String identifier, String password) async {
     state = state.copyWith(loading: true, error: null);
     try {
-      final res = await _dio.post('/auth/login', data: {'email': email, 'password': password});
+      final res = await _dio
+          .post('/auth/login', data: {'identifier': identifier, 'password': password});
       await _store.saveTokens(
         res.data['accessToken'] as String,
         res.data['refreshToken'] as String,
@@ -104,7 +105,7 @@ class AuthController extends StateNotifier<AuthState> {
         authenticated: true,
         role: res.data['user']?['role'] as String?,
         fullName: res.data['user']?['fullName'] as String?,
-        email: (res.data['user']?['email'] as String?) ?? email,
+        email: (res.data['user']?['email'] as String?) ?? identifier,
       );
       unawaited(_registerPush());
       return true;

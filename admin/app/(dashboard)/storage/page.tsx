@@ -8,25 +8,20 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
+  Divider,
   LinearProgress,
+  Skeleton,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Typography,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { DataTable, Column } from '@/components/ui/DataTable';
+import { StatusBadge, statusTone } from '@/components/ui/StatusBadge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/Toast';
 
 interface SiteUsage {
   id: string;
@@ -62,8 +57,15 @@ function fmtBytes(n: number): string {
   return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
 }
 
+const LEVEL_LABELS: Record<Usage['level'], string> = {
+  OK: 'Healthy',
+  WARNING: 'Running low',
+  CRITICAL: 'Critical',
+  UNKNOWN: 'No limit set',
+};
+
 export default function StoragePage() {
-  const [error, setError] = React.useState<string | null>(null);
+  const toast = useToast();
   const [backedUp, setBackedUp] = React.useState<Record<string, boolean>>({});
   const [confirmSite, setConfirmSite] = React.useState<SiteUsage | null>(null);
 
@@ -79,7 +81,6 @@ export default function StoragePage() {
         `/storage/sites/${siteId}/backup`,
       ),
     onSuccess: (res, siteId) => {
-      setError(null);
       const bytes = Uint8Array.from(atob(res.contentBase64), (c) => c.charCodeAt(0));
       const blob = new Blob([bytes], { type: res.contentType });
       const url = URL.createObjectURL(blob);
@@ -89,10 +90,11 @@ export default function StoragePage() {
       a.click();
       URL.revokeObjectURL(url);
       setBackedUp((m) => ({ ...m, [siteId]: true }));
+      toast.success(`Backup downloaded — ${res.filename}`);
     },
     onError: (e) => {
       const err = e as BrowserApiError;
-      setError(err.body?.detail ?? err.body?.title ?? 'Backup failed');
+      toast.error(err.body?.detail ?? err.body?.title ?? 'Backup failed');
     },
   });
 
@@ -102,14 +104,17 @@ export default function StoragePage() {
         `/storage/sites/${siteId}/purge`,
         {},
       ),
-    onSuccess: () => {
+    onSuccess: (res) => {
       setConfirmSite(null);
-      setError(null);
+      toast.success(
+        `Cleared ${res.deletedSessions} session(s) and ${res.deletedImages} image(s)`,
+      );
       usage.refetch();
     },
     onError: (e) => {
+      setConfirmSite(null);
       const err = e as BrowserApiError;
-      setError(err.body?.detail ?? err.body?.title ?? 'Failed to clear site data');
+      toast.error(err.body?.detail ?? err.body?.title ?? 'Failed to clear site data');
     },
   });
 
@@ -117,36 +122,142 @@ export default function StoragePage() {
   const pct = data?.usedPercent != null ? Math.round(data.usedPercent * 100) : null;
   const barColor =
     data?.level === 'CRITICAL' ? 'error' : data?.level === 'WARNING' ? 'warning' : 'primary';
+  const totalSessions = data?.sites.reduce((sum, s) => sum + s.sessionCount, 0) ?? 0;
+  const totalTaps = data?.sites.reduce((sum, s) => sum + s.tapCount, 0) ?? 0;
+
+  const columns: Column<SiteUsage>[] = [
+    {
+      key: 'site',
+      label: 'Site',
+      render: (s) => (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {s.name}
+          </Typography>
+          {s.isOldest && <StatusBadge label="Oldest" tone="info" />}
+          {!s.isActive && <StatusBadge label="Disabled" tone="neutral" />}
+        </Stack>
+      ),
+    },
+    {
+      key: 'added',
+      label: 'Added',
+      render: (s) => (
+        <Typography variant="body2" color="text.secondary">
+          {new Date(s.createdAt).toLocaleDateString()}
+        </Typography>
+      ),
+    },
+    {
+      key: 'sessions',
+      label: 'Sessions',
+      align: 'right',
+      render: (s) => s.sessionCount.toLocaleString(),
+    },
+    {
+      key: 'images',
+      label: 'Images',
+      align: 'right',
+      render: (s) => fmtBytes(s.imageBytes),
+    },
+    {
+      key: 'attendance',
+      label: 'Attendance (est.)',
+      align: 'right',
+      render: (s) => fmtBytes(s.attendanceBytesEstimate),
+    },
+    {
+      key: 'freeable',
+      label: 'Freeable (est.)',
+      align: 'right',
+      render: (s) => (
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          {fmtBytes(s.freeableBytesEstimate)}
+        </Typography>
+      ),
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      align: 'right',
+      width: 210,
+      render: (s) => (
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          <Button
+            size="small"
+            startIcon={<DownloadIcon />}
+            disabled={backup.isPending}
+            onClick={() => backup.mutate(s.id)}
+          >
+            Backup
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteSweepIcon />}
+            disabled={!backedUp[s.id]}
+            onClick={() => setConfirmSite(s)}
+          >
+            Clear
+          </Button>
+        </Stack>
+      ),
+    },
+  ];
 
   return (
     <>
       <PageHeader title="Storage" subtitle="Database usage and per-site cleanup" />
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
+      {data && data.level !== 'OK' && data.level !== 'UNKNOWN' && (
+        <Alert severity={data.level === 'CRITICAL' ? 'error' : 'warning'} sx={{ mb: 2 }}>
+          Storage is {data.level === 'CRITICAL' ? 'critically low' : 'running low'} ({pct}% used).
+          Download a backup of the oldest site and clear it to free space.
         </Alert>
       )}
 
       <Card sx={{ mb: 3 }}>
-        <CardContent>
+        <CardContent sx={{ px: 2.5 }}>
           {!data ? (
-            <Typography color="text.secondary">Loading usage…</Typography>
+            <>
+              <Skeleton width="40%" height={32} />
+              <Skeleton variant="rounded" height={10} sx={{ mt: 1.5, borderRadius: 1 }} />
+            </>
           ) : (
             <>
-              {data.level !== 'OK' && data.level !== 'UNKNOWN' && (
-                <Alert severity={data.level === 'CRITICAL' ? 'error' : 'warning'} sx={{ mb: 2 }}>
-                  Storage is {data.level === 'CRITICAL' ? 'critically low' : 'running low'} ({pct}%
-                  used). Download a backup of the oldest site and clear it to free space.
-                </Alert>
-              )}
-              <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                <Typography variant="h6">
-                  {fmtBytes(data.usedBytes)}
-                  {data.limitBytes ? ` of ${fmtBytes(data.limitBytes)}` : ''} used
-                </Typography>
-                {pct != null && <Typography variant="h6">{pct}%</Typography>}
+              <Stack
+                direction="row"
+                alignItems="baseline"
+                justifyContent="space-between"
+                flexWrap="wrap"
+                sx={{ mb: 1.5, gap: 1 }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  <Typography variant="overline" color="text.secondary">
+                    Database usage
+                  </Typography>
+                  <StatusBadge
+                    label={LEVEL_LABELS[data.level]}
+                    tone={statusTone(data.level)}
+                  />
+                </Stack>
+                {pct != null && (
+                  <Typography variant="h5" component="span" color={`${barColor}.main`}>
+                    {pct}%
+                  </Typography>
+                )}
               </Stack>
+              <Typography variant="h6" sx={{ mb: 1 }}>
+                {fmtBytes(data.usedBytes)}
+                {data.limitBytes ? (
+                  <Typography component="span" variant="body2" color="text.secondary">
+                    {' '}
+                    of {fmtBytes(data.limitBytes)}
+                  </Typography>
+                ) : (
+                  ''
+                )}
+              </Typography>
               {pct != null ? (
                 <LinearProgress
                   variant="determinate"
@@ -156,101 +267,80 @@ export default function StoragePage() {
                 />
               ) : (
                 <Alert severity="info">
-                  No storage limit configured. Set the <code>DB_STORAGE_LIMIT_BYTES</code> env var on
-                  the API to enable usage alerts.
+                  No storage limit configured. Set the <code>DB_STORAGE_LIMIT_BYTES</code> env var
+                  on the API to enable usage alerts.
                 </Alert>
               )}
+              <Stack
+                direction="row"
+                spacing={3}
+                divider={<Divider orientation="vertical" flexItem />}
+                sx={{ mt: 2 }}
+              >
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Sites
+                  </Typography>
+                  <Typography variant="subtitle1">{data.sites.length}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Attendance sessions
+                  </Typography>
+                  <Typography variant="subtitle1">{totalSessions.toLocaleString()}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Attendance taps
+                  </Typography>
+                  <Typography variant="subtitle1">{totalTaps.toLocaleString()}</Typography>
+                </Box>
+              </Stack>
             </>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Sites — oldest first
-          </Typography>
-          <Box sx={{ overflowX: 'auto' }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Site</TableCell>
-                  <TableCell>Added</TableCell>
-                  <TableCell align="right">Images</TableCell>
-                  <TableCell align="right">Attendance (est.)</TableCell>
-                  <TableCell align="right">Freeable (est.)</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data?.sites.map((s) => (
-                  <TableRow key={s.id} hover>
-                    <TableCell>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <span>{s.name}</span>
-                        {s.isOldest && <Chip size="small" color="primary" label="Oldest" />}
-                        {!s.isActive && <Chip size="small" label="disabled" />}
-                      </Stack>
-                    </TableCell>
-                    <TableCell>{new Date(s.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell align="right">{fmtBytes(s.imageBytes)}</TableCell>
-                    <TableCell align="right">{fmtBytes(s.attendanceBytesEstimate)}</TableCell>
-                    <TableCell align="right">{fmtBytes(s.freeableBytesEstimate)}</TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Button
-                          size="small"
-                          startIcon={<DownloadIcon />}
-                          disabled={backup.isPending}
-                          onClick={() => backup.mutate(s.id)}
-                        >
-                          Backup
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          startIcon={<DeleteSweepIcon />}
-                          disabled={!backedUp[s.id]}
-                          onClick={() => setConfirmSite(s)}
-                        >
-                          Clear
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-            Clearing removes a site&apos;s attendance records and the photos of workers assigned only
-            to it. Worker master records and shared-worker photos are kept. Download the backup first
-            — the Clear button stays disabled until you do.
-          </Typography>
-        </CardContent>
-      </Card>
+      <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
+        Sites — oldest first
+      </Typography>
+      <DataTable
+        columns={columns}
+        rows={data?.sites}
+        loading={usage.isLoading}
+        rowKey={(s) => s.id}
+        emptyTitle="No sites yet"
+        emptyDescription="Per-site storage breakdown will appear here once sites are added."
+        footer={
+          <>
+            <Divider />
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ px: 2.5, py: 1.5, display: 'block' }}
+            >
+              Clearing removes a site&apos;s attendance records and the photos of workers assigned
+              only to it. Worker master records and shared-worker photos are kept. Download the
+              backup first — the Clear button stays disabled until you do.
+            </Typography>
+          </>
+        }
+      />
 
-      <Dialog open={!!confirmSite} onClose={() => setConfirmSite(null)}>
-        <DialogTitle>Clear data for “{confirmSite?.name}”?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This permanently deletes {confirmSite?.sessionCount} attendance session(s) and the
-            exclusive images for this site (≈{fmtBytes(confirmSite?.freeableBytesEstimate ?? 0)}).
-            Worker records are kept. This cannot be undone — make sure you downloaded the backup.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmSite(null)}>Cancel</Button>
-          <Button
-            color="error"
-            variant="contained"
-            disabled={purge.isPending}
-            onClick={() => confirmSite && purge.mutate(confirmSite.id)}
-          >
-            Clear &amp; free space
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={!!confirmSite}
+        title={`Clear data for “${confirmSite?.name ?? ''}”?`}
+        message={
+          confirmSite
+            ? `This permanently deletes ${confirmSite.sessionCount} attendance session(s) and the exclusive images for this site (≈${fmtBytes(confirmSite.freeableBytesEstimate)}). Worker records are kept. This cannot be undone — make sure you downloaded the backup.`
+            : ''
+        }
+        confirmLabel="Clear & free space"
+        danger
+        busy={purge.isPending}
+        onConfirm={() => confirmSite && purge.mutate(confirmSite.id)}
+        onClose={() => setConfirmSite(null)}
+      />
     </>
   );
 }

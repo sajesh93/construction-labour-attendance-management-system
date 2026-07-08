@@ -235,7 +235,13 @@ class _AadhaarScanScreenState extends State<AadhaarScanScreen>
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        shape: const Border(),
         title: const Text('Scan Aadhaar QR'),
+        titleTextStyle: const TextStyle(
+            color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             tooltip: 'Torch',

@@ -3,7 +3,7 @@ import { IsIn, IsOptional, IsString } from 'class-validator';
 import { PhotoKind } from '@prisma/client';
 
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-export const PHOTO_KINDS: PhotoKind[] = ['PROFILE', 'AADHAAR_FRONT', 'AADHAAR_BACK'];
+export const PHOTO_KINDS: PhotoKind[] = ['PROFILE', 'AADHAAR_FRONT', 'AADHAAR_BACK', 'ID_PROOF'];
 
 export class UploadFileDto {
   @ApiProperty({ description: 'Base64-encoded image bytes (no data: prefix)' })

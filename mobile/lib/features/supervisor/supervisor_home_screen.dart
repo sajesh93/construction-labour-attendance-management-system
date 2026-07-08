@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/theme.dart';
 import '../../core/providers.dart';
 import '../../core/widgets/api_image.dart';
 import '../aadhaar/aadhaar_verify_screen.dart';
+import '../attendance/attendance_providers.dart';
 import '../attendance/domain/models.dart';
 import '../auth/auth_controller.dart';
+import '../device/device_service.dart';
 import '../printing/badge_printer.dart';
 import '../printing/bulk_print_screen.dart';
 import '../printing/print_cards.dart';
@@ -34,22 +37,52 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
   String? _error;
   String _q = '';
 
+  /// Device approval gate — supervisors are blocked server-side until an admin
+  /// authorizes this phone, so no worker data may load before that.
+  bool _deviceBlocked = false;
+  String? _deviceUid;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(_load);
   }
 
+  static bool _isDeviceNotAuthorized(DioException e) {
+    if (e.response?.statusCode != 403) return false;
+    final data = e.response?.data;
+    return data is Map && data['code'] == 'DEVICE_NOT_AUTHORIZED';
+  }
+
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     final db = ref.read(localDbProvider);
     _siteId = await db.getMeta('active_site');
     _siteName = await db.getMeta('active_site_name') ?? '';
+
+    // Register this device (idempotent) and try to obtain a device token —
+    // granted only once an admin AUTHORIZES the device.
+    final st = await ref.read(deviceServiceProvider).ensureRegisteredAndAuthorized();
+    _deviceUid = await db.getMeta('device_uid');
+    if (!mounted) return;
+    if (st.state != DeviceState.authorized) {
+      setState(() {
+        _deviceBlocked = true;
+        _loading = false;
+      });
+      return;
+    }
+
     try {
       final dio = ref.read(apiClientProvider).dio;
       final res = await dio.get('/workers/by-site', queryParameters: {'siteId': _siteId});
       final data = (res.data['data'] as List).cast<Map<String, dynamic>>();
       if (!mounted) return;
       setState(() {
+        _deviceBlocked = false;
         _workers = data.map(WorkerCard.fromMap).toList();
         _loading = false;
         _error = null;
@@ -57,10 +90,65 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.message ?? 'Could not load workers';
+        if (_isDeviceNotAuthorized(e)) {
+          _deviceBlocked = true;
+        } else {
+          _error = e.message ?? 'Could not load workers';
+        }
         _loading = false;
       });
     }
+  }
+
+  Widget _deviceBlockedScreen() {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(Icons.phonelink_lock,
+                      size: 96, color: ClamsColors.accent),
+                  ClamsSpacing.gapXl,
+                  Text(
+                    'Waiting for device approval',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  ClamsSpacing.gapMd,
+                  Text(
+                    'Ask your Admin or Super Admin to approve this device in the '
+                    'Devices page.\n\nDevice: ${_deviceUid ?? 'unknown'}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: ClamsColors.textSecondary),
+                  ),
+                  ClamsSpacing.gapXl,
+                  FilledButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                  ClamsSpacing.gapMd,
+                  OutlinedButton.icon(
+                    onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Sign out'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openSummary(WorkerCard w) {
@@ -101,6 +189,8 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_deviceBlocked && !_loading) return _deviceBlockedScreen();
+
     final filtered = _q.isEmpty
         ? _workers
         : _workers
@@ -178,18 +268,19 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
                     child: Column(
                       children: [
                         Padding(
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(ClamsSpacing.md),
                           child: TextField(
                             decoration: const InputDecoration(
                               labelText: 'Search worker',
                               prefixIcon: Icon(Icons.search),
-                              border: OutlineInputBorder(),
                             ),
                             onChanged: (v) => setState(() => _q = v),
                           ),
                         ),
                         Expanded(
-                          child: ListView.separated(
+                          child: Container(
+                            color: ClamsColors.surface,
+                            child: ListView.separated(
                             physics: const AlwaysScrollableScrollPhysics(),
                             itemCount: filtered.length,
                             separatorBuilder: (_, __) => const Divider(height: 1),
@@ -197,13 +288,17 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
                               final w = filtered[i];
                               return ListTile(
                                 leading: ApiCircleAvatar(photoUrl: w.photoUrl),
-                                title: Text(w.fullName),
+                                title: Text(w.fullName,
+                                    style:
+                                        const TextStyle(fontWeight: FontWeight.w500)),
                                 subtitle: Text(
                                   [
                                     w.workerCode,
                                     if (w.designationName != null) w.designationName!,
                                     if (w.category != null && w.category != 'WORKER') w.category!,
                                   ].join(' · '),
+                                  style: const TextStyle(
+                                      color: ClamsColors.textSecondary),
                                 ),
                                 onTap: () => _openSummary(w),
                                 trailing: PopupMenuButton<String>(
@@ -246,6 +341,7 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
                                 ),
                               );
                             },
+                            ),
                           ),
                         ),
                       ],

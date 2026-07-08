@@ -193,7 +193,8 @@ export function IdCard({
       </div>
     ) : null;
 
-  // ---- Visitor pass: deliberately minimal — name + mobile + a QR for sign-in.
+  // ---- Visitor pass: deliberately minimal — name + a QR for sign-in only.
+  // No mobile/blood group/other personal details on the pass.
   // Single-sided, so it renders the same regardless of `side`. ----
   if (worker.category === 'VISITOR') {
     return (
@@ -211,8 +212,6 @@ export function IdCard({
           >
             {org?.name ? <Row cells={[{ label: 'Company', value: org.name, labelW: 22 }]} grow={1} /> : null}
             <Row cells={[{ label: 'Name', value: worker.fullName, labelW: 22 }]} grow={1} />
-            <Row cells={[{ label: 'Mobile', value: worker.mobileNumber ?? '', labelW: 22 }]} grow={1} />
-            <Row cells={[{ label: 'Pass No', value: worker.workerCode, labelW: 22 }]} grow={1} />
           </div>
           <div
             style={{

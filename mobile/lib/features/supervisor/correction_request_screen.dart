@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme.dart';
 import '../../core/providers.dart';
 import '../attendance/domain/models.dart';
 
@@ -87,31 +88,33 @@ class _CorrectionRequestScreenState extends ConsumerState<CorrectionRequestScree
     return Scaffold(
       appBar: AppBar(title: Text('Correction · ${widget.worker.fullName}')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(ClamsSpacing.lg),
         children: [
           if (_error != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              padding: const EdgeInsets.only(bottom: ClamsSpacing.md),
+              child: Text(_error!, style: const TextStyle(color: ClamsColors.error)),
             ),
           DropdownButtonFormField<String>(
             initialValue: _type,
-            decoration: const InputDecoration(labelText: 'Correction type', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Correction type'),
             items: _types.map((t) => DropdownMenuItem(value: t, child: Text(_label(t)))).toList(),
             onChanged: (v) => setState(() => _type = v!),
           ),
-          const SizedBox(height: 16),
+          ClamsSpacing.gapLg,
           DropdownButtonFormField<String>(
             initialValue: _reason,
-            decoration: const InputDecoration(labelText: 'Reason', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Reason'),
             items: _reasons.map((r) => DropdownMenuItem(value: r, child: Text(_label(r)))).toList(),
             onChanged: (v) => setState(() => _reason = v!),
           ),
-          const SizedBox(height: 16),
+          ClamsSpacing.gapLg,
           ListTile(
+            tileColor: ClamsColors.surface,
             shape: const RoundedRectangleBorder(
-              side: BorderSide(color: Colors.grey),
-              borderRadius: BorderRadius.all(Radius.circular(4)),
+              side: BorderSide(color: ClamsColors.border),
+              borderRadius:
+                  BorderRadius.all(Radius.circular(ClamsRadius.control)),
             ),
             title: const Text('Work date'),
             subtitle: Text('${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}'),
@@ -127,11 +130,13 @@ class _CorrectionRequestScreenState extends ConsumerState<CorrectionRequestScree
             },
           ),
           if (_needsTime) ...[
-            const SizedBox(height: 12),
+            ClamsSpacing.gapMd,
             ListTile(
+              tileColor: ClamsColors.surface,
               shape: const RoundedRectangleBorder(
-                side: BorderSide(color: Colors.grey),
-                borderRadius: BorderRadius.all(Radius.circular(4)),
+                side: BorderSide(color: ClamsColors.border),
+                borderRadius:
+                    BorderRadius.all(Radius.circular(ClamsRadius.control)),
               ),
               title: Text(_type == 'LOGOUT' ? 'Proposed logout time' : 'Proposed login time'),
               subtitle: Text(_time?.format(context) ?? 'Not set'),
@@ -143,13 +148,13 @@ class _CorrectionRequestScreenState extends ConsumerState<CorrectionRequestScree
               },
             ),
           ],
-          const SizedBox(height: 16),
+          ClamsSpacing.gapLg,
           TextField(
             controller: _notes,
             maxLines: 3,
-            decoration: const InputDecoration(labelText: 'Notes', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Notes'),
           ),
-          const SizedBox(height: 24),
+          ClamsSpacing.gapXl,
           FilledButton(
             onPressed: _busy ? null : _submit,
             child: Text(_busy ? 'Submitting…' : 'Submit request'),

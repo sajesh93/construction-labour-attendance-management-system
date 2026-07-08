@@ -5,8 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
-  Card,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -14,17 +12,21 @@ import {
   IconButton,
   MenuItem,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
+  Tooltip,
+  Typography,
 } from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
+import { alpha } from '@mui/material/styles';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
 import { useForm } from 'react-hook-form';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { DataTable, Column } from '@/components/ui/DataTable';
+import { StatusBadge, BadgeTone } from '@/components/ui/StatusBadge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/Toast';
 import { roleLabel } from '@/lib/rbac';
 import { UserRole } from '@/lib/types';
 
@@ -32,6 +34,7 @@ interface UserRow {
   id: string;
   fullName: string;
   email: string | null;
+  username: string | null;
   role: UserRole;
   isActive: boolean;
 }
@@ -39,22 +42,58 @@ interface UserRow {
 interface UserForm {
   fullName: string;
   email: string;
+  username: string;
   password: string;
   role: UserRole;
 }
 
-const ROLES: UserRole[] = ['SUPER_ADMIN', 'SITE_ADMIN', 'WATCHMAN', 'SUPERVISOR'];
+interface Me {
+  id: string;
+  role: UserRole;
+}
+
+/** Soft role badge — one consistent tone per role across the panel. */
+function RoleBadge({ role }: { role: UserRole }) {
+  if (role === 'SITE_ADMIN') {
+    // Primary-tinted badge: admins carry the brand color.
+    return (
+      <StatusBadge
+        label={roleLabel(role)}
+        sx={{
+          bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
+          color: 'primary.main',
+        }}
+      />
+    );
+  }
+  const tone: BadgeTone =
+    role === 'SUPER_ADMIN' ? 'info' : role === 'SUPERVISOR' ? 'success' : 'neutral';
+  return <StatusBadge label={roleLabel(role)} tone={tone} />;
+}
 
 export default function UsersPage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const [open, setOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<UserRow | null>(null);
+  const [deleting, setDeleting] = React.useState<UserRow | null>(null);
+  const [toggling, setToggling] = React.useState<UserRow | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const { register, handleSubmit, reset } = useForm<UserForm>({
+  const { register, handleSubmit, reset, watch } = useForm<UserForm>({
     defaultValues: { role: 'WATCHMAN' },
   });
+  const selectedRole = watch('role');
 
+  const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/auth/me') });
   const users = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRow[]>('/users') });
+
+  const isSuperAdmin = me.data?.role === 'SUPER_ADMIN';
+  // Admins can only create/edit Safety Officers & Watchmen; Super Admin: all.
+  const assignableRoles: UserRole[] = isSuperAdmin
+    ? ['SUPER_ADMIN', 'SITE_ADMIN', 'SUPERVISOR', 'WATCHMAN']
+    : ['SUPERVISOR', 'WATCHMAN'];
+  const canManage = (u: UserRow) =>
+    isSuperAdmin || u.role === 'SUPERVISOR' || u.role === 'WATCHMAN' || u.id === me.data?.id;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['users'] });
   const fail = (e: unknown, fallback: string) => {
@@ -64,43 +103,148 @@ export default function UsersPage() {
 
   const save = useMutation({
     mutationFn: (v: UserForm) => {
-      if (!editing) return api.post('/users', v);
       const body: Record<string, unknown> = {
         fullName: v.fullName,
         role: v.role,
         ...(v.email ? { email: v.email } : {}),
+        ...(v.username ? { username: v.username } : {}),
         // Blank password = keep the existing one.
         ...(v.password ? { password: v.password } : {}),
       };
-      return api.patch(`/users/${editing.id}`, body);
+      return editing ? api.patch(`/users/${editing.id}`, body) : api.post('/users', body);
     },
     onSuccess: () => {
       refresh();
       setOpen(false);
       setError(null);
-      reset({ fullName: '', email: '', password: '', role: 'WATCHMAN' });
+      toast.success(editing ? 'Changes saved' : 'User created');
+      reset({ fullName: '', email: '', username: '', password: '', role: 'WATCHMAN' });
     },
     onError: (e) => fail(e, 'Failed to save user'),
   });
 
   const toggleActive = useMutation({
     mutationFn: (u: UserRow) => api.patch(`/users/${u.id}`, { isActive: !u.isActive }),
-    onSuccess: refresh,
-    onError: (e) => fail(e, 'Failed to update user'),
+    onSuccess: (_, u) => {
+      refresh();
+      setToggling(null);
+      toast.success(`${u.fullName} ${u.isActive ? 'deactivated' : 're-activated'}`);
+    },
+    onError: (e) => {
+      setToggling(null);
+      fail(e, 'Failed to update user');
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (u: UserRow) => api.del(`/users/${u.id}`),
+    onSuccess: (_, u) => {
+      refresh();
+      setDeleting(null);
+      toast.success(`${u.fullName} deleted`);
+    },
+    onError: (e) => {
+      setDeleting(null);
+      fail(e, 'Failed to delete user');
+    },
   });
 
   const openCreate = () => {
     setEditing(null);
     setError(null);
-    reset({ fullName: '', email: '', password: '', role: 'WATCHMAN' });
+    reset({
+      fullName: '',
+      email: '',
+      username: '',
+      password: '',
+      role: assignableRoles[assignableRoles.length - 1],
+    });
     setOpen(true);
   };
   const openEdit = (u: UserRow) => {
     setEditing(u);
     setError(null);
-    reset({ fullName: u.fullName, email: u.email ?? '', password: '', role: u.role });
+    reset({
+      fullName: u.fullName,
+      email: u.email ?? '',
+      username: u.username ?? '',
+      password: '',
+      role: u.role,
+    });
     setOpen(true);
   };
+
+  const columns: Column<UserRow>[] = [
+    {
+      key: 'name',
+      label: 'Name',
+      render: (u) => (
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          {u.fullName}
+        </Typography>
+      ),
+    },
+    {
+      key: 'login',
+      label: 'Email / User ID',
+      render: (u) => (
+        <Typography variant="body2" color="text.secondary">
+          {u.email ?? u.username ?? '—'}
+        </Typography>
+      ),
+    },
+    {
+      key: 'role',
+      label: 'Role',
+      render: (u) => <RoleBadge role={u.role} />,
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (u) =>
+        canManage(u) ? (
+          <Tooltip title={u.isActive ? 'Click to deactivate' : 'Click to re-activate'}>
+            <span>
+              <StatusBadge
+                label={u.isActive ? 'Active' : 'Inactive'}
+                tone={u.isActive ? 'success' : 'neutral'}
+                onClick={() => setToggling(u)}
+              />
+            </span>
+          </Tooltip>
+        ) : (
+          <StatusBadge
+            label={u.isActive ? 'Active' : 'Inactive'}
+            tone={u.isActive ? 'success' : 'neutral'}
+          />
+        ),
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      align: 'right',
+      width: 110,
+      render: (u) => (
+        <>
+          {canManage(u) && (
+            <IconButton size="small" title="Edit user" onClick={() => openEdit(u)}>
+              <EditOutlinedIcon fontSize="small" />
+            </IconButton>
+          )}
+          {isSuperAdmin && u.id !== me.data?.id && (
+            <IconButton
+              size="small"
+              color="error"
+              title="Delete user"
+              onClick={() => setDeleting(u)}
+            >
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          )}
+        </>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -108,7 +252,7 @@ export default function UsersPage() {
         title="Users"
         subtitle="Admins, safety officers and watchmen"
         action={
-          <Button variant="contained" onClick={openCreate}>
+          <Button variant="contained" startIcon={<PersonAddAltOutlinedIcon />} onClick={openCreate}>
             New user
           </Button>
         }
@@ -118,52 +262,19 @@ export default function UsersPage() {
           {error}
         </Alert>
       )}
-      <Card>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Role</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {users.data?.map((u) => (
-              <TableRow key={u.id} hover>
-                <TableCell>{u.fullName}</TableCell>
-                <TableCell>{u.email ?? '—'}</TableCell>
-                <TableCell>
-                  <Chip size="small" label={roleLabel(u.role)} />
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    color={u.isActive ? 'success' : 'default'}
-                    label={u.isActive ? 'Active' : 'Inactive'}
-                    onClick={() => {
-                      if (
-                        confirm(
-                          u.isActive
-                            ? `Deactivate ${u.fullName}? They will no longer be able to sign in.`
-                            : `Re-activate ${u.fullName}?`,
-                        )
-                      )
-                        toggleActive.mutate(u);
-                    }}
-                  />
-                </TableCell>
-                <TableCell align="right">
-                  <IconButton size="small" title="Edit user" onClick={() => openEdit(u)}>
-                    <EditIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+      <DataTable
+        columns={columns}
+        rows={users.data}
+        loading={users.isLoading}
+        rowKey={(u) => u.id}
+        emptyTitle="No users yet"
+        emptyDescription="Create accounts for admins, safety officers and watchmen."
+        emptyAction={
+          <Button variant="contained" onClick={openCreate}>
+            New user
+          </Button>
+        }
+      />
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>{editing ? `Edit user — ${editing.fullName}` : 'New user'}</DialogTitle>
@@ -172,18 +283,51 @@ export default function UsersPage() {
             <Stack spacing={2} sx={{ mt: 1 }}>
               {error && <Alert severity="error">{error}</Alert>}
               <TextField
+                select
+                label="Role"
+                defaultValue={editing?.role ?? 'WATCHMAN'}
+                fullWidth
+                {...register('role')}
+              >
+                {assignableRoles.map((r) => (
+                  <MenuItem key={r} value={r}>
+                    {roleLabel(r)}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
                 label="Full name"
                 fullWidth
                 InputLabelProps={{ shrink: true }}
                 {...register('fullName')}
               />
-              <TextField
-                label="Email"
-                type="email"
-                fullWidth
-                InputLabelProps={{ shrink: true }}
-                {...register('email')}
-              />
+              {selectedRole === 'WATCHMAN' ? (
+                <>
+                  <TextField
+                    label="User ID (used to sign in)"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    helperText="Watchmen sign in with this ID — no email needed"
+                    {...register('username')}
+                  />
+                  <TextField
+                    label="Email (optional)"
+                    type="email"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    {...register('email')}
+                  />
+                </>
+              ) : (
+                <TextField
+                  label="Email"
+                  type="email"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  helperText="Required — used for sign-in and password reset codes"
+                  {...register('email')}
+                />
+              )}
               <TextField
                 label={editing ? 'New password (blank = keep current)' : 'Password'}
                 type="password"
@@ -191,29 +335,50 @@ export default function UsersPage() {
                 InputLabelProps={{ shrink: true }}
                 {...register('password')}
               />
-              <TextField
-                select
-                label="Role"
-                defaultValue={editing?.role ?? 'WATCHMAN'}
-                fullWidth
-                {...register('role')}
-              >
-                {ROLES.map((r) => (
-                  <MenuItem key={r} value={r}>
-                    {roleLabel(r)}
-                  </MenuItem>
-                ))}
-              </TextField>
             </Stack>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button color="inherit" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
             <Button type="submit" variant="contained" disabled={save.isPending}>
               {editing ? 'Save changes' : 'Create'}
             </Button>
           </DialogActions>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!toggling}
+        title={toggling?.isActive ? 'Deactivate user?' : 'Re-activate user?'}
+        message={
+          toggling
+            ? toggling.isActive
+              ? `${toggling.fullName} will no longer be able to sign in. You can re-activate them at any time.`
+              : `${toggling.fullName} will be able to sign in again.`
+            : ''
+        }
+        confirmLabel={toggling?.isActive ? 'Deactivate' : 'Re-activate'}
+        danger={!!toggling?.isActive}
+        busy={toggleActive.isPending}
+        onConfirm={() => toggling && toggleActive.mutate(toggling)}
+        onClose={() => setToggling(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        title="Delete user?"
+        message={
+          deleting
+            ? `${deleting.fullName} (${roleLabel(deleting.role)}) will be removed and signed out everywhere. Their history stays in the audit log. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete"
+        danger
+        busy={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+        onClose={() => setDeleting(null)}
+      />
     </>
   );
 }

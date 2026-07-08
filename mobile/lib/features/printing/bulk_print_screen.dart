@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme.dart';
 import '../../core/providers.dart';
 import 'badge_printer.dart';
 import 'print_cards.dart';
@@ -100,6 +101,8 @@ class _BulkPrintScreenState extends ConsumerState<BulkPrintScreen> {
                         final id = r['id'] as String;
                         return CheckboxListTile(
                           value: _selected.contains(id),
+                          tileColor: ClamsColors.surface,
+                          activeColor: ClamsColors.primary,
                           onChanged: (v) => setState(() {
                             if (v == true) {
                               _selected.add(id);
@@ -107,26 +110,35 @@ class _BulkPrintScreenState extends ConsumerState<BulkPrintScreen> {
                               _selected.remove(id);
                             }
                           }),
-                          title: Text(r['fullName'] as String? ?? ''),
+                          title: Text(r['fullName'] as String? ?? '',
+                              style: const TextStyle(fontWeight: FontWeight.w500)),
                           subtitle: Text(
                             [
                               r['workerCode'],
                               r['designationName'],
                               r['category'],
                             ].whereType<String>().join(' · '),
+                            style:
+                                const TextStyle(color: ClamsColors.textSecondary),
                           ),
                         );
                       },
                     ),
       bottomNavigationBar: _rows.isEmpty
           ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: FilledButton.icon(
-                  onPressed: _selected.isEmpty ? null : _print,
-                  icon: const Icon(Icons.print),
-                  label: Text('Print ${_selected.length} badge(s)'),
+          : Container(
+              decoration: const BoxDecoration(
+                color: ClamsColors.surface,
+                border: Border(top: BorderSide(color: ClamsColors.border)),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(ClamsSpacing.md),
+                  child: FilledButton.icon(
+                    onPressed: _selected.isEmpty ? null : _print,
+                    icon: const Icon(Icons.print),
+                    label: Text('Print ${_selected.length} badge(s)'),
+                  ),
                 ),
               ),
             ),

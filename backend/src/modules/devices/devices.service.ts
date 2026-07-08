@@ -19,6 +19,7 @@ export class DevicesService {
         ...(siteId ? { siteId } : {}),
         ...(status ? { status } : {}),
       },
+      include: { user: { select: { id: true, fullName: true, role: true } } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -30,8 +31,20 @@ export class DevicesService {
   ) {
     const device = await this.prisma.device.findFirst({
       where: { id, organizationId: user.organizationId },
+      include: { user: { select: { role: true } } },
     });
     if (!device) throw Errors.notFound('Device');
+
+    // An Admin's own PC/browser can only be approved (or revoked) by the
+    // Super Admin — admins must not self-approve their logins.
+    if (
+      data.status &&
+      data.status !== device.status &&
+      device.user?.role === 'SITE_ADMIN' &&
+      user.role !== 'SUPER_ADMIN'
+    ) {
+      throw Errors.forbidden("Only the Super Admin can approve an Admin's device.");
+    }
 
     // An empty rename clears the label so the UI falls back to the device UID.
     const nextLabel = data.label !== undefined ? data.label.trim() || null : undefined;

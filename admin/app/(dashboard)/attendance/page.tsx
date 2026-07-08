@@ -22,8 +22,13 @@ import {
   Typography,
 } from '@mui/material';
 import PrintIcon from '@mui/icons-material/Print';
+import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
+import { FilterBar } from '@/components/ui/FilterBar';
+import { DataTable, Column } from '@/components/ui/DataTable';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { DaySummary, Site } from '@/lib/types';
 
 interface ActiveSession {
@@ -68,6 +73,16 @@ const CATEGORY_LABEL: Record<string, string> = {
   STAFF: 'Staff',
   VISITOR: 'Visitors',
 };
+
+/** "8 Jul, 07:42 AM" — compact, unambiguous login/logout time. */
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 function Kpi({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
   return (
@@ -119,12 +134,7 @@ function Breakdown({
                   <TableCell>{r.name}</TableCell>
                   <TableCell align="right">{r.count}</TableCell>
                   <TableCell align="right">
-                    <Chip
-                      size="small"
-                      color={r.active > 0 ? 'success' : 'default'}
-                      label={r.active}
-                      variant={r.active > 0 ? 'filled' : 'outlined'}
-                    />
+                    <StatusBadge label={String(r.active)} tone={r.active > 0 ? 'success' : 'neutral'} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -135,6 +145,8 @@ function Breakdown({
     </Card>
   );
 }
+
+type MissedRow = StatPerson & { category: string };
 
 export default function AttendancePage() {
   const [siteId, setSiteId] = React.useState('all');
@@ -180,7 +192,7 @@ export default function AttendancePage() {
   const onSitePct = total > 0 ? Math.round((activeNow / total) * 100) : 0;
 
   // Missed-logout rows, honouring the category filter (dashboard-stats is grouped by category).
-  const missedRows = React.useMemo(() => {
+  const missedRows = React.useMemo<MissedRow[]>(() => {
     const byCat = stats.data?.missedLogout.byCategory ?? {};
     return Object.entries(byCat)
       .filter(([cat]) => category === 'all' || cat === category)
@@ -189,11 +201,65 @@ export default function AttendancePage() {
 
   const isLoading = active.isLoading || summary.isLoading;
 
+  const missedColumns: Column<MissedRow>[] = [
+    { key: 'name', label: 'Name', render: (p) => p.fullName },
+    { key: 'code', label: 'Code', render: (p) => p.workerCode },
+    {
+      key: 'category',
+      label: 'Category',
+      render: (p) => CATEGORY_LABEL[p.category] ?? p.category,
+    },
+    { key: 'site', label: 'Site', render: (p) => p.siteName ?? '—' },
+    {
+      key: 'loginAt',
+      label: 'Logged in at',
+      render: (p) => (
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+          {fmtTime(p.loginAt)}
+        </Typography>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: () => <StatusBadge label="Missed logout" tone="warning" />,
+    },
+  ];
+
+  const activeColumns: Column<ActiveSession>[] = [
+    { key: 'name', label: 'Name', render: (s) => s.worker.fullName },
+    { key: 'code', label: 'Code', render: (s) => s.worker.workerCode },
+    {
+      key: 'category',
+      label: 'Category',
+      render: (s) => CATEGORY_LABEL[s.worker.category ?? ''] ?? s.worker.category ?? '—',
+    },
+    { key: 'designation', label: 'Designation', render: (s) => s.worker.designation?.name ?? '—' },
+    { key: 'vendor', label: 'Vendor', render: (s) => s.worker.vendor?.name ?? '—' },
+    ...(siteId === 'all'
+      ? [{ key: 'site', label: 'Site', render: (s: ActiveSession) => s.site?.name ?? '—' } as Column<ActiveSession>]
+      : []),
+    {
+      key: 'loginAt',
+      label: 'Logged in at',
+      render: (s) => (
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+          {fmtTime(s.loginAt)}
+        </Typography>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: () => <StatusBadge label="On site" tone="success" />,
+    },
+  ];
+
   return (
     <>
       <PageHeader title="Attendance" subtitle="Today's headcount, breakdowns and live open sessions" />
 
-      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+      <FilterBar>
         <TextField
           select
           size="small"
@@ -232,7 +298,7 @@ export default function AttendancePage() {
         >
           Print
         </Button>
-      </Stack>
+      </FilterBar>
 
       {isLoading && <LinearProgress sx={{ mb: 2 }} />}
 
@@ -325,96 +391,46 @@ export default function AttendancePage() {
       </Grid>
 
       {missedView && (
-        <Card sx={{ mb: 2, borderLeft: '4px solid', borderColor: 'warning.main' }}>
-          <CardContent>
-            <Typography variant="subtitle1" gutterBottom>
+        <Box sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.25 }}>
+            <ReportProblemOutlinedIcon fontSize="small" color="warning" />
+            <Typography variant="subtitle1">
               Missed logouts — {stats.data?.missedLogout.date ?? 'yesterday'}
               {category !== 'all' ? ` (${CATEGORY_LABEL[category]})` : ''}
             </Typography>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              These people logged in but never logged out; their sessions were auto-closed.
-            </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Code</TableCell>
-                  <TableCell>Category</TableCell>
-                  <TableCell>Site</TableCell>
-                  <TableCell>Logged in at</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {missedRows.map((p) => (
-                  <TableRow key={`${p.category}-${p.workerCode}`} hover>
-                    <TableCell>{p.fullName}</TableCell>
-                    <TableCell>{p.workerCode}</TableCell>
-                    <TableCell>{CATEGORY_LABEL[p.category] ?? p.category}</TableCell>
-                    <TableCell>{p.siteName ?? '—'}</TableCell>
-                    <TableCell>{new Date(p.loginAt).toLocaleString()}</TableCell>
-                  </TableRow>
-                ))}
-                {stats.data && missedRows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5}>
-                      <Typography color="text.secondary">
-                        Everyone logged out properly. 🎉
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            These people logged in but never logged out; their sessions were auto-closed.
+          </Typography>
+          <DataTable
+            columns={missedColumns}
+            rows={missedRows}
+            loading={stats.isLoading}
+            rowKey={(p) => `${p.category}-${p.workerCode}`}
+            emptyTitle="Everyone logged out properly"
+            emptyDescription="No missed logouts for this day."
+          />
+        </Box>
       )}
 
       {/* Live open sessions */}
-      <Card>
-        <CardContent sx={{ pb: 0 }}>
-          <Typography variant="subtitle1">
-            On site now ({active.data?.length ?? 0})
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Open sessions, refreshing every 15s
-          </Typography>
-        </CardContent>
-        <Box sx={{ overflowX: 'auto' }}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Code</TableCell>
-                <TableCell>Category</TableCell>
-                <TableCell>Designation</TableCell>
-                <TableCell>Vendor</TableCell>
-                {siteId === 'all' && <TableCell>Site</TableCell>}
-                <TableCell>Logged in at</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {active.data?.map((s) => (
-                <TableRow key={s.id} hover>
-                  <TableCell>{s.worker.fullName}</TableCell>
-                  <TableCell>{s.worker.workerCode}</TableCell>
-                  <TableCell>{CATEGORY_LABEL[s.worker.category ?? ''] ?? s.worker.category ?? '—'}</TableCell>
-                  <TableCell>{s.worker.designation?.name ?? '—'}</TableCell>
-                  <TableCell>{s.worker.vendor?.name ?? '—'}</TableCell>
-                  {siteId === 'all' && <TableCell>{s.site?.name ?? '—'}</TableCell>}
-                  <TableCell>{new Date(s.loginAt).toLocaleString()}</TableCell>
-                </TableRow>
-              ))}
-              {active.data?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={siteId === 'all' ? 7 : 6}>
-                    <Typography color="text.secondary">No open sessions.</Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Box>
-      </Card>
+      <Box>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.25 }}>
+          <GroupsOutlinedIcon fontSize="small" color="primary" />
+          <Typography variant="subtitle1">On site now ({active.data?.length ?? 0})</Typography>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+          Open sessions, refreshing every 15s
+        </Typography>
+        <DataTable
+          columns={activeColumns}
+          rows={active.data}
+          loading={active.isLoading}
+          rowKey={(s) => s.id}
+          emptyTitle="No open sessions"
+          emptyDescription="No one is logged in on the selected site right now."
+        />
+      </Box>
       </Box>
     </>
   );

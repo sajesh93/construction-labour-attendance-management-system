@@ -134,8 +134,10 @@ export function CameraCaptureDialog({
             position: 'relative',
             width: '100%',
             aspectRatio: '4 / 3',
-            bgcolor: 'black',
-            borderRadius: 1,
+            bgcolor: '#0B0F16',
+            borderRadius: 2,
+            border: 1,
+            borderColor: 'divider',
             overflow: 'hidden',
             display: 'flex',
             alignItems: 'center',
@@ -171,8 +173,10 @@ export function CameraCaptureDialog({
           </Stack>
         )}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+      <DialogActions sx={{ px: 3, py: 2 }}>
+        <Button onClick={onClose} color="inherit">
+          Cancel
+        </Button>
         <Button
           variant="contained"
           startIcon={<CameraAltIcon />}

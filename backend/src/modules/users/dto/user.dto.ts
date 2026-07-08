@@ -10,6 +10,7 @@ import {
   IsString,
   Length,
   IsUUID,
+  Matches,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -26,6 +27,18 @@ export class CreateUserDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Login user ID for accounts without email (watchmen)',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(3, 60)
+  @Matches(/^[a-zA-Z0-9._-]+$/, {
+    message: 'username may only contain letters, numbers, dots, dashes and underscores',
+  })
+  username?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

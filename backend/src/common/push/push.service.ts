@@ -33,6 +33,39 @@ export class PushService implements OnModuleInit {
   }
 
   /**
+   * Standard-priority alert (device approvals, missed logouts). Returns stale
+   * tokens for pruning, like {@link sendSos}.
+   */
+  async sendAlert(
+    tokens: string[],
+    payload: { title: string; body: string; data?: Record<string, string> },
+  ): Promise<string[]> {
+    if (!this.app || tokens.length === 0) return [];
+    const message: MulticastMessage = {
+      tokens,
+      notification: { title: payload.title, body: payload.body },
+      data: { type: 'ALERT', ...payload.data },
+      android: { priority: 'high' },
+    };
+    const stale: string[] = [];
+    try {
+      const res = await getMessaging(this.app).sendEachForMulticast(message);
+      res.responses.forEach((r, i) => {
+        const code = r.error?.code ?? '';
+        if (
+          !r.success &&
+          (code.includes('registration-token-not-registered') || code.includes('invalid-argument'))
+        ) {
+          stale.push(tokens[i]);
+        }
+      });
+    } catch (e) {
+      this.logger.error(`Alert push failed: ${(e as Error).message}`);
+    }
+    return stale;
+  }
+
+  /**
    * High-priority, data-only SOS message (the app builds the full-screen alarm
    * notification from the data so it rings even when closed/locked). Returns
    * tokens that are no longer valid, so the caller can prune them.

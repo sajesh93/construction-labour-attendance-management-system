@@ -5,9 +5,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Avatar,
+  Box,
   Button,
   Card,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -15,7 +15,9 @@ import {
   Divider,
   Grid,
   IconButton,
+  InputAdornment,
   MenuItem,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -23,6 +25,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import { Controller, useForm } from 'react-hook-form';
@@ -30,13 +33,20 @@ import { useRouter } from 'next/navigation';
 import QrCode2Icon from '@mui/icons-material/QrCode2';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SearchIcon from '@mui/icons-material/Search';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
+import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { QrBadge } from '@/components/QrBadge';
 import { CameraCaptureDialog } from '@/components/CameraCaptureDialog';
+import { FilterBar } from '@/components/ui/FilterBar';
+import { StatusBadge, statusTone, BadgeTone } from '@/components/ui/StatusBadge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/Toast';
 import { Designation, Paginated, PersonCategory, Site, Vendor, Worker } from '@/lib/types';
 
 interface PersonForm {
@@ -77,6 +87,9 @@ interface PersonForm {
   photoUrl?: string;
   aadhaarFrontPhotoId?: string;
   aadhaarBackPhotoId?: string;
+  escortName?: string;
+  visitorCompany?: string;
+  idProofPhotoId?: string;
 }
 
 type WorkerDetail = Worker & {
@@ -147,6 +160,9 @@ function toForm(w: WorkerDetail): PersonForm {
     photoUrl: w.photoUrl ?? '',
     aadhaarFrontPhotoId: w.aadhaarFrontPhotoId ?? '',
     aadhaarBackPhotoId: w.aadhaarBackPhotoId ?? '',
+    escortName: w.escortName ?? '',
+    visitorCompany: w.visitorCompany ?? '',
+    idProofPhotoId: w.idProofPhotoId ?? '',
   };
 }
 
@@ -158,7 +174,7 @@ export function photoSrc(photoUrl?: string | null): string | undefined {
     : photoUrl;
 }
 
-type PhotoKind = 'PROFILE' | 'AADHAAR_FRONT' | 'AADHAAR_BACK';
+type PhotoKind = 'PROFILE' | 'AADHAAR_FRONT' | 'AADHAAR_BACK' | 'ID_PROOF';
 
 /**
  * Downscale + JPEG-compress client-side, then upload to /files. The server
@@ -197,22 +213,55 @@ async function uploadImage(
   });
 }
 
+/** Person status → badge tone (SUSPENDED reads as a warning, not neutral). */
+function personTone(status: string): BadgeTone {
+  return status === 'SUSPENDED' ? 'warning' : statusTone(status);
+}
+
+/** Uppercase section label inside the profile/edit dialog. */
+function SectionHeading({ children, first = false }: { children: React.ReactNode; first?: boolean }) {
+  return (
+    <>
+      {!first && <Divider sx={{ mt: 3, mb: 2.5 }} />}
+      <Typography
+        variant="overline"
+        component="div"
+        sx={{ color: 'text.secondary', lineHeight: 1.4, mb: 1.5 }}
+      >
+        {children}
+      </Typography>
+    </>
+  );
+}
+
 export function PeopleDirectory({ category }: { category: PersonCategory }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const toast = useToast();
   const labels = LABELS[category];
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [qrWorker, setQrWorker] = React.useState<Worker | null>(null);
   const [editing, setEditing] = React.useState<WorkerDetail | null>(null);
+  const [deleting, setDeleting] = React.useState<Worker | null>(null);
   const [uploading, setUploading] = React.useState(false);
-  const { register, handleSubmit, reset, control, setValue, watch } = useForm<PersonForm>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    control,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<PersonForm>({
     defaultValues: EMPTY_FORM,
   });
   const photoUrl = watch('photoUrl');
   const aadhaarFrontPhotoId = watch('aadhaarFrontPhotoId');
   const aadhaarBackPhotoId = watch('aadhaarBackPhotoId');
+  const idProofPhotoId = watch('idProofPhotoId');
+  const isVisitor = category === 'VISITOR';
 
   const [sortBy, setSortBy] = React.useState('');
   const listUrl = `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200${
@@ -251,6 +300,20 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     queryFn: () => api.get<Designation[]>('/designations'),
   });
 
+  // Presentation-only filters over the already-loaded rows.
+  const [siteFilter, setSiteFilter] = React.useState('');
+  const [vendorFilter, setVendorFilter] = React.useState('');
+  const [designationFilter, setDesignationFilter] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState('');
+  const filtersActive = !!(siteFilter || vendorFilter || designationFilter || statusFilter);
+  const visibleRows = allRows.filter((w) => {
+    if (statusFilter && w.status !== statusFilter) return false;
+    if (vendorFilter && (w.vendorId ?? '') !== vendorFilter) return false;
+    if (designationFilter && (w.designationId ?? '') !== designationFilter) return false;
+    if (siteFilter && (w.assignments?.[0]?.site?.name ?? '') !== siteFilter) return false;
+    return true;
+  });
+
   const refresh = () => qc.invalidateQueries({ queryKey: ['workers'] });
 
   const closeDialog = () => {
@@ -276,7 +339,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       setOpen(true);
     } catch (e) {
       const err = e as BrowserApiError;
-      setError(err.body?.detail ?? err.body?.title ?? `Failed to load ${labels.singular}`);
+      toast.error(err.body?.detail ?? err.body?.title ?? `Failed to load ${labels.singular}`);
     }
   };
 
@@ -291,6 +354,11 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         body.photoUrl = v.photoUrl ? v.photoUrl : null;
       } else if (v.photoUrl) {
         body.photoUrl = v.photoUrl;
+      }
+      // Optional visitor fields: on edit, '' must clear the stored value.
+      if (isVisitor && editing) {
+        body.visitorCompany = v.visitorCompany ? v.visitorCompany : null;
+        body.idProofPhotoId = v.idProofPhotoId ? v.idProofPhotoId : null;
       }
 
       if (!editing) {
@@ -330,6 +398,11 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       return updated;
     },
     onSuccess: () => {
+      toast.success(
+        editing
+          ? `Saved changes to ${labels.singular}`
+          : `New ${labels.singular} created`,
+      );
       refresh();
       closeDialog();
     },
@@ -347,10 +420,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
 
   const remove = useMutation({
     mutationFn: (w: Worker) => api.del(`/workers/${w.id}`),
-    onSuccess: refresh,
+    onSuccess: () => {
+      toast.success(`Deleted ${labels.singular}`);
+      setDeleting(null);
+      refresh();
+    },
     onError: (e) => {
       const err = e as BrowserApiError;
-      setError(err.body?.detail ?? err.body?.title ?? `Failed to delete ${labels.singular}`);
+      setDeleting(null);
+      toast.error(err.body?.detail ?? err.body?.title ?? `Failed to delete ${labels.singular}`);
     },
   });
 
@@ -364,13 +442,21 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       const { url, id } = await uploadImage(file, kind);
       if (kind === 'PROFILE') {
         setValue('photoUrl', url, { shouldDirty: true });
+      } else if (kind === 'ID_PROOF') {
+        setValue('idProofPhotoId', id, { shouldDirty: true });
       } else {
         setValue(kind === 'AADHAAR_FRONT' ? 'aadhaarFrontPhotoId' : 'aadhaarBackPhotoId', id, {
           shouldDirty: true,
         });
       }
     } catch {
-      setError(kind === 'PROFILE' ? 'Photo upload failed' : 'Aadhaar image upload failed');
+      setError(
+        kind === 'PROFILE'
+          ? 'Photo upload failed'
+          : kind === 'ID_PROOF'
+            ? 'ID proof image upload failed'
+            : 'Aadhaar image upload failed',
+      );
     } finally {
       setUploading(false);
     }
@@ -380,6 +466,12 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (file) await handleImageFile(file, 'PROFILE');
+  };
+
+  const onPickIdProof = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await handleImageFile(file, 'ID_PROOF');
   };
 
   const onPickAadhaar =
@@ -392,7 +484,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   const field = (
     name: keyof PersonForm,
     label: string,
-    opts: { type?: string; disabled?: boolean } = {},
+    opts: { type?: string; disabled?: boolean; required?: string } = {},
   ) => (
     <Grid item xs={12} sm={6} md={4}>
       <TextField
@@ -401,8 +493,10 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         fullWidth
         size="small"
         disabled={opts.disabled}
+        error={!!errors[name]}
+        helperText={errors[name]?.message}
         InputLabelProps={{ shrink: true }}
-        {...register(name)}
+        {...register(name, opts.required ? { required: opts.required } : undefined)}
       />
     </Grid>
   );
@@ -439,6 +533,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   );
 
   const showBankSections = category !== 'VISITOR';
+  const loading = workers.isLoading;
+  const columnCount = 6 + (isVisitor ? 0 : 1) + (category === 'WORKER' ? 1 : 0) - 1;
 
   return (
     <>
@@ -459,108 +555,249 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           </Stack>
         }
       />
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+      <FilterBar>
         <TextField
           size="small"
           placeholder="Search name / code / mobile"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          sx={{ width: 320 }}
+          sx={{ width: { xs: '100%', sm: 260 } }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" color="disabled" />
+              </InputAdornment>
+            ),
+          }}
         />
+        <TextField
+          select
+          size="small"
+          label="Site"
+          value={siteFilter}
+          onChange={(e) => setSiteFilter(e.target.value)}
+          sx={{ width: 160 }}
+          InputLabelProps={{ shrink: true }}
+          SelectProps={{ displayEmpty: true }}
+        >
+          <MenuItem value="">All sites</MenuItem>
+          {(sites.data ?? []).map((s) => (
+            <MenuItem key={s.id} value={s.name}>
+              {s.name}
+            </MenuItem>
+          ))}
+        </TextField>
+        {!isVisitor && (
+          <TextField
+            select
+            size="small"
+            label="Vendor"
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+            sx={{ width: 160 }}
+            InputLabelProps={{ shrink: true }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="">All vendors</MenuItem>
+            {(vendors.data ?? []).map((v) => (
+              <MenuItem key={v.id} value={v.id}>
+                {v.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        {!isVisitor && (
+          <TextField
+            select
+            size="small"
+            label="Designation"
+            value={designationFilter}
+            onChange={(e) => setDesignationFilter(e.target.value)}
+            sx={{ width: 170 }}
+            InputLabelProps={{ shrink: true }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="">All designations</MenuItem>
+            {(designations.data ?? []).map((d) => (
+              <MenuItem key={d.id} value={d.id}>
+                {d.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        <TextField
+          select
+          size="small"
+          label="Status"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          sx={{ width: 140 }}
+          InputLabelProps={{ shrink: true }}
+          SelectProps={{ displayEmpty: true }}
+        >
+          <MenuItem value="">All statuses</MenuItem>
+          <MenuItem value="ACTIVE">Active</MenuItem>
+          <MenuItem value="INACTIVE">Inactive</MenuItem>
+          <MenuItem value="SUSPENDED">Suspended</MenuItem>
+          <MenuItem value="EXITED">Exited</MenuItem>
+        </TextField>
         <TextField
           select
           size="small"
           label="Sort by"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          sx={{ width: 200 }}
+          sx={{ width: 170 }}
+          InputLabelProps={{ shrink: true }}
         >
           <MenuItem value="">Newest first</MenuItem>
           <MenuItem value="name">Name (A–Z)</MenuItem>
           <MenuItem value="designation">Designation</MenuItem>
           <MenuItem value="vendor">Vendor / contractor</MenuItem>
         </TextField>
-      </Stack>
+      </FilterBar>
       {error && !open && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
-      <Card sx={{ overflowX: 'auto' }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell />
-              <TableCell>ID</TableCell>
-              <TableCell>Name</TableCell>
-              <TableCell>Designation</TableCell>
-              <TableCell>Vendor</TableCell>
-              <TableCell>Mobile</TableCell>
-              {category === 'WORKER' && <TableCell>PF / ESI</TableCell>}
-              <TableCell>Gov ID</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {allRows.map((w) => (
-              <TableRow key={w.id} hover>
-                <TableCell sx={{ width: 48 }}>
-                  <Avatar src={photoSrc(w.photoUrl)} sx={{ width: 32, height: 32 }}>
-                    {w.fullName.charAt(0)}
-                  </Avatar>
-                </TableCell>
-                <TableCell>{w.workerCode}</TableCell>
-                <TableCell>{w.fullName}</TableCell>
-                <TableCell>{w.designation?.name ?? '—'}</TableCell>
-                <TableCell>{w.vendor?.name ?? '—'}</TableCell>
-                <TableCell>{w.mobileNumber ?? '—'}</TableCell>
-                {category === 'WORKER' && (
-                  <TableCell>{(w.pfNumber ?? '—') + ' / ' + (w.esiNumber ?? '—')}</TableCell>
+      <Card>
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 720 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>{isVisitor ? 'Visitor' : 'Person'}</TableCell>
+                {isVisitor ? (
+                  <>
+                    <TableCell>Escort</TableCell>
+                    <TableCell>Company</TableCell>
+                  </>
+                ) : (
+                  <>
+                    <TableCell>Designation</TableCell>
+                    <TableCell>Vendor</TableCell>
+                  </>
                 )}
-                <TableCell>
-                  {[
-                    w.govIdType ? `${w.govIdType} ••${w.aadhaarLast4 ?? ''}` : null,
-                    w.panLast4 ? `PAN ••${w.panLast4}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || '—'}
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    color={w.status === 'ACTIVE' ? 'success' : 'default'}
-                    label={w.status}
-                  />
-                </TableCell>
-                <TableCell align="right">
-                  <IconButton size="small" title="Edit" onClick={() => openEdit(w)}>
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton size="small" title="Show QR" onClick={() => setQrWorker(w)}>
-                    <QrCode2Icon />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    title="Delete"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Delete ${labels.singular} "${w.fullName}" (${w.workerCode})? Attendance history is kept.`,
-                        )
-                      )
-                        remove.mutate(w);
-                    }}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
+                <TableCell>Mobile</TableCell>
+                {category === 'WORKER' && <TableCell>PF / ESI</TableCell>}
+                {!isVisitor && <TableCell>Gov ID</TableCell>}
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {loading &&
+                Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={`skeleton-${i}`}>
+                    <TableCell>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <Skeleton variant="circular" width={36} height={36} />
+                        <Box sx={{ flex: 1 }}>
+                          <Skeleton width="55%" />
+                          <Skeleton width="30%" height={14} />
+                        </Box>
+                      </Stack>
+                    </TableCell>
+                    {Array.from({ length: columnCount }).map((_, j) => (
+                      <TableCell key={j}>
+                        <Skeleton width="50%" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              {!loading &&
+                visibleRows.map((w) => (
+                  <TableRow key={w.id} hover>
+                    <TableCell>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <Avatar src={photoSrc(w.photoUrl)} sx={{ width: 36, height: 36 }}>
+                          {w.fullName.charAt(0)}
+                        </Avatar>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                            {w.fullName}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" noWrap>
+                            {w.workerCode}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </TableCell>
+                    {isVisitor ? (
+                      <>
+                        <TableCell>{w.escortName ?? '—'}</TableCell>
+                        <TableCell>{w.visitorCompany ?? '—'}</TableCell>
+                      </>
+                    ) : (
+                      <>
+                        <TableCell>{w.designation?.name ?? '—'}</TableCell>
+                        <TableCell>{w.vendor?.name ?? '—'}</TableCell>
+                      </>
+                    )}
+                    <TableCell>{w.mobileNumber ?? '—'}</TableCell>
+                    {category === 'WORKER' && (
+                      <TableCell>{(w.pfNumber ?? '—') + ' / ' + (w.esiNumber ?? '—')}</TableCell>
+                    )}
+                    {!isVisitor && (
+                      <TableCell>
+                        {[
+                          w.govIdType ? `${w.govIdType} ••${w.aadhaarLast4 ?? ''}` : null,
+                          w.panLast4 ? `PAN ••${w.panLast4}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || '—'}
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <StatusBadge label={w.status} tone={personTone(w.status)} />
+                    </TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      <Tooltip title="Edit">
+                        <IconButton size="small" onClick={() => openEdit(w)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Show QR">
+                        <IconButton size="small" onClick={() => setQrWorker(w)}>
+                          <QrCode2Icon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete">
+                        <IconButton size="small" onClick={() => setDeleting(w)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </Box>
+        {!loading && visibleRows.length === 0 && (
+          <EmptyState
+            compact
+            icon={<PeopleAltOutlinedIcon />}
+            title={
+              filtersActive || q
+                ? `No ${labels.plural.toLowerCase()} match the current filters`
+                : `No ${labels.plural.toLowerCase()} yet`
+            }
+            description={
+              filtersActive || q
+                ? 'Try clearing the search or filters above.'
+                : `Add your first ${labels.singular} to get started.`
+            }
+            action={
+              !(filtersActive || q) ? (
+                <Button variant="contained" onClick={openCreate}>
+                  New {labels.singular}
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
         {nextCursor && (
-          <Stack alignItems="center" sx={{ p: 1.5 }}>
+          <Stack alignItems="center" sx={{ p: 1.5, borderTop: 1, borderColor: 'divider' }}>
             <Button size="small" onClick={loadMore} disabled={loadingMore}>
               {loadingMore ? 'Loading…' : 'Load more'}
             </Button>
@@ -572,50 +809,57 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         <DialogTitle>
           {editing ? `Edit ${labels.singular} — ${editing.fullName}` : `New ${labels.singular}`}
         </DialogTitle>
-        <form onSubmit={handleSubmit((v) => save.mutate(v))}>
+        <Box
+          component="form"
+          onSubmit={handleSubmit((v) => save.mutate(v))}
+          sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}
+        >
           <DialogContent dividers>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
                 {error}
               </Alert>
             )}
-            <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
-              <Avatar src={photoSrc(photoUrl)} sx={{ width: 64, height: 64 }} />
-              <Button
-                component="label"
-                variant="outlined"
-                size="small"
-                startIcon={<PhotoCameraIcon />}
-                disabled={uploading}
-              >
-                {uploading ? 'Uploading…' : photoUrl ? 'Change photo' : 'Upload photo'}
-                <input type="file" accept="image/*" hidden onChange={onPickPhoto} />
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<CameraAltIcon />}
-                disabled={uploading}
-                onClick={() => setCapture('PROFILE')}
-              >
-                Capture
-              </Button>
-              {photoUrl && (
-                <Button size="small" onClick={() => setValue('photoUrl', '')}>
-                  Remove
-                </Button>
-              )}
-              <Typography variant="caption" color="text.secondary">
-                Optional
-              </Typography>
-            </Stack>
+            {!isVisitor && (
+              <>
+                <SectionHeading first>Photo</SectionHeading>
+                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Avatar src={photoSrc(photoUrl)} sx={{ width: 64, height: 64 }} />
+                  <Button
+                    component="label"
+                    variant="outlined"
+                    size="small"
+                    startIcon={<PhotoCameraIcon />}
+                    disabled={uploading}
+                  >
+                    {uploading ? 'Uploading…' : photoUrl ? 'Change photo' : 'Upload photo'}
+                    <input type="file" accept="image/*" hidden onChange={onPickPhoto} />
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<CameraAltIcon />}
+                    disabled={uploading}
+                    onClick={() => setCapture('PROFILE')}
+                  >
+                    Capture
+                  </Button>
+                  {photoUrl && (
+                    <Button size="small" color="inherit" onClick={() => setValue('photoUrl', '')}>
+                      Remove
+                    </Button>
+                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    Optional
+                  </Typography>
+                </Stack>
+              </>
+            )}
 
             {category === 'WORKER' && (
               <>
-                <Typography variant="subtitle2" gutterBottom>
-                  Aadhaar card images
-                </Typography>
-                <Grid container spacing={2} sx={{ mb: 2 }}>
+                <SectionHeading>Aadhaar card images</SectionHeading>
+                <Grid container spacing={2} sx={{ mb: 1 }}>
                   {(
                     [
                       ['AADHAAR_FRONT', 'Front *', aadhaarFrontPhotoId, 'aadhaarFrontPhotoId'],
@@ -670,31 +914,30 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                     </Grid>
                   ))}
                 </Grid>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   Encrypted and compressed at rest. Front is required; back is optional and can be
                   added later.
                 </Typography>
               </>
             )}
 
-            <Typography variant="subtitle2" gutterBottom>
-              Identity
-            </Typography>
+            <SectionHeading first={isVisitor}>Identity</SectionHeading>
             <Grid container spacing={2}>
               {/* IDs are always auto-generated (W-/S-/V-####) and immutable. */}
               {editing && field('workerCode', 'ID (auto-generated)', { disabled: true })}
-              {field('fullName', 'Full name *')}
-              {field('fatherName', "Father's name")}
+              {field('fullName', 'Full name *', { required: 'Full name is required' })}
+              {!isVisitor && field('fatherName', "Father's name")}
               {selectField('gender', 'Gender', [
                 { value: 'M', label: 'Male' },
                 { value: 'F', label: 'Female' },
                 { value: 'OTHER', label: 'Other' },
               ])}
-              {field('dateOfBirth', 'Date of birth', { type: 'date' })}
-              {field('language', 'Language')}
+              {!isVisitor && field('dateOfBirth', 'Date of birth', { type: 'date' })}
+              {!isVisitor && field('language', 'Language')}
               {field('mobileNumber', 'Mobile number')}
-              {field('pincode', 'Zipcode / pincode')}
+              {!isVisitor && field('pincode', 'Zipcode / pincode')}
               {field('bloodGroup', 'Blood group')}
+              {isVisitor && field('escortName', 'Escort name *', { required: 'Escort name is required' })}
               {editing &&
                 selectField('status', 'Status', [
                   { value: 'ACTIVE', label: 'Active' },
@@ -704,28 +947,30 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 ])}
             </Grid>
 
-            <Divider sx={{ my: 2 }} />
-            <Typography variant="subtitle2" gutterBottom>
+            <SectionHeading>
               {category === 'VISITOR' ? 'Visit details' : 'Designation & assignment'}
-            </Typography>
+            </SectionHeading>
             <Grid container spacing={2}>
-              {selectField(
-                'designationId',
-                'Designation',
-                (designations.data ?? []).map((d) => ({ value: d.id, label: d.name })),
-              )}
-              {selectField(
-                'vendorId',
-                category === 'VISITOR' ? 'Company (vendor)' : 'Contractor (vendor)',
-                (vendors.data ?? []).map((v) => ({ value: v.id, label: v.name })),
-              )}
+              {!isVisitor &&
+                selectField(
+                  'designationId',
+                  'Designation',
+                  (designations.data ?? []).map((d) => ({ value: d.id, label: d.name })),
+                )}
+              {isVisitor
+                ? field('visitorCompany', 'Visitor company')
+                : selectField(
+                    'vendorId',
+                    'Contractor (vendor)',
+                    (vendors.data ?? []).map((v) => ({ value: v.id, label: v.name })),
+                  )}
               {category === 'WORKER' && field('natureOfContractor', 'Nature of contractor')}
               {selectField(
                 'siteId',
                 'Site',
                 (sites.data ?? []).map((s) => ({ value: s.id, label: s.name })),
               )}
-              {field('joinDate', category === 'VISITOR' ? 'Visit date' : 'Date of joining', {
+              {field('joinDate', isVisitor ? 'Visit date' : 'Date of joining', {
                 type: 'date',
                 disabled: !!editing,
               })}
@@ -733,10 +978,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
 
             {showBankSections && (
               <>
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="subtitle2" gutterBottom>
-                  Nominee & emergency
-                </Typography>
+                <SectionHeading>Nominee & emergency</SectionHeading>
                 <Grid container spacing={2}>
                   {field('nomineeName', 'Nominee name')}
                   {field('nomineeRelation', 'Nominee relation')}
@@ -744,10 +986,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   {field('emergencyContactNumber', 'Emergency contact number')}
                 </Grid>
 
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="subtitle2" gutterBottom>
-                  Bank & statutory
-                </Typography>
+                <SectionHeading>Bank & statutory</SectionHeading>
                 <Grid container spacing={2}>
                   {field('bankName', 'Bank name')}
                   {field('bankAccountNumber', 'Account number')}
@@ -766,55 +1005,90 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 </Grid>
               </>
             )}
-            {!showBankSections && (
+            {isVisitor && (
               <>
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="subtitle2" gutterBottom>
-                  ID proof
+                <SectionHeading>ID proof photo (optional)</SectionHeading>
+                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Avatar
+                    variant="rounded"
+                    src={idProofPhotoId ? photoSrc(`/files/${idProofPhotoId}`) : undefined}
+                    sx={{ width: 88, height: 56 }}
+                  >
+                    <CreditCardIcon fontSize="small" />
+                  </Avatar>
+                  <Button component="label" variant="outlined" size="small" disabled={uploading}>
+                    {idProofPhotoId ? 'Replace' : 'Upload'}
+                    <input type="file" accept="image/*" hidden onChange={onPickIdProof} />
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<CameraAltIcon />}
+                    disabled={uploading}
+                    onClick={() => setCapture('ID_PROOF')}
+                  >
+                    Capture
+                  </Button>
+                  {idProofPhotoId && (
+                    <Button size="small" color="inherit" onClick={() => setValue('idProofPhotoId', '')}>
+                      Remove
+                    </Button>
+                  )}
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  Any government ID (Aadhaar, driving licence…). Encrypted and compressed at rest.
                 </Typography>
-                <Grid container spacing={2}>
-                  {field('govIdType', 'Gov ID type (e.g. Aadhaar)')}
-                  {field(
-                    'aadhaar',
-                    editing ? 'Gov ID number (leave blank to keep)' : 'Gov ID number (encrypted)',
-                  )}
-                  {field(
-                    'pan',
-                    editing ? 'PAN (leave blank to keep)' : 'PAN card number (encrypted)',
-                  )}
-                </Grid>
               </>
             )}
 
-            <Divider sx={{ my: 2 }} />
-            <Typography variant="subtitle2" gutterBottom>
-              Screening & ID card
-            </Typography>
-            <Grid container spacing={2}>
-              {field('screeningDoneOn', 'Screening done on', { type: 'date' })}
-              {field('screeningDoneBy', 'Screening done by')}
-              {field('inductionDoneOn', 'Induction done on', { type: 'date' })}
-              {field('inductedBy', 'Inducted by')}
-              {field('validityTill', 'Validity till', { type: 'date' })}
-            </Grid>
+            {!isVisitor && (
+              <>
+                <SectionHeading>Screening & ID card</SectionHeading>
+                <Grid container spacing={2}>
+                  {field('screeningDoneOn', 'Screening done on', { type: 'date' })}
+                  {field('screeningDoneBy', 'Screening done by')}
+                  {field('inductionDoneOn', 'Induction done on', { type: 'date' })}
+                  {field('inductedBy', 'Inducted by')}
+                  {field('validityTill', 'Validity till', { type: 'date' })}
+                </Grid>
 
-            <Divider sx={{ my: 2 }} />
-            <Typography variant="subtitle2" gutterBottom>
-              Credentials
-            </Typography>
-            <Grid container spacing={2}>
-              {field('nfcUid', 'NFC UID')}
-              {field('qrIdentifier', 'QR identifier')}
-            </Grid>
+                <SectionHeading>Credentials</SectionHeading>
+                <Grid container spacing={2}>
+                  {field('nfcUid', 'NFC UID')}
+                  {field('qrIdentifier', 'QR identifier')}
+                </Grid>
+              </>
+            )}
           </DialogContent>
-          <DialogActions>
-            <Button onClick={closeDialog}>Cancel</Button>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={closeDialog} color="inherit">
+              Cancel
+            </Button>
             <Button type="submit" variant="contained" disabled={save.isPending || uploading}>
-              {editing ? 'Save changes' : `Create ${labels.singular}`}
+              {save.isPending
+                ? 'Saving…'
+                : editing
+                  ? 'Save changes'
+                  : `Create ${labels.singular}`}
             </Button>
           </DialogActions>
-        </form>
+        </Box>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleting}
+        title={`Delete ${labels.singular}?`}
+        message={
+          deleting
+            ? `Delete ${labels.singular} "${deleting.fullName}" (${deleting.workerCode})? Attendance history is kept.`
+            : ''
+        }
+        confirmLabel="Delete"
+        danger
+        busy={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+        onClose={() => setDeleting(null)}
+      />
 
       <CameraCaptureDialog
         open={capture !== null}
@@ -823,7 +1097,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
             ? 'Capture Aadhaar front'
             : capture === 'AADHAAR_BACK'
               ? 'Capture Aadhaar back'
-              : 'Capture photo'
+              : capture === 'ID_PROOF'
+                ? 'Capture ID proof'
+                : 'Capture photo'
         }
         onClose={() => setCapture(null)}
         onCapture={(file) => {
@@ -842,8 +1118,10 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
             )}
           </Stack>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setQrWorker(null)}>Close</Button>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setQrWorker(null)} color="inherit">
+            Close
+          </Button>
           <Button variant="contained" onClick={() => window.print()}>
             Print
           </Button>

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -11,12 +12,25 @@ const PUBLIC_SELECT = {
   role: true,
   fullName: true,
   email: true,
+  username: true,
   phone: true,
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
   organizationId: true,
   siteScopes: { select: { siteId: true } },
+};
+
+/**
+ * Role hierarchy for user management: an Admin (SITE_ADMIN) may only manage
+ * Safety Officers and Watchmen. Admin accounts themselves (password/email
+ * changes, deactivation) are managed by the Super Admin.
+ */
+const MANAGEABLE: Record<UserRole, UserRole[]> = {
+  SUPER_ADMIN: ['SUPER_ADMIN', 'SITE_ADMIN', 'SUPERVISOR', 'WATCHMAN'],
+  SITE_ADMIN: ['SUPERVISOR', 'WATCHMAN'],
+  SUPERVISOR: [],
+  WATCHMAN: [],
 };
 
 @Injectable()
@@ -27,9 +41,19 @@ export class UsersService {
     private readonly audit: AuditService,
   ) {}
 
+  private assertCanManage(actor: AuthUser, targetRole: UserRole) {
+    if (!MANAGEABLE[actor.role]?.includes(targetRole)) {
+      throw Errors.forbidden(
+        actor.role === 'SITE_ADMIN'
+          ? 'Admins can only manage Safety Officer and Watchman accounts — ask your Super Admin.'
+          : 'Not allowed to manage this account.',
+      );
+    }
+  }
+
   list(user: AuthUser) {
     return this.prisma.user.findMany({
-      where: { organizationId: user.organizationId },
+      where: { organizationId: user.organizationId, deletedAt: null },
       select: PUBLIC_SELECT,
       orderBy: { createdAt: 'desc' },
     });
@@ -37,7 +61,7 @@ export class UsersService {
 
   async get(user: AuthUser, id: string) {
     const found = await this.prisma.user.findFirst({
-      where: { id, organizationId: user.organizationId },
+      where: { id, organizationId: user.organizationId, deletedAt: null },
       select: PUBLIC_SELECT,
     });
     if (!found) throw Errors.notFound('User');
@@ -45,13 +69,23 @@ export class UsersService {
   }
 
   async create(user: AuthUser, dto: CreateUserDto) {
+    this.assertCanManage(user, dto.role);
+    // Watchmen sign in with a user ID (no email); every other role resets
+    // passwords via email OTP, so email is mandatory for them.
+    if (dto.role === 'WATCHMAN' && !dto.username?.trim()) {
+      throw Errors.businessRule('Watchman accounts need a user ID (username).');
+    }
+    if (dto.role !== 'WATCHMAN' && !dto.email?.trim()) {
+      throw Errors.businessRule('Email is required for this role (used for password reset).');
+    }
     const passwordHash = await this.crypto.hashPassword(dto.password);
     const created = await this.prisma.user.create({
       data: {
         organizationId: user.organizationId,
         role: dto.role,
         fullName: dto.fullName,
-        email: dto.email,
+        email: dto.email?.trim() || null,
+        username: dto.username?.trim() || null,
         phone: dto.phone,
         passwordHash,
         siteScopes: dto.siteIds?.length
@@ -67,17 +101,23 @@ export class UsersService {
       action: 'USER_CREATE',
       entityType: 'User',
       entityId: created.id,
-      newValue: { role: created.role, email: created.email },
+      newValue: { role: created.role, email: created.email, username: created.username },
     });
     return created;
   }
 
   async update(user: AuthUser, id: string, dto: UpdateUserDto) {
-    await this.get(user, id);
+    const target = await this.get(user, id);
+    // Editing yourself (profile/password) is always allowed; editing others
+    // follows the role hierarchy.
+    if (id !== user.userId) this.assertCanManage(user, target.role);
+    if (dto.role && dto.role !== target.role) this.assertCanManage(user, dto.role);
+
     const data: Record<string, unknown> = {
       role: dto.role,
       fullName: dto.fullName,
-      email: dto.email,
+      email: dto.email?.trim() || undefined,
+      username: dto.username?.trim() || undefined,
       phone: dto.phone,
       isActive: dto.isActive,
     };
@@ -88,6 +128,13 @@ export class UsersService {
       data,
       select: PUBLIC_SELECT,
     });
+    // A password set by an admin invalidates existing sessions.
+    if (dto.password && id !== user.userId) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
     await this.audit.record({
       organizationId: user.organizationId,
       actorUserId: user.userId,
@@ -95,13 +142,52 @@ export class UsersService {
       action: 'USER_UPDATE',
       entityType: 'User',
       entityId: id,
-      newValue: { role: updated.role, isActive: updated.isActive },
+      newValue: {
+        role: updated.role,
+        isActive: updated.isActive,
+        passwordChanged: !!dto.password,
+      },
     });
     return updated;
   }
 
+  /** Soft delete — Super Admin only. Frees email/username for reuse and kills sessions. */
+  async remove(user: AuthUser, id: string) {
+    if (user.role !== 'SUPER_ADMIN') {
+      throw Errors.forbidden('Only the Super Admin can delete users.');
+    }
+    if (id === user.userId) throw Errors.businessRule('You cannot delete your own account.');
+    const target = await this.get(user, id);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false, email: null, username: null },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+      this.prisma.device.updateMany({
+        where: { userId: id, status: { not: 'REVOKED' } },
+        data: { status: 'REVOKED' },
+      }),
+    ]);
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.userId,
+      actorRole: user.role,
+      action: 'USER_DELETE',
+      entityType: 'User',
+      entityId: id,
+      oldValue: { role: target.role, email: target.email, username: target.username },
+    });
+    return { deleted: true };
+  }
+
   async setSiteScopes(user: AuthUser, id: string, dto: SetSiteScopesDto) {
-    await this.get(user, id);
+    const target = await this.get(user, id);
+    if (id !== user.userId) this.assertCanManage(user, target.role);
     await this.prisma.$transaction([
       this.prisma.userSiteScope.deleteMany({ where: { userId: id } }),
       this.prisma.userSiteScope.createMany({

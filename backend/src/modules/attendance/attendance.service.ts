@@ -597,11 +597,16 @@ export class AttendanceService {
     });
 
     const yesterday = businessDate(new Date(Date.now() - 24 * 3600 * 1000), tz);
+    // Missed logouts = sessions auto-closed on next login (yesterday) plus
+    // sessions still OPEN that the forgot-logout monitor has flagged (they are
+    // no longer auto-closed — an admin/safety officer must act on them).
     const missed = await this.prisma.attendanceSession.findMany({
       where: {
         organizationId: user.organizationId,
-        state: 'AUTO_CLOSED',
-        workDate: yesterday,
+        OR: [
+          { state: 'AUTO_CLOSED', workDate: yesterday },
+          { state: 'OPEN', forgotLogoutNotifiedAt: { not: null } },
+        ],
         ...scopeFilter,
       },
       select,
@@ -645,6 +650,103 @@ export class AttendanceService {
         total: missed.length,
         byCategory: bucket(missed),
       },
+    };
+  }
+
+  /**
+   * Chart series for the dashboard: 7-day attendance/missed-logout trend,
+   * per-site people on site now, on-site category split, pending corrections
+   * by site and today's vendor-wise attendance.
+   */
+  async dashboardCharts(user: AuthUser) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: user.organizationId },
+      select: { timezone: true },
+    });
+    const tz = org?.timezone ?? 'Asia/Kolkata';
+    const scopeFilter =
+      user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
+        ? { siteId: { in: user.siteScopes } }
+        : {};
+    const orgScope = { organizationId: user.organizationId, ...scopeFilter };
+
+    const today = businessDate(new Date(), tz);
+    const from = new Date(today.getTime() - 6 * 86_400_000);
+
+    const [byDay, missedByDay, openNow, pendingCorrections, todaySessions] = await Promise.all([
+      this.prisma.attendanceSession.groupBy({
+        by: ['workDate'],
+        where: { ...orgScope, workDate: { gte: from } },
+        _count: { _all: true },
+      }),
+      this.prisma.attendanceSession.groupBy({
+        by: ['workDate'],
+        where: {
+          ...orgScope,
+          workDate: { gte: from },
+          OR: [{ state: 'AUTO_CLOSED' }, { forgotLogoutNotifiedAt: { not: null } }],
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.attendanceSession.findMany({
+        where: { ...orgScope, state: 'OPEN' },
+        select: {
+          site: { select: { name: true } },
+          worker: { select: { category: true } },
+        },
+      }),
+      this.prisma.correctionRequest.findMany({
+        where: { ...orgScope, status: 'PENDING' },
+        select: { siteId: true },
+      }),
+      this.prisma.attendanceSession.findMany({
+        where: { ...orgScope, workDate: today },
+        select: { worker: { select: { vendor: { select: { name: true } } } } },
+        take: 5000,
+      }),
+    ]);
+
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    const missedMap = new Map(missedByDay.map((r) => [dayKey(r.workDate), r._count._all]));
+    const countMap = new Map(byDay.map((r) => [dayKey(r.workDate), r._count._all]));
+    const trend: { date: string; sessions: number; missed: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = dayKey(new Date(today.getTime() - i * 86_400_000));
+      trend.push({ date: d, sessions: countMap.get(d) ?? 0, missed: missedMap.get(d) ?? 0 });
+    }
+
+    const tally = <T>(rows: T[], key: (r: T) => string) => {
+      const m = new Map<string, number>();
+      for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + 1);
+      return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    };
+
+    return {
+      trend,
+      siteWise: tally(openNow, (s) => s.site?.name ?? 'Unknown site').map(([name, count]) => ({
+        site: name,
+        onSite: count,
+      })),
+      distribution: tally(openNow, (s) => s.worker.category).map(([category, count]) => ({
+        category,
+        onSite: count,
+      })),
+      correctionsBySite: await (async () => {
+        const siteNames = new Map(
+          (
+            await this.prisma.site.findMany({
+              where: { organizationId: user.organizationId },
+              select: { id: true, name: true },
+            })
+          ).map((s) => [s.id, s.name]),
+        );
+        return tally(pendingCorrections, (c) => siteNames.get(c.siteId) ?? 'Unknown site').map(
+          ([name, count]) => ({ site: name, pending: count }),
+        );
+      })(),
+      vendorToday: tally(todaySessions, (s) => s.worker.vendor?.name ?? 'No vendor')
+        .slice(0, 8)
+        .map(([name, count]) => ({ vendor: name, count })),
     };
   }
 
