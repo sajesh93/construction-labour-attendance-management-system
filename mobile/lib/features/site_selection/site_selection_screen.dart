@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../attendance/attendance_providers.dart';
 import '../attendance/domain/models.dart';
 import '../auth/auth_controller.dart';
+import '../device/device_service.dart';
 
 /// Watchman selects the active site. Worker cards for that site are cached
 /// locally so the attendance flow works fully offline afterwards.
@@ -21,6 +22,8 @@ class SiteSelectionScreen extends ConsumerStatefulWidget {
 class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
   List<Map<String, dynamic>> _sites = [];
   bool _loading = true;
+  bool _devicePending = false;
+  String? _deviceUid;
   String? _error;
 
   @override
@@ -30,6 +33,30 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _devicePending = false;
+      _error = null;
+    });
+
+    // The API rejects every call from non-super-admin users until this device
+    // is approved — register it and hold here until an admin authorizes it.
+    final role = ref.read(authControllerProvider).role;
+    if (role != 'SUPER_ADMIN') {
+      final st = await ref.read(deviceServiceProvider).ensureRegisteredAndAuthorized();
+      if (!mounted) return;
+      if (st.state == DeviceState.pending) {
+        final uid = await ref.read(localDbProvider).getMeta('device_uid');
+        if (!mounted) return;
+        setState(() {
+          _devicePending = true;
+          _deviceUid = uid;
+          _loading = false;
+        });
+        return;
+      }
+    }
+
     try {
       final dio = ref.read(apiClientProvider).dio;
       final res = await dio.get('/sites', queryParameters: {'active': 'true'});
@@ -41,6 +68,17 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
       });
     } on DioException catch (e) {
       if (!mounted) return;
+      final code = e.response?.data is Map ? e.response?.data['code'] : null;
+      if (e.response?.statusCode == 403 && code == 'DEVICE_NOT_AUTHORIZED') {
+        final uid = await ref.read(localDbProvider).getMeta('device_uid');
+        if (!mounted) return;
+        setState(() {
+          _devicePending = true;
+          _deviceUid = uid;
+          _loading = false;
+        });
+        return;
+      }
       setState(() {
         _error = e.message ?? 'Could not load sites';
         _loading = false;
@@ -71,6 +109,44 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
     context.go(role == 'SUPERVISOR' ? '/supervisor' : '/attendance');
   }
 
+  Widget _devicePendingView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(ClamsSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.phonelink_lock_outlined,
+                size: 48, color: ClamsColors.warning),
+            ClamsSpacing.gapMd,
+            const Text(
+              'Waiting for device approval',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+            ClamsSpacing.gapSm,
+            Text(
+              'Ask your Admin or Super Admin to approve this device in the '
+              'Devices page.${_deviceUid != null ? '\nDevice: $_deviceUid' : ''}',
+              style: const TextStyle(color: ClamsColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            ClamsSpacing.gapLg,
+            FilledButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Check again'),
+            ),
+            TextButton(
+              onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,7 +160,9 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
           ),
         ],
       ),
-      body: _loading
+      body: _devicePending
+          ? _devicePendingView()
+          : _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,

@@ -1,5 +1,7 @@
 name: Build Android APK
 
+# Manual-only: the Deploy workflow already builds the APK on every push to
+# main, so a push trigger here would build it twice.
 on:
   workflow_dispatch:
     inputs:
@@ -7,11 +9,6 @@ on:
         description: "Backend API base URL to bake into the app"
         required: false
         default: "https://clams-api.lemoncoast-b230ecb6.centralindia.azurecontainerapps.io/api/v1"
-  push:
-    branches: [main]
-    paths:
-      - "mobile/**"
-      - ".github/workflows/mobile-apk.yml"
 
 jobs:
   apk:

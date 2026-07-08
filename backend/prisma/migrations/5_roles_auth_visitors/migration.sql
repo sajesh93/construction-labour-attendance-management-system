@@ -25,7 +25,16 @@ ALTER TABLE "devices" ADD COLUMN "user_id" UUID;
 ALTER TABLE "devices" ADD CONSTRAINT "devices_user_id_fkey"
     FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- Visitor ID-proof images (encrypted at rest, like Aadhaar images)
+-- Visitor ID-proof images (encrypted at rest, like Aadhaar images).
+-- "PhotoKind" reached production via `prisma db push` (Aadhaar wave) and is
+-- absent from earlier migration files, so a fresh database (CI) must create
+-- it here; existing databases just gain the ID_PROOF value.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PhotoKind') THEN
+    CREATE TYPE "PhotoKind" AS ENUM ('PROFILE', 'AADHAAR_FRONT', 'AADHAAR_BACK', 'ID_PROOF');
+  END IF;
+END $$;
 ALTER TYPE "PhotoKind" ADD VALUE IF NOT EXISTS 'ID_PROOF';
 
 -- Visitor-only fields
