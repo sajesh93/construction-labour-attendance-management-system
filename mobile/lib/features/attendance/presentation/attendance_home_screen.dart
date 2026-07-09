@@ -229,6 +229,23 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
         setState(() => _status =
             'Duplicate tap ignored (${outcome.cooldownRemainingSeconds}s cooldown)');
         break;
+      case TapAction.expired:
+        // Nothing was queued: the login is refused outright, not "pending".
+        setState(() => _status = 'ID card expired — login not recorded');
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.gpp_bad_outlined, color: Colors.red, size: 40),
+            title: const Text('ID card expired'),
+            content: Text(
+              outcome.message ?? 'This ID card has expired. Renew it before logging in.',
+            ),
+            actions: [
+              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+        break;
       case TapAction.login:
       case TapAction.logout:
         final verb = outcome.action == TapAction.login ? 'LOGIN' : 'LOGOUT';

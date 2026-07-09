@@ -5,6 +5,7 @@ import '../../../core/geo/location_service.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/storage/local_db.dart';
 import '../domain/models.dart';
+import '../domain/card_validity.dart';
 import '../domain/tap_decision.dart';
 
 /// Outcome surfaced to the UI after a tap. The event is ALWAYS persisted to the
@@ -119,6 +120,21 @@ class AttendanceRepository {
         action: TapAction.duplicate,
         worker: worker,
         cooldownRemainingSeconds: decision.cooldownRemainingSeconds,
+      );
+    }
+
+    // An expired ID card may not start a shift. Refused here, before the
+    // durable write, so nothing is queued and nothing is ever synced — the
+    // server enforces the same rule for taps that reach it another way.
+    // A logout is always allowed: never trap a worker inside the gate.
+    if (decision.action == TapAction.login &&
+        worker != null &&
+        isCardExpired(worker.validityTill, now.toLocal())) {
+      final on = worker.validityTill!.toIso8601String().substring(0, 10);
+      return TapOutcome(
+        action: TapAction.expired,
+        worker: worker,
+        message: "${worker.fullName}'s ID card expired on $on. Renew the card before logging in.",
       );
     }
 

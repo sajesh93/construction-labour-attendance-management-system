@@ -85,6 +85,14 @@ export const Errors = {
       title: 'Business rule violation',
       detail,
     }),
+  cardExpired: (fullName: string, validityTill: string) =>
+    new AppException({
+      status: 422,
+      code: 'CARD_EXPIRED',
+      title: 'ID card expired',
+      detail: `${fullName}'s ID card expired on ${validityTill}. Renew the card before logging in.`,
+      meta: { validityTill },
+    }),
   rateLimited: () =>
     new AppException({ status: 429, code: 'RATE_LIMITED', title: 'Too many requests' }),
 };

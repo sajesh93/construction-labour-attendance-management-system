@@ -15,12 +15,17 @@ class LocalDb {
     final path = p.join(dir.path, 'clams.db');
     final db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE cached_workers ADD COLUMN vendor_name TEXT');
           await db.execute('ALTER TABLE cached_workers ADD COLUMN designation_name TEXT');
           await db.execute('ALTER TABLE cached_workers ADD COLUMN category TEXT');
+        }
+        if (oldVersion < 3) {
+          // Null for every existing row, i.e. "no expiry", until the next
+          // roster sync fills it in. Never locks anyone out on upgrade.
+          await db.execute('ALTER TABLE cached_workers ADD COLUMN validity_till TEXT');
         }
       },
       onCreate: (db, _) async {
@@ -52,7 +57,8 @@ class LocalDb {
             qr_identifier TEXT,
             vendor_name TEXT,
             designation_name TEXT,
-            category TEXT
+            category TEXT,
+            validity_till TEXT
           )''');
         await db.execute(
           'CREATE INDEX ix_cached_uid ON cached_workers(nfc_uid)',

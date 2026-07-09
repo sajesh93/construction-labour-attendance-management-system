@@ -1,5 +1,6 @@
 import { AttendanceService } from './attendance.service';
 import { TapSource } from '@prisma/client';
+import { AppException } from '../../common/errors/app.exception';
 
 function makeDto(over: Partial<any> = {}) {
   return {
@@ -21,6 +22,7 @@ const baseWorker = {
   emergencyContactName: 'S',
   emergencyContactNumber: '9',
   deletedAt: null,
+  validityTill: null as Date | null,
 };
 const baseSite = {
   id: 'site-1',
@@ -84,6 +86,79 @@ describe('AttendanceService.handleTap', () => {
     const res = await svc.handleTap('org-1', makeDto(), { deviceId: 'dev-1', photoRoll: 99 });
     expect(res.result).toBe('LOGIN_RECORDED');
     expect(prisma.attendanceSession.create).toHaveBeenCalled();
+  });
+
+  describe('expired ID card', () => {
+    // Tap is 09-Jun-2026 08:00 IST; the card lapsed at the end of 08-Jun.
+    const expiredWorker = { ...baseWorker, validityTill: new Date('2026-06-08T00:00:00.000Z') };
+
+    it('refuses the LOGIN and records no tap at all', async () => {
+      const { svc, prisma } = buildService({
+        worker: { findFirst: jest.fn().mockResolvedValue(expiredWorker) },
+      });
+
+      await expect(svc.handleTap('org-1', makeDto(), { deviceId: 'dev-1' })).rejects.toBeInstanceOf(
+        AppException,
+      );
+      expect(prisma.attendanceTap.create).not.toHaveBeenCalled();
+      expect(prisma.attendanceSession.create).not.toHaveBeenCalled();
+    });
+
+    it('names the worker and the expiry date so the gate can act on it', async () => {
+      const { svc } = buildService({
+        worker: { findFirst: jest.fn().mockResolvedValue(expiredWorker) },
+      });
+      try {
+        await svc.handleTap('org-1', makeDto(), { deviceId: 'dev-1' });
+        throw new Error('expected the tap to be rejected');
+      } catch (e) {
+        const err = e as AppException;
+        expect(err.code).toBe('CARD_EXPIRED');
+        expect(err.getStatus()).toBe(422);
+        expect(err.detail).toContain('Ramesh');
+        expect(err.detail).toContain('2026-06-08');
+      }
+    });
+
+    it('still lets someone already on site tap out', async () => {
+      // Trapping a worker inside the gate would be worse than a lapsed card.
+      const open = {
+        id: 'sess-1',
+        loginAt: new Date('2026-06-09T02:30:00Z'),
+        siteId: 'site-1',
+        shift: null,
+      };
+      const { svc } = buildService({
+        worker: { findFirst: jest.fn().mockResolvedValue(expiredWorker) },
+        attendanceSession: {
+          findFirst: jest.fn().mockResolvedValue(open),
+          findUnique: jest.fn().mockResolvedValue(open),
+          update: jest.fn().mockResolvedValue({
+            id: 'sess-1',
+            workedMinutes: 540,
+            overtimeMinutes: 0,
+            logoutAt: new Date(),
+          }),
+          create: jest.fn(),
+        },
+      });
+      const res = await svc.handleTap(
+        'org-1',
+        makeDto({ clientEventTime: '2026-06-09T11:30:00Z' }),
+        { deviceId: 'dev-1' },
+      );
+      expect(res.result).toBe('LOGOUT_RECORDED');
+    });
+
+    it('lets a card valid through today log in', async () => {
+      const validToday = { ...baseWorker, validityTill: new Date('2026-06-09T00:00:00.000Z') };
+      const { svc, prisma } = buildService({
+        worker: { findFirst: jest.fn().mockResolvedValue(validToday) },
+      });
+      const res = await svc.handleTap('org-1', makeDto(), { deviceId: 'dev-1', photoRoll: 99 });
+      expect(res.result).toBe('LOGIN_RECORDED');
+      expect(prisma.attendanceSession.create).toHaveBeenCalled();
+    });
   });
 
   it('records a LOGOUT when an open session exists', async () => {

@@ -26,6 +26,7 @@ class WorkerCard {
     this.vendorName,
     this.designationName,
     this.category,
+    this.validityTill,
   });
 
   final String id;
@@ -40,6 +41,8 @@ class WorkerCard {
   final String? vendorName;
   final String? designationName;
   final String? category; // WORKER | STAFF | VISITOR
+  /// Last day the ID card is valid (inclusive). Null = never expires.
+  final DateTime? validityTill;
 
   factory WorkerCard.fromMap(Map<String, dynamic> m) => WorkerCard(
         id: m['id'] as String,
@@ -56,6 +59,7 @@ class WorkerCard {
         vendorName: (m['vendorName'] ?? m['vendor_name']) as String?,
         designationName: (m['designationName'] ?? m['designation_name']) as String?,
         category: m['category'] as String?,
+        validityTill: _parseDay(m['validityTill'] ?? m['validity_till']),
       );
 
   Map<String, dynamic> toCacheRow() => {
@@ -71,7 +75,15 @@ class WorkerCard {
         'vendor_name': vendorName,
         'designation_name': designationName,
         'category': category,
+        'validity_till': validityTill?.toIso8601String(),
       };
+}
+
+/// Parse a date-only or full ISO string; anything unusable reads as "no expiry"
+/// so a malformed value can never lock a worker out of the gate.
+DateTime? _parseDay(Object? v) {
+  if (v is! String || v.isEmpty) return null;
+  return DateTime.tryParse(v);
 }
 
 /// An attendance event queued in the local outbox (durable, idempotent).

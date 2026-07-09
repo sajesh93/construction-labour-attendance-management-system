@@ -60,7 +60,14 @@ export class SyncService {
           } else if (err.code === 'WORKER_NOT_FOUND' || err.code === 'CONFLICT') {
             results.push({ eventId: event.eventId, status: 'CONFLICT', detail: err.title });
           } else {
-            results.push({ eventId: event.eventId, status: 'REJECTED', detail: err.title });
+            // Terminal: the device must drop this event rather than retry it.
+            // Prefer the specific sentence (e.g. whose card expired, and when)
+            // over the generic title.
+            results.push({
+              eventId: event.eventId,
+              status: 'REJECTED',
+              detail: err.detail ?? err.title,
+            });
           }
         } else {
           results.push({ eventId: event.eventId, status: 'REJECTED', detail: 'internal error' });

@@ -33,6 +33,7 @@ export class WorkersService {
     emergencyContactNumber: string | null;
     workerCode: string;
     category?: PersonCategory;
+    validityTill?: Date | null;
     vendor?: { name: string } | null;
     designation?: { name: string } | null;
   }) {
@@ -45,6 +46,8 @@ export class WorkersService {
       emergencyContactName: w.emergencyContactName,
       emergencyContactNumber: w.emergencyContactNumber,
       category: w.category ?? 'WORKER',
+      // Date-only: the device compares it against its own local calendar day.
+      validityTill: w.validityTill ? w.validityTill.toISOString().slice(0, 10) : null,
       vendorName: w.vendor?.name ?? null,
       designationName: w.designation?.name ?? null,
     };
@@ -682,6 +685,9 @@ export class WorkersService {
         nfcUid: true,
         qrIdentifier: true,
         category: true,
+        // The device refuses a login on an expired card while offline, so it
+        // needs the expiry date in its cache.
+        validityTill: true,
         vendor: { select: { name: true } },
         designation: { select: { name: true } },
       },

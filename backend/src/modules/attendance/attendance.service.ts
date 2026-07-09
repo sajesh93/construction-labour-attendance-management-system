@@ -13,6 +13,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
 import { businessDate, minutesOfDay } from '../../common/time/time.util';
+import { isCardExpired } from './engine/card-validity';
 import { computeWorkHours, ShiftConfig } from './engine/work-hours.engine';
 import { decideTap, distanceMeters, shouldVerifyPhoto } from './engine/tap-decision';
 import { TapDto } from './dto/attendance.dto';
@@ -182,6 +183,16 @@ export class AttendanceService {
       }
 
       if (decision.action === 'LOGIN') {
+        // An expired ID card may not start a shift. Checked here, not before
+        // the decision, so that someone already on site can still tap out and
+        // close their session — trapping people inside the gate would be worse
+        // than letting a lapsed card leave.
+        if (isCardExpired(worker.validityTill, tapTime, site.timezone)) {
+          throw Errors.cardExpired(
+            worker.fullName,
+            worker.validityTill!.toISOString().slice(0, 10),
+          );
+        }
         return await this.doLogin(organizationId, site, settings, worker, dto, ctx, tapTime);
       }
       return await this.doLogout(
