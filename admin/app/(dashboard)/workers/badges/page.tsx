@@ -220,7 +220,7 @@ export default function BadgesPage() {
               {/* Visitor passes are single-sided (name + number only); worker/
                   staff cards keep their front + back faces. Each face is wrapped
                   in .pvc-face so it prints on its own card-sized page. */}
-              <Stack className="pvc-row" direction="row" spacing={0.5}>
+              <Stack direction="row" spacing={0.5}>
                 <div className="pvc-face">
                   <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="front" />
                 </div>

@@ -50,12 +50,23 @@
     gap: 0 !important;
   }
 
-  /* Kill the on-screen flex row that sits the front and back faces beside each
-     other — in print they must stack so each lands on its own card. */
-  .pvc-row {
+  /* Every wrapper between .print-area and a card face — the per-worker box and
+     the flex row holding front/back — is flattened to a plain block in normal
+     flow. Without this the faces sit side by side (~171mm) and the back one is
+     clipped off the card page, and the wrapper's padding/outline overflows the
+     page and emits blank cards. Matched structurally rather than by class name
+     so it cannot silently stop applying if the markup is reshuffled. */
+  .print-area *:has(.pvc-face) {
     display: block !important;
+    position: static !important;
     margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
     gap: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   /* Each card face prints alone on its own (card-sized) page so a PVC card
