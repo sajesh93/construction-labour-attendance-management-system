@@ -47,6 +47,13 @@ import { StatusBadge, statusTone, BadgeTone } from '@/components/ui/StatusBadge'
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/Toast';
+import {
+  AadhaarAutofillDialog,
+  AadhaarFill,
+  fillsFor,
+} from '@/components/AadhaarAutofillDialog';
+import { AadhaarData } from '@/lib/aadhaar/decoder';
+import { decodeAadhaarFromImage } from '@/lib/aadhaar/scan-image';
 import { Designation, Paginated, PersonCategory, Site, Vendor, Worker } from '@/lib/types';
 
 interface PersonForm {
@@ -253,6 +260,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     control,
     setValue,
     watch,
+    getValues,
     formState: { errors },
   } = useForm<PersonForm>({
     defaultValues: EMPTY_FORM,
@@ -435,6 +443,24 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   // Which image slot, if any, is currently being captured from the camera.
   const [capture, setCapture] = React.useState<PhotoKind | null>(null);
 
+  // Details read off the Aadhaar QR, awaiting the admin's confirmation.
+  const [aadhaarScan, setAadhaarScan] = React.useState<AadhaarData | null>(null);
+
+  /**
+   * Read the Aadhaar QR out of the card image the admin just picked. Runs in
+   * the browser on the in-memory File, so the payload never reaches the API.
+   * A card photo that holds no readable QR is the normal case, not an error —
+   * the admin simply types the details in.
+   */
+  const scanAadhaar = async (file: File) => {
+    try {
+      const data = await decodeAadhaarFromImage(file);
+      if (data) setAadhaarScan(data);
+    } catch {
+      // A QR we cannot read must never block the upload that already succeeded.
+    }
+  };
+
   // Shared upload path for both file-input picks and camera captures.
   const handleImageFile = async (file: File, kind: PhotoKind) => {
     setUploading(true);
@@ -448,6 +474,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         setValue(kind === 'AADHAAR_FRONT' ? 'aadhaarFrontPhotoId' : 'aadhaarBackPhotoId', id, {
           shouldDirty: true,
         });
+        await scanAadhaar(file);
       }
     } catch {
       setError(
@@ -1106,6 +1133,29 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           const kind = capture;
           setCapture(null);
           if (kind) void handleImageFile(file, kind);
+        }}
+      />
+
+      <AadhaarAutofillDialog
+        data={aadhaarScan}
+        fills={
+          aadhaarScan
+            ? fillsFor(aadhaarScan, {
+                fullName: getValues('fullName'),
+                fatherName: getValues('fatherName'),
+                gender: getValues('gender'),
+                dateOfBirth: getValues('dateOfBirth'),
+                pincode: getValues('pincode'),
+              })
+            : []
+        }
+        onClose={() => setAadhaarScan(null)}
+        onApply={(chosen: AadhaarFill[]) => {
+          for (const f of chosen) setValue(f.name, f.value, { shouldDirty: true });
+          setAadhaarScan(null);
+          toast.success(
+            `Autofilled ${chosen.length} field${chosen.length === 1 ? '' : 's'} from the Aadhaar card`,
+          );
         }}
       />
 
