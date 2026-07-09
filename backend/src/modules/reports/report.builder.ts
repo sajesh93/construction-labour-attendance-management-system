@@ -66,7 +66,9 @@ export function capSessionHours(
     workedMinutes: capMinutes,
     // Whatever the cap leaves once regular hours are paid; never negative.
     overtimeMinutes: Math.max(0, capMinutes - regular),
-    logoutAt: session.loginAt ? new Date(session.loginAt.getTime() + capMinutes * 60_000) : session.logoutAt,
+    logoutAt: session.loginAt
+      ? new Date(session.loginAt.getTime() + capMinutes * 60_000)
+      : session.logoutAt,
     capped: true,
   };
 }

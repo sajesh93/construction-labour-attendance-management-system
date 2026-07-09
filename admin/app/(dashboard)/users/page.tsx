@@ -112,14 +112,33 @@ export default function UsersPage() {
 
   const save = useMutation({
     mutationFn: (v: UserForm) => {
+      // Only watchmen have a username; every other role signs in with email.
+      // The hidden field keeps whatever was typed into it before the role was
+      // switched, so decide what to send from the role, never from the value.
+      const isWatchman = v.role === 'WATCHMAN';
+      const email = v.email?.trim() ?? '';
+      const username = v.username?.trim() ?? '';
+
       const body: Record<string, unknown> = {
         fullName: v.fullName,
         role: v.role,
-        ...(v.email ? { email: v.email } : {}),
-        ...(v.username ? { username: v.username } : {}),
         // Blank password = keep the existing one.
         ...(v.password ? { password: v.password } : {}),
       };
+
+      if (isWatchman) {
+        body.username = username;
+        // A watchman's email is optional: on edit, blank means "clear it", and
+        // only an explicit null does that — omitting the key leaves it alone.
+        if (editing) body.email = email || null;
+        else if (email) body.email = email;
+      } else {
+        body.email = email;
+        // Switching a watchman to an email role must drop their username,
+        // otherwise it lingers and blocks reuse of that handle.
+        if (editing) body.username = null;
+      }
+
       return editing ? api.patch(`/users/${editing.id}`, body) : api.post('/users', body);
     },
     onSuccess: () => {

@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   Card,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -37,6 +38,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
@@ -53,7 +55,7 @@ import {
   fillsFor,
 } from '@/components/AadhaarAutofillDialog';
 import { AadhaarData } from '@/lib/aadhaar/decoder';
-import { decodeAadhaarFromImage } from '@/lib/aadhaar/scan-image';
+import { decodeAadhaarFromImage, decodeAadhaarFromPhotoId } from '@/lib/aadhaar/scan-image';
 import { Designation, Paginated, PersonCategory, Site, Vendor, Worker } from '@/lib/types';
 
 interface PersonForm {
@@ -445,19 +447,56 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
 
   // Details read off the Aadhaar QR, awaiting the admin's confirmation.
   const [aadhaarScan, setAadhaarScan] = React.useState<AadhaarData | null>(null);
+  const [scanning, setScanning] = React.useState(false);
 
   /**
-   * Read the Aadhaar QR out of the card image the admin just picked. Runs in
-   * the browser on the in-memory File, so the payload never reaches the API.
-   * A card photo that holds no readable QR is the normal case, not an error —
-   * the admin simply types the details in.
+   * Read the Aadhaar QR out of a card image. Runs in the browser, so the
+   * payload never reaches the API. A card photo that holds no readable QR is
+   * the normal case, not an error — the admin simply types the details in.
+   *
+   * `announce` is on for the button (the admin asked, so tell them what
+   * happened) and off for the automatic attempt after an upload, where a
+   * failure toast would be noise.
    */
-  const scanAadhaar = async (file: File) => {
+  const scanAadhaar = async (source: Blob | { photoId: string }, announce: boolean) => {
+    setScanning(true);
     try {
-      const data = await decodeAadhaarFromImage(file);
-      if (data) setAadhaarScan(data);
+      const data =
+        source instanceof Blob
+          ? await decodeAadhaarFromImage(source)
+          : await decodeAadhaarFromPhotoId(source.photoId);
+      if (data) {
+        setAadhaarScan(data);
+      } else if (announce) {
+        toast.error('No Aadhaar QR code found in that image. Try a sharper, closer photo.');
+      }
     } catch {
-      // A QR we cannot read must never block the upload that already succeeded.
+      // A QR we cannot read must never block an upload that already succeeded.
+      if (announce) toast.error('Could not read that image.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  /** Scan whichever card face is attached — the QR is on the back of newer cards. */
+  const autofillFromAadhaar = async () => {
+    const id = aadhaarBackPhotoId || aadhaarFrontPhotoId;
+    if (!id) return;
+    const other = id === aadhaarBackPhotoId ? aadhaarFrontPhotoId : aadhaarBackPhotoId;
+
+    setScanning(true);
+    try {
+      const data =
+        (await decodeAadhaarFromPhotoId(id)) ?? (other ? await decodeAadhaarFromPhotoId(other) : null);
+      if (data) setAadhaarScan(data);
+      else
+        toast.error(
+          'No Aadhaar QR code found on the uploaded card. Try a sharper, closer photo of the side with the QR.',
+        );
+    } catch {
+      toast.error('Could not read the uploaded card image.');
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -474,7 +513,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         setValue(kind === 'AADHAAR_FRONT' ? 'aadhaarFrontPhotoId' : 'aadhaarBackPhotoId', id, {
           shouldDirty: true,
         });
-        await scanAadhaar(file);
+        await scanAadhaar(file, false);
       }
     } catch {
       setError(
@@ -941,6 +980,30 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                     </Grid>
                   ))}
                 </Grid>
+                <Stack
+                  direction="row"
+                  spacing={1.5}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ mb: 1 }}
+                >
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={
+                      scanning ? <CircularProgress size={16} color="inherit" /> : <AutoFixHighIcon />
+                    }
+                    disabled={scanning || uploading || !(aadhaarFrontPhotoId || aadhaarBackPhotoId)}
+                    onClick={autofillFromAadhaar}
+                  >
+                    {scanning ? 'Reading card…' : 'Autofill from Aadhaar'}
+                  </Button>
+                  <Typography variant="caption" color="text.secondary">
+                    Reads the QR code on the card to fill name, father&apos;s name, gender, date of
+                    birth and pincode. Nothing is sent to the server.
+                  </Typography>
+                </Stack>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   Encrypted and compressed at rest. Front is required; back is optional and can be
                   added later.

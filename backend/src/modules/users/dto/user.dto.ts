@@ -1,4 +1,4 @@
-import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { ApiProperty, OmitType, PartialType } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import {
   ArrayUnique,
@@ -11,6 +11,7 @@ import {
   Length,
   IsUUID,
   Matches,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -58,11 +59,35 @@ export class CreateUserDto {
   siteIds?: string[];
 }
 
-export class UpdateUserDto extends PartialType(CreateUserDto) {
+// email/username are omitted from the base and re-declared below so they can
+// accept an explicit null, which means "clear this field".
+export class UpdateUserDto extends OmitType(PartialType(CreateUserDto), [
+  'email',
+  'username',
+] as const) {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  // Explicit null clears the field (and frees the handle for reuse); omitting
+  // the key leaves it as it is. Both are re-declared here because
+  // PartialType(CreateUserDto) would otherwise reject null outright.
+  @ApiProperty({ required: false, nullable: true, description: 'null clears the email' })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsEmail()
+  email?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, description: 'null clears the username' })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @Length(3, 60)
+  @Matches(/^[a-zA-Z0-9._-]+$/, {
+    message: 'username may only contain letters, numbers, dots, dashes and underscores',
+  })
+  username?: string | null;
 }
 
 export class SetSiteScopesDto {

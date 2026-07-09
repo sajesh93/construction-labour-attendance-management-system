@@ -113,11 +113,35 @@ export class UsersService {
     if (id !== user.userId) this.assertCanManage(user, target.role);
     if (dto.role && dto.role !== target.role) this.assertCanManage(user, dto.role);
 
+    // undefined = key absent = leave the column alone. null (or a blank string)
+    // = clear it, which frees the email/username for reuse. Mapping blanks to
+    // undefined, as this used to, silently ignored every attempt to clear one.
+    const clearable = (v: string | null | undefined): string | null | undefined => {
+      if (v === undefined) return undefined;
+      if (v === null) return null;
+      return v.trim() || null;
+    };
+
+    const email = clearable(dto.email);
+    const username = clearable(dto.username);
+
+    // Whatever the edit leaves behind must still be able to sign in: watchmen
+    // by username, everyone else by email (which also receives reset codes).
+    const role = dto.role ?? target.role;
+    const nextEmail = email === undefined ? target.email : email;
+    const nextUsername = username === undefined ? target.username : username;
+    if (role === 'WATCHMAN' && !nextUsername) {
+      throw Errors.businessRule('Watchman accounts need a user ID (username).');
+    }
+    if (role !== 'WATCHMAN' && !nextEmail) {
+      throw Errors.businessRule('Email is required for this role (used for password reset).');
+    }
+
     const data: Record<string, unknown> = {
       role: dto.role,
       fullName: dto.fullName,
-      email: dto.email?.trim() || undefined,
-      username: dto.username?.trim() || undefined,
+      email,
+      username,
       phone: dto.phone,
       isActive: dto.isActive,
     };

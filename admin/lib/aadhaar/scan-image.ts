@@ -13,14 +13,14 @@ import { AadhaarData, decodeAadhaarQr } from './decoder';
  * common case for a blurred phone photo — callers must treat that as "type it
  * in yourself", not as an error.
  */
-export async function decodeAadhaarFromImage(file: File): Promise<AadhaarData | null> {
+export async function decodeAadhaarFromImage(file: Blob): Promise<AadhaarData | null> {
   const bitmap = await createImageBitmap(file);
   try {
     // The Secure QR is dense (v20+ symbol). Too small and the binarizer loses
     // modules; too large and jsQR crawls. Try a few widths, biggest first,
     // since a card photo is usually shot close up.
     const tried = new Set<number>();
-    for (const targetWidth of [1600, 2400, 1000]) {
+    for (const targetWidth of [2400, 1600, 3200, 1200, 800]) {
       // rasterize() never upscales, so on a small photo several targets
       // collapse to the same width — decode each width only once.
       const width = Math.min(targetWidth, bitmap.width);
@@ -39,6 +39,17 @@ export async function decodeAadhaarFromImage(file: File): Promise<AadhaarData | 
   } finally {
     bitmap.close();
   }
+}
+
+/**
+ * Same, for a card already uploaded: pull the stored image back through the
+ * photo proxy (which decrypts it) and scan that. Lets an admin autofill from a
+ * card that was attached earlier, not just from the file they just picked.
+ */
+export async function decodeAadhaarFromPhotoId(photoId: string): Promise<AadhaarData | null> {
+  const res = await fetch(`/api/photo/${photoId}`);
+  if (!res.ok) return null;
+  return decodeAadhaarFromImage(await res.blob());
 }
 
 /** Draw the bitmap scaled to `targetWidth` (never upscaled) and read it back. */
