@@ -12,6 +12,16 @@ const MAX_INPUT_BYTES = 10 * 1024 * 1024; // 10 MB decoded
 // Lossy re-encode targets (chosen so Aadhaar text stays readable).
 const MAX_EDGE = 1600; // longest side, px
 const JPEG_QUALITY = 80;
+// Aadhaar cards are the only images we ever machine-read: their Secure QR is a
+// 145–177 module symbol, and JPEG ringing around those modules is what defeats
+// a decoder. A clean symbol still survives 1600px/q80, so the extra headroom
+// here is margin for a real photograph's print texture and glare — not a fix
+// for an image that was already too small. Kept deliberately modest: these
+// images are stored in the database and counted against the storage budget.
+const AADHAAR_MAX_EDGE = 2000;
+const AADHAAR_JPEG_QUALITY = 88;
+
+const AADHAAR_KINDS: PhotoKind[] = ['AADHAAR_FRONT', 'AADHAAR_BACK'];
 
 @Injectable()
 export class FilesService {
@@ -45,7 +55,7 @@ export class FilesService {
       buffer: compressed,
       mimeType,
       compressed: didCompress,
-    } = await this.compress(raw, dto.mimeType);
+    } = await this.compress(raw, dto.mimeType, kind);
 
     // 2) Aadhaar and ID-proof images are encrypted at rest; profile photos are
     //    not (they are streamed to many viewers / cached on devices, so we
@@ -88,12 +98,16 @@ export class FilesService {
   private async compress(
     raw: Buffer,
     originalMime: string,
+    kind: PhotoKind = 'PROFILE',
   ): Promise<{ buffer: Buffer; mimeType: string; compressed: boolean }> {
+    const isAadhaar = AADHAAR_KINDS.includes(kind);
+    const edge = isAadhaar ? AADHAAR_MAX_EDGE : MAX_EDGE;
+    const quality = isAadhaar ? AADHAAR_JPEG_QUALITY : JPEG_QUALITY;
     try {
       const buffer = await sharp(raw)
         .rotate() // honour EXIF orientation before stripping metadata
-        .resize({ width: MAX_EDGE, height: MAX_EDGE, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
+        .resize({ width: edge, height: edge, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality, mozjpeg: true })
         .toBuffer();
       return { buffer, mimeType: 'image/jpeg', compressed: true };
     } catch (e) {

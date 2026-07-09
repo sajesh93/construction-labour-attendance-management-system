@@ -211,8 +211,9 @@ async function uploadImage(
     i.onerror = reject;
     i.src = dataUrl;
   });
-  // Aadhaar cards keep more pixels so the text/QR stay legible.
-  const maxDim = kind === 'PROFILE' ? 800 : 2000;
+  // Aadhaar cards keep more pixels so the text stays legible and the Secure QR
+  // survives to be machine-read. The server re-compresses to its own ceiling.
+  const maxDim = kind === 'PROFILE' ? 800 : 2600;
   const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(img.width * scale);
@@ -337,6 +338,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     setError(null);
     reset(EMPTY_FORM);
     setAadhaarBackFile(null);
+    clearLocalPreviews();
   };
 
   const openCreate = () => {
@@ -344,6 +346,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     setError(null);
     reset(EMPTY_FORM);
     setAadhaarBackFile(null);
+    clearLocalPreviews();
     setOpen(true);
   };
 
@@ -354,6 +357,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       setError(null);
       reset(toForm(full));
       setAadhaarBackFile(null);
+      clearLocalPreviews();
       setOpen(true);
     } catch (e) {
       const err = e as BrowserApiError;
@@ -461,6 +465,30 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   // always prefer scanning the original when it is still in memory.
   const [aadhaarBackFile, setAadhaarBackFile] = React.useState<File | null>(null);
 
+  // Object URLs for the images just picked, so a thumbnail appears at once
+  // instead of waiting on the upload + photo-proxy round trip (and still shows
+  // if that round trip fails). Revoked when the dialog closes.
+  const [localPreviews, setLocalPreviews] = React.useState<Partial<Record<PhotoKind, string>>>({});
+  const setLocalPreview = (kind: PhotoKind, file: File) =>
+    setLocalPreviews((prev) => {
+      if (prev[kind]) URL.revokeObjectURL(prev[kind]!);
+      return { ...prev, [kind]: URL.createObjectURL(file) };
+    });
+  const clearLocalPreview = (kind: PhotoKind) =>
+    setLocalPreviews((prev) => {
+      if (prev[kind]) URL.revokeObjectURL(prev[kind]!);
+      const next = { ...prev };
+      delete next[kind];
+      return next;
+    });
+  const clearLocalPreviews = React.useCallback(() => {
+    setLocalPreviews((prev) => {
+      for (const url of Object.values(prev)) URL.revokeObjectURL(url);
+      return {};
+    });
+  }, []);
+  React.useEffect(() => clearLocalPreviews, [clearLocalPreviews]);
+
   /** Explain a failed scan in terms the admin can act on. */
   const reportScanFailure = (scan: AadhaarScan) => {
     if (scan.tooSmall) {
@@ -522,6 +550,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   // Shared upload path for both file-input picks and camera captures.
   const handleImageFile = async (file: File, kind: PhotoKind) => {
     setUploading(true);
+    // Show what was picked straight away; the upload can take a moment.
+    setLocalPreview(kind, file);
     try {
       const { url, id } = await uploadImage(file, kind);
       if (kind === 'PROFILE') {
@@ -540,6 +570,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         }
       }
     } catch {
+      // Nothing was stored, so the thumbnail must not imply otherwise.
+      clearLocalPreview(kind);
       setError(
         kind === 'PROFILE'
           ? 'Photo upload failed'
@@ -960,7 +992,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                       <Stack direction="row" spacing={2} alignItems="center">
                         <Avatar
                           variant="rounded"
-                          src={id ? photoSrc(`/files/${id}`) : undefined}
+                          // The just-picked file wins: it renders instantly and
+                          // does not depend on the upload having landed.
+                          src={localPreviews[side] ?? (id ? photoSrc(`/files/${id}`) : undefined)}
                           sx={{ width: 88, height: 56 }}
                         >
                           <CreditCardIcon fontSize="small" />
@@ -999,6 +1033,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                                 color="inherit"
                                 onClick={() => {
                                   setValue(field, '');
+                                  clearLocalPreview(side);
                                   // Drop the cached original too, or Autofill
                                   // would scan a card that is no longer attached.
                                   if (side === 'AADHAAR_BACK') setAadhaarBackFile(null);
