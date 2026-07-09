@@ -21,6 +21,8 @@ export const config = {
     // Protect everything except login, the auth routes, and public/static assets
     // (logo.png must be reachable on the unauthenticated login page).
     // /download serves the Android APK and must stay public.
-    '/((?!login|api/auth|download|_next/static|_next/image|favicon.ico|logo.png).*)',
+    // /zxing holds the QR-reader WebAssembly: a static asset with no secrets,
+    // and a redirect served in its place fails to instantiate.
+    '/((?!login|api/auth|download|zxing|_next/static|_next/image|favicon.ico|logo.png).*)',
   ],
 };
