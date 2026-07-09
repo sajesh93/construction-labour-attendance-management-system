@@ -1,31 +1,71 @@
-/* When printing, show ONLY elements inside .print-area (QR badges etc.) —
-   never the app chrome, tables or dialogs around them. */
+/* When printing, show ONLY elements inside .print-area (ID cards etc.) — never
+   the app chrome, tables or dialogs around them.
+
+   The print-area must stay in normal flow (position: static): Chrome refuses to
+   paginate absolutely-positioned content, which silently kills the one-face-per-
+   card page breaks below. So instead of pulling it out of flow, everything that
+   is neither an ancestor nor a descendant of .print-area is display:none'd, and
+   the ancestors are flattened to plain full-bleed blocks. */
 @media print {
-  body * {
-    visibility: hidden !important;
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
   }
+
+  body *:not(:has(.print-area)):not(.print-area):not(.print-area *) {
+    display: none !important;
+  }
+
+  /* The chain of wrappers (app shell, main, page <Box>) between body and the
+     cards: keep them, but strip their layout so the cards start at 0,0. */
+  body :has(.print-area) {
+    display: block !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
   .print-area,
   .print-area * {
-    visibility: visible !important;
     /* Force backgrounds/colours (e.g. the navy ID-card bars and seals) to print
        instead of being dropped by the browser's default "no backgrounds" rule. */
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
   .print-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
+    display: block !important;
     margin: 0 !important;
     padding: 0 !important;
-    /* One card face per page — no flex wrapping/gaps on PVC stock. */
-    display: block !important;
+    gap: 0 !important;
   }
+
+  /* Kill the on-screen flex row that sits the front and back faces beside each
+     other — in print they must stack so each lands on its own card. */
+  .pvc-row {
+    display: block !important;
+    margin: 0 !important;
+    gap: 0 !important;
+  }
+
   /* Each card face prints alone on its own (card-sized) page so a PVC card
      printer feeds one blank per face. The @page size itself is injected by the
      badges page to match the selected PVC stock. */
   .pvc-face {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
     break-after: page;
     page-break-after: always;
     break-inside: avoid;

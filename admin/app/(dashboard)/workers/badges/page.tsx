@@ -168,8 +168,10 @@ export default function BadgesPage() {
       )}
 
       {/* Drives the print dialog's paper size to the exact PVC card so each face
-          prints alone, edge-to-edge — no A4 sheet of badges to cut out. */}
-      <style>{`@media print { @page { size: ${pageW}mm ${pageH}mm; margin: 0; } }`}</style>
+          prints alone, edge-to-edge — no A4 sheet of badges to cut out. @page
+          only ever applies to print, so it is left unnested (Chrome applies a
+          bare @page more reliably than one wrapped in @media print). */}
+      <style>{`@page { size: ${pageW}mm ${pageH}mm; margin: 0; }`}</style>
 
       <Box
         className="print-area"
@@ -218,7 +220,7 @@ export default function BadgesPage() {
               {/* Visitor passes are single-sided (name + number only); worker/
                   staff cards keep their front + back faces. Each face is wrapped
                   in .pvc-face so it prints on its own card-sized page. */}
-              <Stack direction="row" spacing={0.5}>
+              <Stack className="pvc-row" direction="row" spacing={0.5}>
                 <div className="pvc-face">
                   <IdCard worker={w} org={org.data} size={size} orientation={orientation} side="front" />
                 </div>
