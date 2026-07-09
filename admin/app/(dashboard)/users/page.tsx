@@ -21,7 +21,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
 import { useForm } from 'react-hook-form';
-import { api, BrowserApiError } from '@/lib/api/browser';
+import { api, apiErrorMessage } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Column } from '@/components/ui/DataTable';
 import { StatusBadge, BadgeTone } from '@/components/ui/StatusBadge';
@@ -46,6 +46,12 @@ interface UserForm {
   password: string;
   role: UserRole;
 }
+
+/** Matches what the API's @IsEmail() will accept, so we fail fast in the form. */
+const EMAIL_RULE = {
+  value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  message: 'Enter a valid email address',
+} as const;
 
 interface Me {
   id: string;
@@ -79,7 +85,13 @@ export default function UsersPage() {
   const [deleting, setDeleting] = React.useState<UserRow | null>(null);
   const [toggling, setToggling] = React.useState<UserRow | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const { register, handleSubmit, reset, watch } = useForm<UserForm>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors },
+  } = useForm<UserForm>({
     defaultValues: { role: 'WATCHMAN' },
   });
   const selectedRole = watch('role');
@@ -96,10 +108,7 @@ export default function UsersPage() {
     isSuperAdmin || u.role === 'SUPERVISOR' || u.role === 'WATCHMAN' || u.id === me.data?.id;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['users'] });
-  const fail = (e: unknown, fallback: string) => {
-    const err = e as BrowserApiError;
-    setError(err.body?.detail ?? err.body?.title ?? fallback);
-  };
+  const fail = (e: unknown, fallback: string) => setError(apiErrorMessage(e, fallback));
 
   const save = useMutation({
     mutationFn: (v: UserForm) => {
@@ -299,7 +308,12 @@ export default function UsersPage() {
                 label="Full name"
                 fullWidth
                 InputLabelProps={{ shrink: true }}
-                {...register('fullName')}
+                error={!!errors.fullName}
+                helperText={errors.fullName?.message}
+                {...register('fullName', {
+                  required: 'Full name is required',
+                  minLength: { value: 2, message: 'Full name is too short' },
+                })}
               />
               {selectedRole === 'WATCHMAN' ? (
                 <>
@@ -307,15 +321,27 @@ export default function UsersPage() {
                     label="User ID (used to sign in)"
                     fullWidth
                     InputLabelProps={{ shrink: true }}
-                    helperText="Watchmen sign in with this ID — no email needed"
-                    {...register('username')}
+                    error={!!errors.username}
+                    helperText={
+                      errors.username?.message ?? 'Watchmen sign in with this ID — no email needed'
+                    }
+                    {...register('username', {
+                      required: 'A user ID is required for watchmen',
+                      minLength: { value: 3, message: 'At least 3 characters' },
+                      pattern: {
+                        value: /^[a-zA-Z0-9._-]+$/,
+                        message: 'Only letters, numbers, dots, dashes and underscores',
+                      },
+                    })}
                   />
                   <TextField
                     label="Email (optional)"
                     type="email"
                     fullWidth
                     InputLabelProps={{ shrink: true }}
-                    {...register('email')}
+                    error={!!errors.email}
+                    helperText={errors.email?.message}
+                    {...register('email', { pattern: EMAIL_RULE })}
                   />
                 </>
               ) : (
@@ -324,8 +350,15 @@ export default function UsersPage() {
                   type="email"
                   fullWidth
                   InputLabelProps={{ shrink: true }}
-                  helperText="Required — used for sign-in and password reset codes"
-                  {...register('email')}
+                  error={!!errors.email}
+                  helperText={
+                    errors.email?.message ??
+                    'Required — used for sign-in and password reset codes'
+                  }
+                  {...register('email', {
+                    required: 'Email is required for this role',
+                    pattern: EMAIL_RULE,
+                  })}
                 />
               )}
               <TextField
@@ -333,7 +366,15 @@ export default function UsersPage() {
                 type="password"
                 fullWidth
                 InputLabelProps={{ shrink: true }}
-                {...register('password')}
+                error={!!errors.password}
+                helperText={errors.password?.message ?? 'At least 8 characters'}
+                {...register('password', {
+                  // Editing with a blank password keeps the current one; a new
+                  // user always needs one. The API enforces 8–128 either way.
+                  required: editing ? false : 'Password is required',
+                  validate: (v) =>
+                    !v || (v.length >= 8 && v.length <= 128) || 'Must be 8–128 characters',
+                })}
               />
             </Stack>
           </DialogContent>

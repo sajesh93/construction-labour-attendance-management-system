@@ -41,12 +41,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       status = exception.getStatus();
       const resp = exception.getResponse();
       const message = typeof resp === 'string' ? resp : (resp as { message?: unknown }).message;
+      // ValidationPipe reports one message per failed field, as an array. Join
+      // them into `detail` as well as `meta.errors`: clients show `detail`, and
+      // leaving it empty surfaced the bare class name ("BadRequestException")
+      // instead of telling the user which field was wrong.
+      const detail = Array.isArray(message)
+        ? message.filter((m): m is string => typeof m === 'string').join('; ')
+        : (message as string);
       body = {
         type: `https://clams/errors/http-${status}`,
         title: exception.name,
         status,
         code: status === 400 ? 'VALIDATION_ERROR' : 'HTTP_ERROR',
-        detail: Array.isArray(message) ? undefined : (message as string),
+        detail: detail || undefined,
         meta: Array.isArray(message) ? { errors: message } : undefined,
       };
     } else {

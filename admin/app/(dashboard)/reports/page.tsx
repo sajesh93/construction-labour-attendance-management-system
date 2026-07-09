@@ -13,6 +13,7 @@ import {
   MenuItem,
   Stack,
   Switch,
+  Tooltip,
   Table,
   TableBody,
   TableCell,
@@ -96,6 +97,8 @@ export default function ReportsPage() {
   const [sortByVendor, setSortByVendor] = React.useState(false);
   // Full-profile report (adds decrypted Aadhaar/PAN/bank/etc. columns).
   const [includeSensitive, setIncludeSensitive] = React.useState(false);
+  // Compliance mode: trim any day over the statutory 9 hours back to 9.
+  const [capHours, setCapHours] = React.useState(false);
   // Attendance sheet: P/A presence grid vs IN/Out times.
   const [presenceMode, setPresenceMode] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -108,6 +111,9 @@ export default function ReportsPage() {
   const showDate = reportType === 'DAILY';
   const showRange = !showMonth && !showDate && !showAttSheet && reportType !== 'CORRECTION';
   const showVendorTools = reportType !== 'CORRECTION';
+  // Only the reports that print a "Worked (h)" column can cap it. The
+  // attendance sheet marks P/A per day and the correction log has no hours.
+  const showHoursCap = reportType !== 'CORRECTION' && reportType !== 'ATTENDANCE_SHEET';
 
   const buildParams = (): Record<string, unknown> => {
     const params: Record<string, unknown> = {};
@@ -127,6 +133,7 @@ export default function ReportsPage() {
     if (showVendorTools && category) params.category = category;
     if (showVendorTools && sortByVendor) params.sortBy = 'vendor';
     if (reportType !== 'CORRECTION' && includeSensitive) params.includeSensitive = true;
+    if (showHoursCap && capHours) params.capHours = true;
     if (showAttSheet && presenceMode) params.attendanceMode = 'PRESENCE';
     return params;
   };
@@ -357,6 +364,16 @@ export default function ReportsPage() {
                     }
                     label="P/A marking (one column per day)"
                   />
+                )}
+                {showHoursCap && (
+                  <Tooltip title="Days over 9 hours — usually a missed logout — are trimmed to 9. Overtime is cut back first, and the logout time is adjusted to match, so the row stays consistent. Nothing in the attendance records changes.">
+                    <FormControlLabel
+                      control={
+                        <Switch checked={capHours} onChange={(e) => setCapHours(e.target.checked)} />
+                      }
+                      label="Cap working hours at 9 (compliance)"
+                    />
+                  </Tooltip>
                 )}
                 <FormControlLabel
                   control={

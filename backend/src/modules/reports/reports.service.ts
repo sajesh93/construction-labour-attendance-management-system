@@ -6,7 +6,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { Permission, roleHasPermission } from '../../common/rbac/permissions';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
-import { minutesToHours, toCsv } from './report.builder';
+import { capSessionHours, minutesToHours, toCsv } from './report.builder';
 import {
   AttSheetMonth,
   AttSheetRow,
@@ -321,22 +321,29 @@ export class ReportsService {
       day(w.joinDate),
     ];
 
-    const toRow = (s: (typeof sessions)[number]): (string | number | null)[] => [
-      s.workDate.toISOString().slice(0, 10),
-      s.worker.workerCode,
-      s.worker.fullName,
-      s.worker.category,
-      s.worker.designation?.name ?? '',
-      s.worker.vendor?.name ?? '',
-      s.site.name,
-      s.loginAt ? s.loginAt.toISOString() : null,
-      s.logoutAt ? s.logoutAt.toISOString() : null,
-      minutesToHours(s.workedMinutes),
-      minutesToHours(s.overtimeMinutes),
-      s.lateMinutes ?? 0,
-      s.state,
-      ...(sensitive ? sensitiveCells(s.worker) : []),
-    ];
+    // Compliance mode: a day that ran past the statutory 9 hours — usually a
+    // missed logout — is trimmed back to it before the row is written.
+    const capHours = params.capHours === true || params.capHours === 'true';
+
+    const toRow = (s: (typeof sessions)[number]): (string | number | null)[] => {
+      const t = capHours ? capSessionHours(s) : s;
+      return [
+        s.workDate.toISOString().slice(0, 10),
+        s.worker.workerCode,
+        s.worker.fullName,
+        s.worker.category,
+        s.worker.designation?.name ?? '',
+        s.worker.vendor?.name ?? '',
+        s.site.name,
+        s.loginAt ? s.loginAt.toISOString() : null,
+        t.logoutAt ? t.logoutAt.toISOString() : null,
+        minutesToHours(t.workedMinutes),
+        minutesToHours(t.overtimeMinutes),
+        s.lateMinutes ?? 0,
+        s.state,
+        ...(sensitive ? sensitiveCells(s.worker) : []),
+      ];
+    };
 
     // Insert a section divider row when the report spans multiple categories
     // (e.g. "===== WORKERS =====" then "===== STAFF =====").
