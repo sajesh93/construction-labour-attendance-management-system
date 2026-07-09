@@ -189,7 +189,15 @@ export default function BadgesPage() {
             <Box
               key={w.id}
               onClick={() => toggle(w.id)}
-              className={w.id === lastSelectedId ? 'pvc-last' : undefined}
+              // pvc-skip keeps unticked cards out of the printout; print.css
+              // needs the class because its !important layout reset would
+              // otherwise override the `sx` display:none below.
+              className={[
+                w.id === lastSelectedId ? 'pvc-last' : '',
+                isSelected ? '' : 'pvc-skip',
+              ]
+                .filter(Boolean)
+                .join(' ') || undefined}
               sx={{
                 position: 'relative',
                 cursor: 'pointer',

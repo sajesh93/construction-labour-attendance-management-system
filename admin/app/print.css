@@ -56,7 +56,7 @@
      clipped off the card page, and the wrapper's padding/outline overflows the
      page and emits blank cards. Matched structurally rather than by class name
      so it cannot silently stop applying if the markup is reshuffled. */
-  .print-area *:has(.pvc-face) {
+  .print-area *:has(.pvc-face):not(.pvc-skip) {
     display: block !important;
     position: static !important;
     margin: 0 !important;
@@ -82,6 +82,14 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+  /* Unticked cards never reach the printer. This must be !important and must be
+     excluded from the flatten rule above, which would otherwise re-show them:
+     the wrapper's own display:none comes from `sx` (unimportant) and loses to
+     any !important display. */
+  .print-area .pvc-skip {
+    display: none !important;
+  }
+
   /* Suppress the trailing blank page after the very last selected face so the
      printer doesn't eject (and waste) one extra card. */
   .pvc-last .pvc-face:last-child {
