@@ -12,14 +12,12 @@ const MAX_INPUT_BYTES = 10 * 1024 * 1024; // 10 MB decoded
 // Lossy re-encode targets (chosen so Aadhaar text stays readable).
 const MAX_EDGE = 1600; // longest side, px
 const JPEG_QUALITY = 80;
-// Aadhaar cards are the only images we ever machine-read: their Secure QR is a
-// 145–177 module symbol, and JPEG ringing around those modules is what defeats
-// a decoder. A clean symbol still survives 1600px/q80, so the extra headroom
-// here is margin for a real photograph's print texture and glare — not a fix
-// for an image that was already too small. Kept deliberately modest: these
-// images are stored in the database and counted against the storage budget.
-const AADHAAR_MAX_EDGE = 2000;
-const AADHAAR_JPEG_QUALITY = 88;
+// Aadhaar cards are the only images we ever machine-read, so they get a little
+// headroom over a portrait: JPEG ringing around the Secure QR's modules is what
+// defeats a decoder. Kept modest — a 1600px/q80 card still decodes, and these
+// blobs live in the database against the storage budget.
+const AADHAAR_MAX_EDGE = 1800;
+const AADHAAR_JPEG_QUALITY = 85;
 
 const AADHAAR_KINDS: PhotoKind[] = ['AADHAAR_FRONT', 'AADHAAR_BACK'];
 

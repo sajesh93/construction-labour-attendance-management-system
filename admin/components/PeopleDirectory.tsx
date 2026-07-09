@@ -55,12 +55,7 @@ import {
   fillsFor,
 } from '@/components/AadhaarAutofillDialog';
 import { AadhaarData } from '@/lib/aadhaar/decoder';
-import {
-  AadhaarScan,
-  decodeAadhaarFromImage,
-  decodeAadhaarFromPhotoId,
-  MIN_CARD_WIDTH_PX,
-} from '@/lib/aadhaar/scan-image';
+import { decodeAadhaarFromImage, decodeAadhaarFromPhotoId } from '@/lib/aadhaar/scan-image';
 import { Designation, Paginated, PersonCategory, Site, Vendor, Worker } from '@/lib/types';
 
 interface PersonForm {
@@ -213,13 +208,13 @@ async function uploadImage(
   });
   // Aadhaar cards keep more pixels so the text stays legible and the Secure QR
   // survives to be machine-read. The server re-compresses to its own ceiling.
-  const maxDim = kind === 'PROFILE' ? 800 : 2600;
+  const maxDim = kind === 'PROFILE' ? 800 : 1800;
   const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(img.width * scale);
   canvas.height = Math.round(img.height * scale);
   canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-  const jpeg = canvas.toDataURL('image/jpeg', kind === 'PROFILE' ? 0.85 : 0.92);
+  const jpeg = canvas.toDataURL('image/jpeg', kind === 'PROFILE' ? 0.85 : 0.88);
   const base64 = jpeg.split(',')[1];
   return api.post<{ url: string; id: string }>('/files', {
     dataBase64: base64,
@@ -490,18 +485,10 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   React.useEffect(() => clearLocalPreviews, [clearLocalPreviews]);
 
   /** Explain a failed scan in terms the admin can act on. */
-  const reportScanFailure = (scan: AadhaarScan) => {
-    if (scan.tooSmall) {
-      toast.error(
-        `That image is only ${scan.width}px wide — probably too low-resolution for the QR code. ` +
-          `Photograph the card so it fills the frame (about ${MIN_CARD_WIDTH_PX}px across or more).`,
-      );
-    } else {
-      toast.error(
-        'No Aadhaar QR code found on the back of the card. Make sure the QR is in frame, in focus and not glared out.',
-      );
-    }
-  };
+  const reportScanFailure = () =>
+    toast.error(
+      'No Aadhaar QR code found on the back of the card. Make sure the whole QR is in frame, in focus and not glared out.',
+    );
 
   /**
    * Read the Aadhaar QR out of the back of the card. Runs in the browser, so
@@ -517,7 +504,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     try {
       const scan = await decodeAadhaarFromImage(file);
       if (scan.data) setAadhaarScan(scan.data);
-      else if (announce) reportScanFailure(scan);
+      else if (announce) reportScanFailure();
     } catch {
       // A QR we cannot read must never block an upload that already succeeded.
       if (announce) toast.error('Could not read that image.');
@@ -539,7 +526,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     try {
       const scan = await decodeAadhaarFromPhotoId(aadhaarBackPhotoId);
       if (scan.data) setAadhaarScan(scan.data);
-      else reportScanFailure(scan);
+      else reportScanFailure();
     } catch {
       toast.error('Could not read the uploaded card image.');
     } finally {
@@ -1085,9 +1072,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   </Tooltip>
                   <Typography variant="caption" color="text.secondary">
                     Reads the QR code on the <strong>back</strong> of the card to fill name,
-                    father&apos;s name, gender, date of birth and pincode. The card must be
-                    photographed close up (at least {MIN_CARD_WIDTH_PX}px across) or the QR cannot be
-                    read. Nothing is sent to the server.
+                    father&apos;s name, gender, date of birth and pincode. Nothing is sent to the
+                    server.
                   </Typography>
                 </Stack>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
