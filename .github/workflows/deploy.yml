@@ -3,6 +3,11 @@ name: Deploy
 # Builds the images in ACR and rolls the Azure Container Apps.
 # Needs the AZURE_CREDENTIALS repo secret (service principal with
 # Contributor on the clams-rg resource group).
+#
+# Only the parts that actually changed are rebuilt: the `changes` job diffs the
+# push and every other job gates on it. A backend-only commit never pays for the
+# (slow) Flutter APK build; an admin-only commit reuses the APK already being
+# served at /download instead of rebuilding an identical one.
 
 on:
   workflow_dispatch:
@@ -18,14 +23,42 @@ env:
   ACR: clamsacr8ca7
   RESOURCE_GROUP: clams-rg
   API_BASE_URL: https://clams-api.lemoncoast-b230ecb6.centralindia.azurecontainerapps.io/api/v1
+  ADMIN_BASE_URL: https://clams-admin.lemoncoast-b230ecb6.centralindia.azurecontainerapps.io
 
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      admin: ${{ steps.filter.outputs.admin }}
+      mobile: ${{ steps.filter.outputs.mobile }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # A manual workflow_dispatch has no diff to inspect and reports no
+          # changes; each job below treats that case as "rebuild everything".
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/deploy.yml'
+            admin:
+              - 'admin/**'
+              - '.github/workflows/deploy.yml'
+            mobile:
+              - 'mobile/**'
+              - '.github/workflows/deploy.yml'
+
   apk:
     name: Build Android APK
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -69,6 +102,8 @@ jobs:
 
   deploy-api:
     name: Deploy API
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,16 +127,37 @@ jobs:
 
   deploy-admin:
     name: Deploy Admin
+    needs: [changes, apk]
+    # `apk` is skipped on an admin-only commit, and a skipped need would skip
+    # this job too — so gate on the outcome explicitly rather than on success().
+    if: |
+      always()
+      && needs.apk.result != 'failure'
+      && needs.apk.result != 'cancelled'
+      && (needs.changes.outputs.admin == 'true'
+          || needs.changes.outputs.mobile == 'true'
+          || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    needs: apk
     steps:
       - uses: actions/checkout@v4
-      - name: Bundle APK for the /download endpoint
+
+      # The admin image serves the APK at /download, so the image always needs
+      # one baked in. Fresh build when mobile changed; otherwise re-use the APK
+      # the live admin is already serving so we don't rebuild an identical one.
+      - name: Fetch freshly built APK
+        if: needs.apk.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: clams-apk
           path: apk
+      - name: Re-use the currently deployed APK
+        if: needs.apk.result == 'skipped'
+        run: |
+          mkdir -p apk
+          curl -fsSL "$ADMIN_BASE_URL/download" -o apk/app-release.apk
+          test -s apk/app-release.apk
       - run: cp apk/app-release.apk admin/public/CLAMS.apk
+
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
@@ -118,6 +174,5 @@ jobs:
       - name: Verify /download
         run: |
           sleep 20
-          ADMIN_URL=https://clams-admin.lemoncoast-b230ecb6.centralindia.azurecontainerapps.io
-          curl -fsSI "$ADMIN_URL/download" | tee headers.txt
+          curl -fsSI "$ADMIN_BASE_URL/download" | tee headers.txt
           grep -qi "content-disposition: attachment" headers.txt
