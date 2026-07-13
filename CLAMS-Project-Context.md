@@ -144,9 +144,9 @@ Admin (browser) ──► Next.js SSR + server proxy ──► same NestJS API
 
 | Role | Display name | What they can do |
 |---|---|---|
-| `SUPER_ADMIN` | Super Admin | Everything, incl. vendors, users, storage backup/purge, sensitive-data reveal |
-| `SITE_ADMIN` | Site Admin | Manage their sites, workers, attendance, corrections, reports, devices, users, audit (no vendors) |
-| `SUPERVISOR` | Safety Officer | Dashboard, attendance view, corrections, report summaries, add/manage workers, view emergency |
+| `SUPER_ADMIN` | Super Admin | Everything, incl. organizations, users, storage backup/purge, sensitive-data reveal |
+| `SITE_ADMIN` | Site Admin | Manage their sites, vendors, workers, attendance, corrections, reports, devices, users, audit |
+| `SUPERVISOR` | Safety Officer | Mobile app **and** admin panel: dashboard, attendance view, corrections, reports, workers/staff/visitors, sites, vendors, designations, view emergency, sensitive-data reveal (they capture it at registration). No users, devices, company settings, storage or audit |
 | `WATCHMAN` | Watchman | Mobile app only — scan & punch, view limited worker info, raise SOS (no admin panel) |
 
 Sensitive fields (Aadhaar, PAN, bank) are hidden by default and only revealed to

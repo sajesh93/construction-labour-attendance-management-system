@@ -32,6 +32,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
   SITE_ADMIN: [
     Permission.SITE_MANAGE,
+    Permission.VENDOR_MANAGE,
     Permission.WORKER_MANAGE,
     Permission.WORKER_VIEW_LIMITED,
     Permission.WORKER_VIEW_SENSITIVE,
@@ -49,13 +50,22 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
   WATCHMAN: [Permission.WORKER_VIEW_LIMITED, Permission.ATTENDANCE_MARK, Permission.EMERGENCY_VIEW],
 
-  // SUPERVISOR is displayed as "Safety Officer" in the apps. They can manage
-  // worker records (add/edit/print badges) in addition to viewing attendance.
+  // SUPERVISOR is displayed as "Safety Officer" in the apps. They work the site
+  // on mobile and run the day-to-day records on the admin panel: people, sites,
+  // vendors, designations and reports. They are deliberately kept out of system
+  // administration (users, devices, company settings, storage, audit) and cannot
+  // approve their own corrections. They do hold WORKER_VIEW_SENSITIVE — they are
+  // the ones who capture Aadhaar/PAN/bank at registration — and every reveal is
+  // audited like any other role's.
   SUPERVISOR: [
     Permission.WORKER_VIEW_LIMITED,
+    Permission.WORKER_VIEW_SENSITIVE,
     Permission.WORKER_MANAGE,
+    Permission.SITE_MANAGE,
+    Permission.VENDOR_MANAGE,
     Permission.ATTENDANCE_VIEW,
     Permission.CORRECTION_REQUEST,
+    Permission.REPORTS_ALL,
     Permission.REPORTS_SUMMARY,
     Permission.EMERGENCY_VIEW,
   ],

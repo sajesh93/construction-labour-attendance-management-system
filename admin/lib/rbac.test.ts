@@ -9,18 +9,35 @@ describe('navForRole', () => {
     expect(labels).toContain('Audit');
   });
 
-  it('hides vendors from site admin', () => {
+  it('gives site admin everything but organizations', () => {
     const labels = navForRole('SITE_ADMIN').map((i) => i.label);
     expect(labels).not.toContain('Organizations');
-    expect(labels).not.toContain('Vendors');
     expect(labels).toContain('Sites');
+    expect(labels).toContain('Vendors');
   });
 
-  it('limits supervisor to read/summary views', () => {
+  it('gives the safety officer operations and people, not administration', () => {
     const labels = navForRole('SUPERVISOR').map((i) => i.label);
-    expect(labels).toContain('Attendance');
-    expect(labels).toContain('Corrections');
-    expect(labels).not.toContain('Workers');
-    expect(labels).not.toContain('Users');
+    for (const allowed of [
+      'Dashboard',
+      'Attendance',
+      'Corrections',
+      'Reports',
+      'Workers',
+      'Staff',
+      'Visitors',
+      'Sites',
+      'Vendors',
+      'Designations',
+    ]) {
+      expect(labels).toContain(allowed);
+    }
+    for (const denied of ['Users', 'Devices', 'Company', 'Storage', 'Audit']) {
+      expect(labels).not.toContain(denied);
+    }
+  });
+
+  it('keeps the watchman out of the admin panel', () => {
+    expect(navForRole('WATCHMAN')).toHaveLength(0);
   });
 });
