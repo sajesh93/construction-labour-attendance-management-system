@@ -12,11 +12,14 @@ import {
   DialogTitle,
   IconButton,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Column } from '@/components/ui/DataTable';
@@ -41,13 +44,28 @@ function relativeTime(iso?: string | null): string {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-const STATUS_ORDER: Record<Device['status'], number> = {
-  PENDING: 0,
-  AUTHORIZED: 1,
-  REVOKED: 2,
+/**
+ * The tabs mirror the corrections page. Rejecting a pending device and revoking
+ * an authorized one both land on REVOKED — there is no separate REJECTED status
+ * — so the last tab covers both.
+ */
+const EMPTY_COPY: Record<Device['status'], { title: string; description: string }> = {
+  PENDING: {
+    title: 'Nothing to approve',
+    description: 'Open the mobile app or the admin panel and sign in — the device registers itself here, then approve it.',
+  },
+  AUTHORIZED: {
+    title: 'No approved devices',
+    description: 'Approve a device from the "To approve" tab and it will appear here.',
+  },
+  REVOKED: {
+    title: 'No rejected or revoked devices',
+    description: 'Devices you reject or revoke are listed here, and can be approved again later.',
+  },
 };
 
 export default function DevicesPage() {
+  const [tab, setTab] = React.useState<Device['status']>('PENDING');
   const qc = useQueryClient();
   const toast = useToast();
   const devices = useQuery({
@@ -84,6 +102,24 @@ export default function DevicesPage() {
     },
   });
 
+  // Delete confirmation target. The API refuses to delete a device that has
+  // marked attendance, so the error toast is the real guard here.
+  const [deleting, setDeleting] = React.useState<Device | null>(null);
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/devices/${id}`),
+    onSuccess: () => {
+      toast.success('Device deleted');
+      setDeleting(null);
+      qc.invalidateQueries({ queryKey: ['devices'] });
+    },
+    onError: (e) => {
+      const err = e as BrowserApiError;
+      setDeleting(null);
+      toast.error(err.body?.detail ?? err.body?.title ?? 'Failed to delete device');
+    },
+  });
+
   const [editing, setEditing] = React.useState<Device | null>(null);
   const [name, setName] = React.useState('');
 
@@ -106,11 +142,9 @@ export default function DevicesPage() {
     setName(d.label ?? '');
   };
 
-  // Pending devices first so approvals are never buried.
-  const rows = [...(devices.data ?? [])].sort(
-    (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
-  );
-  const pendingCount = rows.filter((d) => d.status === 'PENDING').length;
+  const all = devices.data ?? [];
+  const rows = all.filter((d) => d.status === tab);
+  const pendingCount = all.filter((d) => d.status === 'PENDING').length;
 
   const columns: Column<Device>[] = [
     {
@@ -211,6 +245,18 @@ export default function DevicesPage() {
               {d.status === 'PENDING' ? 'Reject' : 'Revoke'}
             </Button>
           )}
+          <Tooltip title="Delete device">
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                disabled={remove.isPending}
+                onClick={() => setDeleting(d)}
+              >
+                <DeleteOutlineIcon fontSize="inherit" />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Stack>
       ),
     },
@@ -231,13 +277,22 @@ export default function DevicesPage() {
         }
       />
 
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+        <Tab
+          label={pendingCount > 0 ? `To approve (${pendingCount})` : 'To approve'}
+          value="PENDING"
+        />
+        <Tab label="Approved" value="AUTHORIZED" />
+        <Tab label="Rejected & revoked" value="REVOKED" />
+      </Tabs>
+
       <DataTable<Device>
         columns={columns}
         rows={rows}
         loading={devices.isLoading}
         rowKey={(d) => d.id}
-        emptyTitle="No devices yet"
-        emptyDescription="Open the mobile app and sign in — it registers itself here, then authorize it."
+        emptyTitle={EMPTY_COPY[tab].title}
+        emptyDescription={EMPTY_COPY[tab].description}
       />
 
       <ConfirmDialog
@@ -267,6 +322,26 @@ export default function DevicesPage() {
           confirming && setStatus.mutate({ id: confirming.device.id, status: confirming.status })
         }
         onClose={() => setConfirming(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        title="Delete device?"
+        message={
+          deleting ? (
+            <>
+              <b>{deleting.label || deleting.deviceUid}</b> will be removed from the list entirely.
+              A device that has already marked attendance cannot be deleted — revoke it instead.
+            </>
+          ) : (
+            ''
+          )
+        }
+        confirmLabel="Delete"
+        danger
+        busy={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+        onClose={() => setDeleting(null)}
       />
 
       <Dialog open={!!editing} onClose={() => setEditing(null)} fullWidth maxWidth="xs">

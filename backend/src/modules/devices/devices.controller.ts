@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { DeviceStatus } from '@prisma/client';
 import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
@@ -43,5 +43,12 @@ export class DevicesController {
   @RequirePermissions(Permission.DEVICE_MANAGE)
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateDeviceDto) {
     return this.devices.update(user, id, dto);
+  }
+
+  // Only for devices that never marked attendance — see DevicesService.remove.
+  @Delete(':id')
+  @RequirePermissions(Permission.DEVICE_MANAGE)
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.devices.remove(user, id);
   }
 }

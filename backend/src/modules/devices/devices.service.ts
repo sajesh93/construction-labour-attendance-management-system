@@ -75,4 +75,51 @@ export class DevicesService {
 
     return updated;
   }
+
+  /**
+   * Hard-delete a device that was registered by mistake (a test phone, a browser
+   * nobody uses). Refused once the device has marked attendance: AttendanceTap
+   * .deviceId is an optional FK, so Prisma would SetNull on delete and quietly
+   * strip the device off historical punches. Revoking is the right move there —
+   * it blocks sign-in and keeps the trail intact.
+   */
+  async remove(user: AuthUser, id: string) {
+    const device = await this.prisma.device.findFirst({
+      where: { id, organizationId: user.organizationId },
+      include: { user: { select: { role: true } } },
+    });
+    if (!device) throw Errors.notFound('Device');
+
+    // Same guard as approval: an Admin's device is the Super Admin's to manage.
+    if (device.user?.role === 'SITE_ADMIN' && user.role !== 'SUPER_ADMIN') {
+      throw Errors.forbidden("Only the Super Admin can delete an Admin's device.");
+    }
+
+    const taps = await this.prisma.attendanceTap.count({ where: { deviceId: id } });
+    if (taps > 0) {
+      throw Errors.conflict(
+        `This device has recorded ${taps} attendance ${taps === 1 ? 'punch' : 'punches'}. ` +
+          'Deleting it would strip the device from those records — revoke it instead.',
+      );
+    }
+
+    await this.prisma.device.delete({ where: { id } });
+
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.userId,
+      actorRole: user.role,
+      action: 'DEVICE_DELETE',
+      entityType: 'Device',
+      entityId: id,
+      oldValue: {
+        deviceUid: device.deviceUid,
+        label: device.label,
+        status: device.status,
+        platform: device.platform,
+      },
+    });
+
+    return { deleted: true };
+  }
 }
