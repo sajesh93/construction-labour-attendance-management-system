@@ -7,11 +7,20 @@ import { qrPayload } from '@/components/QrBadge';
 import { photoSrc } from '@/components/PeopleDirectory';
 import { DisciplinaryBadges, SafetySeal, TRAINING_SEALS } from '@/components/SafetySeals';
 
+// Cards are printed on plain A4 and cut out, so the size is a free choice rather
+// than a fixed card stock: S/M/L scale the whole card off CR80 (85.6 × 54 mm).
+export type CardSize = 'S' | 'M' | 'L';
+export type CardOrientation = 'portrait' | 'landscape';
+
+const SIZE_SCALE: Record<CardSize, number> = { S: 0.82, M: 1, L: 1.22 };
+const BASE_LONG = 85.6;
+const BASE_SHORT = 54;
+
+/* --- PVC card-stock printing (disabled: we print on A4 sheets instead) ---
 // Standard PVC card stock sizes (long edge × short edge, in mm). These match the
 // blank cards that desktop PVC card printers (Evolis, Fargo, Magicard, Zebra…)
 // feed, so the printout lands edge-to-edge on the card.
 export type CardSize = 'CR80' | 'CR79' | 'CR100';
-export type CardOrientation = 'portrait' | 'landscape';
 
 export const PVC_SIZES: Record<CardSize, { long: number; short: number; label: string }> = {
   CR80: { long: 85.6, short: 54, label: 'CR80 — Standard (85.6 × 54 mm)' },
@@ -24,6 +33,14 @@ const BASE_SHORT = PVC_SIZES.CR80.short;
 
 export function cardDimsMm(size: CardSize, orientation: CardOrientation) {
   const { long, short } = PVC_SIZES[size];
+  return orientation === 'portrait' ? { w: short, h: long } : { w: long, h: short };
+}
+--- end PVC card-stock printing --- */
+
+export function cardDimsMm(size: CardSize, orientation: CardOrientation) {
+  const s = SIZE_SCALE[size];
+  const long = BASE_LONG * s;
+  const short = BASE_SHORT * s;
   return orientation === 'portrait' ? { w: short, h: long } : { w: long, h: short };
 }
 
@@ -66,8 +83,8 @@ export function IdCard({
   side: 'front' | 'back';
 }) {
   const { w, h } = cardDimsMm(size, orientation);
-  // A unit scale so text/QR grow with the card. 1 == CR80 (the reference size).
-  const u = PVC_SIZES[size].short / BASE_SHORT;
+  // A unit scale so text/QR grow with the card. 1 == Medium.
+  const u = SIZE_SCALE[size];
   const logoScale = org?.logoScale ?? 1;
 
   const shell: React.CSSProperties = {

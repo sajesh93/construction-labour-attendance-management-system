@@ -43,6 +43,17 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+  /* The cards flow as a wrapped row across the A4 sheet (the badges page sets the
+     flex layout and the cut gaps), so the print-area keeps its own display —
+     only the page chrome's spacing is stripped. */
+  .print-area {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+/* --- PVC card-stock printing (disabled: we print on A4 sheets instead) ---
+@media print {
   .print-area {
     display: block !important;
     margin: 0 !important;
@@ -50,12 +61,11 @@
     gap: 0 !important;
   }
 
-  /* Every wrapper between .print-area and a card face — the per-worker box and
-     the flex row holding front/back — is flattened to a plain block in normal
-     flow. Without this the faces sit side by side (~171mm) and the back one is
-     clipped off the card page, and the wrapper's padding/outline overflows the
-     page and emits blank cards. Matched structurally rather than by class name
-     so it cannot silently stop applying if the markup is reshuffled. */
+  // Every wrapper between .print-area and a card face — the per-worker box and
+  // the flex row holding front/back — is flattened to a plain block in normal
+  // flow. Without this the faces sit side by side (~171mm) and the back one is
+  // clipped off the card page, and the wrapper's padding/outline overflows the
+  // page and emits blank cards.
   .print-area *:has(.pvc-face):not(.pvc-skip) {
     display: block !important;
     position: static !important;
@@ -69,9 +79,9 @@
     overflow: visible !important;
   }
 
-  /* Each card face prints alone on its own (card-sized) page so a PVC card
-     printer feeds one blank per face. The @page size itself is injected by the
-     badges page to match the selected PVC stock. */
+  // Each card face prints alone on its own (card-sized) page so a PVC card
+  // printer feeds one blank per face. The @page size itself is injected by the
+  // badges page to match the selected PVC stock.
   .pvc-face {
     display: block !important;
     margin: 0 !important;
@@ -82,18 +92,16 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  /* Unticked cards never reach the printer. This must be !important and must be
-     excluded from the flatten rule above, which would otherwise re-show them:
-     the wrapper's own display:none comes from `sx` (unimportant) and loses to
-     any !important display. */
+  // Unticked cards never reach the printer.
   .print-area .pvc-skip {
     display: none !important;
   }
 
-  /* Suppress the trailing blank page after the very last selected face so the
-     printer doesn't eject (and waste) one extra card. */
+  // Suppress the trailing blank page after the very last selected face so the
+  // printer doesn't eject (and waste) one extra card.
   .pvc-last .pvc-face:last-child {
     break-after: auto;
     page-break-after: auto;
   }
 }
+--- end PVC card-stock printing --- */
