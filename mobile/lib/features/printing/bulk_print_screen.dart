@@ -65,6 +65,7 @@ class _BulkPrintScreenState extends ConsumerState<BulkPrintScreen> {
           emergencyName: r['emergencyContactName'] as String?,
           emergencyNumber: r['emergencyContactNumber'] as String?,
           photoUrl: r['photoUrl'] as String?,
+          isVisitor: r['category'] == 'VISITOR',
         ),
     ]);
   }

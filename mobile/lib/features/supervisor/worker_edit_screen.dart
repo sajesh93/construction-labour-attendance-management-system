@@ -518,6 +518,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
             inductedBy: _inductedBy.text.trim().isEmpty ? null : _inductedBy.text.trim(),
             validityTill: _validityTill?.toIso8601String().substring(0, 10),
             photoUrl: _photoUrl,
+            isVisitor: _isVisitor,
           ),
         ]);
       }

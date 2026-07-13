@@ -65,7 +65,12 @@ class BadgeData {
     this.validityTill,
     this.photoUrl,
     this.photoBytes,
+    this.isVisitor = false,
   });
+
+  /// Visitor passes print front-only — the back face carries induction and
+  /// training details a visitor never has. Matches the admin panel's badges page.
+  final bool isVisitor;
 
   final String fullName;
   final String workerCode;
@@ -109,6 +114,7 @@ class BadgeData {
         validityTill: validityTill,
         photoUrl: photoUrl,
         photoBytes: bytes,
+        isVisitor: isVisitor,
       );
 }
 
@@ -529,8 +535,13 @@ pw.Document buildCardsDocument(
                 mainAxisSize: pw.MainAxisSize.min,
                 children: [
                   _front(b, org, u),
-                  pw.SizedBox(width: 16),
-                  _back(b, org, u),
+                  // Visitor passes are single-sided; worker/staff cards keep the
+                  // front + back pair side by side so they can be cut out and
+                  // laminated double-sided.
+                  if (!b.isVisitor) ...[
+                    pw.SizedBox(width: 16),
+                    _back(b, org, u),
+                  ],
                 ],
               ),
           ],

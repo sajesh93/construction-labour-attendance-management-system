@@ -44,4 +44,22 @@ void main() {
     final bytes = await doc.save();
     expect(bytes.length, greaterThan(3000));
   });
+
+  // Visitor passes are single-sided — the back face carries induction/training
+  // detail a visitor never has. Same rule as the admin panel's badges page.
+  test('visitor passes print front-only', () async {
+    const visitor = BadgeData(
+      fullName: 'Preethi Nair',
+      workerCode: 'V-9002',
+      siteName: 'Brigade WTC 28th Floor',
+      isVisitor: true,
+    );
+    final visitorBytes = await buildCardsDocument(const [visitor]).save();
+    final twoSidedBytes = await buildCardsDocument(
+      const [BadgeData(fullName: 'Preethi Nair', workerCode: 'V-9002', siteName: 'Brigade WTC 28th Floor')],
+    ).save();
+
+    // Dropping the back face must measurably shrink the document.
+    expect(visitorBytes.length, lessThan(twoSidedBytes.length));
+  });
 }

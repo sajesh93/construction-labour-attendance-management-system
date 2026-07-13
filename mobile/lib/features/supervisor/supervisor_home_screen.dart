@@ -183,6 +183,7 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
         emergencyName: w.emergencyContactName,
         emergencyNumber: w.emergencyContactNumber,
         photoUrl: w.photoUrl,
+        isVisitor: w.category == 'VISITOR',
       ),
     ]);
   }
