@@ -21,7 +21,6 @@ describe('navForRole', () => {
     for (const allowed of [
       'Dashboard',
       'Attendance',
-      'Corrections',
       'Reports',
       'Workers',
       'Staff',
@@ -32,7 +31,7 @@ describe('navForRole', () => {
     ]) {
       expect(labels).toContain(allowed);
     }
-    for (const denied of ['Users', 'Devices', 'Company', 'Storage', 'Audit']) {
+    for (const denied of ['Corrections', 'Users', 'Devices', 'Company', 'Storage', 'Audit']) {
       expect(labels).not.toContain(denied);
     }
   });
