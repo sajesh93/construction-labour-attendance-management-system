@@ -204,3 +204,67 @@ describe('AttendanceService.handleTap', () => {
     ).rejects.toMatchObject({ code: 'DUPLICATE_TAP' });
   });
 });
+
+describe('AttendanceService.loggedOutToday', () => {
+  const user = {
+    organizationId: 'org-1',
+    role: 'SITE_ADMIN',
+    siteScopes: ['site-1'],
+  } as any;
+
+  it('returns one latest logged-out row per person and excludes people currently on site', async () => {
+    const workerBackOnSite = {
+      id: 'w1',
+      fullName: 'Ramesh',
+      workerCode: 'W001',
+      category: 'WORKER',
+    };
+    const workerGoneHome = { id: 'w2', fullName: 'Suresh', workerCode: 'W002', category: 'WORKER' };
+    const closedRows = [
+      {
+        id: 'closed-w1',
+        loginAt: new Date('2026-07-14T02:30:00Z'),
+        logoutAt: new Date('2026-07-14T04:30:00Z'),
+        workedMinutes: 120,
+        worker: workerBackOnSite,
+        site: { id: 'site-1', name: 'Site 1' },
+      },
+      {
+        id: 'closed-w2-latest',
+        loginAt: new Date('2026-07-14T02:30:00Z'),
+        logoutAt: new Date('2026-07-14T11:30:00Z'),
+        workedMinutes: 540,
+        worker: workerGoneHome,
+        site: { id: 'site-1', name: 'Site 1' },
+      },
+      {
+        id: 'closed-w2-earlier',
+        loginAt: new Date('2026-07-14T01:30:00Z'),
+        logoutAt: new Date('2026-07-14T02:00:00Z'),
+        workedMinutes: 30,
+        worker: workerGoneHome,
+        site: { id: 'site-1', name: 'Site 1' },
+      },
+    ];
+
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ workerId: 'w1' }])
+      .mockResolvedValueOnce(closedRows);
+    const { svc } = buildService({
+      organization: { findUnique: jest.fn().mockResolvedValue({ timezone: 'Asia/Kolkata' }) },
+      attendanceSession: { findMany },
+    });
+
+    const rows = await svc.loggedOutToday(user, 'all', undefined, '2026-07-14');
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('closed-w2-latest');
+    expect(findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({ state: 'OPEN', siteId: { in: ['site-1'] } }),
+      }),
+    );
+  });
+});

@@ -509,7 +509,18 @@ export class AttendanceService {
     const categoryFilter =
       category && category !== 'all' ? { worker: { category: category as PersonCategory } } : {};
 
-    return this.prisma.attendanceSession.findMany({
+    const openSessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        state: 'OPEN',
+        ...siteFilter,
+        ...categoryFilter,
+      },
+      select: { workerId: true },
+    });
+    const openWorkerIds = new Set(openSessions.map((s) => s.workerId));
+
+    const closedSessions = await this.prisma.attendanceSession.findMany({
       where: {
         organizationId: user.organizationId,
         workDate: date,
@@ -537,6 +548,18 @@ export class AttendanceService {
         site: { select: { id: true, name: true } },
       },
       orderBy: { logoutAt: 'desc' },
+    });
+
+    // The headline counts unique people for today. Keep this table/count on
+    // the same basis: latest logout per person, excluding people currently
+    // open in the same selected scope (they came back after logging out).
+    const seenWorkerIds = new Set<string>();
+    return closedSessions.filter((session) => {
+      if (openWorkerIds.has(session.worker.id) || seenWorkerIds.has(session.worker.id)) {
+        return false;
+      }
+      seenWorkerIds.add(session.worker.id);
+      return true;
     });
   }
 
