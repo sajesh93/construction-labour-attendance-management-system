@@ -60,6 +60,17 @@ export class AttendanceController {
     return this.attendance.activeSessions(user, siteId, category);
   }
 
+  @Get('logged-out')
+  @RequirePermissions(Permission.ATTENDANCE_VIEW)
+  loggedOut(
+    @CurrentUser() user: AuthUser,
+    @Query('siteId') siteId?: string,
+    @Query('category') category?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.attendance.loggedOutToday(user, siteId, category, date);
+  }
+
   @Get('dashboard-stats')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
   dashboardStats(@CurrentUser() user: AuthUser) {

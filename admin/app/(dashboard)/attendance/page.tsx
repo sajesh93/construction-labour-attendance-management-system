@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import PrintIcon from '@mui/icons-material/Print';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
@@ -34,6 +35,22 @@ import { DaySummary, Site } from '@/lib/types';
 interface ActiveSession {
   id: string;
   loginAt: string;
+  worker: {
+    id: string;
+    fullName: string;
+    workerCode: string;
+    category?: string;
+    designation?: { name: string } | null;
+    vendor?: { name: string } | null;
+  };
+  site?: { id: string; name: string } | null;
+}
+
+interface ClosedSession {
+  id: string;
+  loginAt: string;
+  logoutAt: string;
+  workedMinutes: number | null;
   worker: {
     id: string;
     fullName: string;
@@ -82,6 +99,16 @@ function fmtTime(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/** "7h 20m" — how long they were on site. */
+function fmtWorked(minutes: number | null, loginAt: string, logoutAt: string): string {
+  const mins =
+    minutes ??
+    Math.max(0, Math.round((new Date(logoutAt).getTime() - new Date(loginAt).getTime()) / 60000));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 function Kpi({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
@@ -184,6 +211,13 @@ export default function AttendancePage() {
     refetchInterval: 30000,
   });
 
+  // Who has already gone home today.
+  const loggedOut = useQuery({
+    queryKey: ['logged-out', siteId, category],
+    queryFn: () => api.get<ClosedSession[]>(`/attendance/logged-out${qs()}`),
+    refetchInterval: 30000,
+  });
+
   const siteLabel =
     siteId === 'all' ? 'All sites' : (sites.data?.find((s) => s.id === siteId)?.name ?? 'Selected site');
   const catLabel = category === 'all' ? 'people' : CATEGORY_LABEL[category].toLowerCase();
@@ -255,9 +289,60 @@ export default function AttendancePage() {
     },
   ];
 
+  const loggedOutColumns: Column<ClosedSession>[] = [
+    { key: 'name', label: 'Name', render: (s) => s.worker.fullName },
+    { key: 'code', label: 'Code', render: (s) => s.worker.workerCode },
+    {
+      key: 'category',
+      label: 'Category',
+      render: (s) => CATEGORY_LABEL[s.worker.category ?? ''] ?? s.worker.category ?? '—',
+    },
+    { key: 'designation', label: 'Designation', render: (s) => s.worker.designation?.name ?? '—' },
+    { key: 'vendor', label: 'Vendor', render: (s) => s.worker.vendor?.name ?? '—' },
+    ...(siteId === 'all'
+      ? [
+          {
+            key: 'site',
+            label: 'Site',
+            render: (s: ClosedSession) => s.site?.name ?? '—',
+          } as Column<ClosedSession>,
+        ]
+      : []),
+    {
+      key: 'loginAt',
+      label: 'Logged in at',
+      render: (s) => (
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+          {fmtTime(s.loginAt)}
+        </Typography>
+      ),
+    },
+    {
+      key: 'logoutAt',
+      label: 'Logged out at',
+      render: (s) => (
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap', fontWeight: 500 }}>
+          {fmtTime(s.logoutAt)}
+        </Typography>
+      ),
+    },
+    {
+      key: 'worked',
+      label: 'On site for',
+      render: (s) => (
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+          {fmtWorked(s.workedMinutes, s.loginAt, s.logoutAt)}
+        </Typography>
+      ),
+    },
+  ];
+
   return (
     <>
-      <PageHeader title="Attendance" subtitle="Today's headcount, breakdowns and live open sessions" />
+      <PageHeader
+        title="Attendance"
+        subtitle="Today's headcount, breakdowns, who is on site and who has left"
+      />
 
       <FilterBar>
         <TextField
@@ -429,6 +514,27 @@ export default function AttendancePage() {
           rowKey={(s) => s.id}
           emptyTitle="No open sessions"
           emptyDescription="No one is logged in on the selected site right now."
+        />
+      </Box>
+
+      {/* Who has gone home today */}
+      <Box sx={{ mt: 3 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.25 }}>
+          <LogoutOutlinedIcon fontSize="small" color="action" />
+          <Typography variant="subtitle1">
+            Logged out today ({loggedOut.data?.length ?? 0})
+          </Typography>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+          People who scanned out and left the site today, most recent first
+        </Typography>
+        <DataTable
+          columns={loggedOutColumns}
+          rows={loggedOut.data}
+          loading={loggedOut.isLoading}
+          rowKey={(s) => s.id}
+          emptyTitle="Nobody has logged out yet"
+          emptyDescription="No one has scanned out on the selected site today."
         />
       </Box>
       </Box>

@@ -486,6 +486,61 @@ export class AttendanceService {
   }
 
   /**
+   * Everyone who has LEFT the site today — the closed sessions, newest logout
+   * first. The counterpart of [activeSessions]: that answers "who is still
+   * here", this answers "who has gone home". AUTO_CLOSED sessions are excluded:
+   * nobody scanned out of those, so they belong in the missed-logout list.
+   */
+  async loggedOutToday(user: AuthUser, siteId?: string, category?: string, dateStr?: string) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: user.organizationId },
+      select: { timezone: true },
+    });
+    const date = dateStr
+      ? new Date(dateStr)
+      : businessDate(new Date(), org?.timezone ?? 'Asia/Kolkata');
+
+    const siteFilter =
+      siteId && siteId !== 'all'
+        ? { siteId }
+        : user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
+          ? { siteId: { in: user.siteScopes } }
+          : {};
+    const categoryFilter =
+      category && category !== 'all' ? { worker: { category: category as PersonCategory } } : {};
+
+    return this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        workDate: date,
+        state: 'CLOSED',
+        logoutAt: { not: null },
+        ...siteFilter,
+        ...categoryFilter,
+      },
+      select: {
+        id: true,
+        loginAt: true,
+        logoutAt: true,
+        workedMinutes: true,
+        worker: {
+          select: {
+            id: true,
+            fullName: true,
+            photoUrl: true,
+            workerCode: true,
+            category: true,
+            designation: { select: { name: true } },
+            vendor: { select: { name: true } },
+          },
+        },
+        site: { select: { id: true, name: true } },
+      },
+      orderBy: { logoutAt: 'desc' },
+    });
+  }
+
+  /**
    * Day summary for the attendance dashboard: how many people logged in today,
    * broken down by designation, by vendor and by category. siteId omitted/'all'
    * = all sites in the caller's scope; category omitted/'all' = everyone.
