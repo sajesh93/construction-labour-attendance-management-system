@@ -139,10 +139,10 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
     );
   }
 
-  /// Scan → confirm → record. A scan never writes attendance on its own: the
-  /// operator sees who was scanned and whether it is a LOGIN or a LOGOUT, and
-  /// must press OK. Cancel records nothing and puts the camera straight back up
-  /// for the next badge, so a queue at the gate keeps moving.
+  /// Continuous gate loop: scan → one dialog showing the worker's details and
+  /// LOGIN/LOGOUT with OK/Cancel → record on OK → camera straight back up for
+  /// the next badge. The watchman never taps "Scan" again between workers; the
+  /// only way out is the back button on the scanner.
   Future<void> _onQr() async {
     if (_siteId == null) return;
     if (await _clockIsWrong()) return;
@@ -156,16 +156,13 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       if (code == null || !mounted) return;
       // QR badges are "CLAMS:<EMP-ID>"; accept a bare code too.
       final value = code.startsWith('CLAMS:') ? code.substring(6) : code;
-      final recorded = await _reviewScan(value.trim());
-      if (recorded || !mounted) return;
-      // Cancelled — loop round and reopen the scanner.
+      await _reviewScan(value.trim());
+      // Recorded, cancelled or refused — either way, back to the camera.
     }
   }
 
-  /// Shows the OK/Cancel prompt for one scanned badge. Returns true when the
-  /// punch was recorded (or refused outright, e.g. an expired card), false when
-  /// the operator cancelled and we should scan again.
-  Future<bool> _reviewScan(String identifier) async {
+  /// Handles one scanned badge: preview (writes nothing) → confirm → record.
+  Future<void> _reviewScan(String identifier) async {
     setState(() => _busy = true);
     final outcome = await ref.read(attendanceRepositoryProvider).preview(
           siteId: _siteId!,
@@ -173,20 +170,27 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
           identifier: identifier,
           cooldownSeconds: _cooldownSeconds,
         );
-    if (!mounted) return true;
+    if (!mounted) return;
     setState(() => _busy = false);
 
     switch (outcome.action) {
       case TapAction.duplicate:
+        final name = outcome.worker?.fullName;
+        _toast(
+          '${name == null ? 'Duplicate scan' : '$name — duplicate scan'} ignored '
+          '(${outcome.cooldownRemainingSeconds}s cooldown)',
+          ClamsColors.warning,
+        );
         setState(() => _status =
             'Duplicate scan ignored (${outcome.cooldownRemainingSeconds}s cooldown)');
-        return true;
+        return;
       case TapAction.expired:
         setState(() => _status = 'ID card expired — login not recorded');
         await _showExpired(outcome.message);
-        return true;
+        return;
       case TapAction.login:
       case TapAction.logout:
+        // One screen: the worker's details AND the OK/Cancel decision.
         final ok = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -198,11 +202,25 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
         );
         if (ok != true) {
           if (mounted) setState(() => _status = 'Cancelled — nothing recorded');
-          return false;
+          return;
         }
         await _handleTap(TapSource.qr, identifier);
-        return true;
+        return;
     }
+  }
+
+  /// Brief confirmation that doesn't interrupt the next scan.
+  void _toast(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   /// A wrong phone clock would record punches at the wrong time — refuse the
@@ -285,7 +303,19 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
         setState(() => _status = outcome.worker == null
             ? (outcome.message ?? 'Recorded')
             : '$verb recorded: ${outcome.worker!.fullName}');
-        if (outcome.worker != null) {
+        // A QR scan already showed the worker's details on the confirm screen —
+        // don't make the watchman dismiss the same person twice. Manual entry
+        // has no such screen, so it still gets the full card.
+        if (source == TapSource.qr) {
+          _toast(
+            outcome.worker == null
+                ? '$verb recorded'
+                : '$verb recorded: ${outcome.worker!.fullName}',
+            outcome.action == TapAction.login
+                ? ClamsColors.success
+                : ClamsColors.info,
+          );
+        } else if (outcome.worker != null) {
           await showModalBottomSheet(
             context: context,
             builder: (_) => WorkerCardSheet(worker: outcome.worker!, action: verb),
