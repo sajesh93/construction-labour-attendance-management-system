@@ -98,6 +98,11 @@ class DeviceService {
         return DeviceStatus(DeviceState.authorized, deviceId: storedId);
       }
       return DeviceStatus(DeviceState.error, message: e.message ?? 'network error');
+    } catch (e) {
+      // Anything else (a keystore write that timed out, an unexpected response
+      // shape) must still return a state. Letting it throw would leave the site
+      // page spinning forever with no way out but clearing app data.
+      return DeviceStatus(DeviceState.error, message: e.toString());
     }
   }
 }

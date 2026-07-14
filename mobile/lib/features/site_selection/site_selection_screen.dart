@@ -43,7 +43,22 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
     // is approved — register it and hold here until an admin authorizes it.
     final role = ref.read(authControllerProvider).role;
     if (role != 'SUPER_ADMIN') {
-      final st = await ref.read(deviceServiceProvider).ensureRegisteredAndAuthorized();
+      final DeviceStatus st;
+      try {
+        st = await ref
+            .read(deviceServiceProvider)
+            .ensureRegisteredAndAuthorized()
+            .timeout(const Duration(seconds: 30));
+      } catch (e) {
+        // Never strand the operator on a spinner: show the failure and let
+        // them retry or sign out.
+        if (!mounted) return;
+        setState(() {
+          _error = 'Could not check this device: $e';
+          _loading = false;
+        });
+        return;
+      }
       if (!mounted) return;
       if (st.state == DeviceState.pending) {
         final uid = await ref.read(localDbProvider).getMeta('device_uid');
