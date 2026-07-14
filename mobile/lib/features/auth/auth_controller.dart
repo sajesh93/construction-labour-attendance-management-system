@@ -113,8 +113,13 @@ class AuthController extends StateNotifier<AuthState> {
   Future<bool> login(String identifier, String password) async {
     state = state.copyWith(loading: true, error: null);
     try {
+      // Dio's connectTimeout does not reliably cover a stalled DNS lookup on
+      // Android: on a captive-portal/blocked network the request future can
+      // hang with nothing ever thrown, leaving the button on "Signing in…"
+      // forever. This outer bound guarantees the screen always comes back.
       final res = await _dio
-          .post('/auth/login', data: {'identifier': identifier, 'password': password});
+          .post('/auth/login', data: {'identifier': identifier, 'password': password})
+          .timeout(const Duration(seconds: 30));
 
       final access = res.data['accessToken'] as String?;
       final refresh = res.data['refreshToken'] as String?;
@@ -155,8 +160,8 @@ class AuthController extends StateNotifier<AuthState> {
     } on TimeoutException {
       state = state.copyWith(
         loading: false,
-        error: 'Could not save the session on this phone (secure storage timed out). '
-            'Restart the phone and try again.',
+        error: 'Sign-in timed out. The phone could not reach the server — check '
+            'that this network allows the internet, then try again.',
       );
       return false;
     } catch (e) {
