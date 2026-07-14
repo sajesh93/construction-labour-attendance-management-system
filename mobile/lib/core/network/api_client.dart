@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../config/env.dart';
 import '../storage/secure_store.dart';
@@ -19,10 +20,15 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await _store.accessToken;
+          // These reads sit in front of EVERY request. The keystore is a
+          // platform channel and on some devices (seen on MIUI) a read can
+          // stall forever — with no timeout here the request is never sent,
+          // nothing throws, and the screen hangs (e.g. login stuck on
+          // "Signing in…"). A missing header is recoverable; a hang is not.
+          final token = await _read(() => _store.accessToken, 'accessToken');
           if (token != null) options.headers['authorization'] = 'Bearer $token';
-          final deviceId = await _store.deviceId;
-          final deviceToken = await _store.deviceToken;
+          final deviceId = await _read(() => _store.deviceId, 'deviceId');
+          final deviceToken = await _read(() => _store.deviceToken, 'deviceToken');
           if (deviceId != null) options.headers['x-device-id'] = deviceId;
           if (deviceToken != null) options.headers['x-device-token'] = deviceToken;
           handler.next(options);
@@ -45,6 +51,18 @@ class ApiClient {
   final SecureStore _store;
 
   Dio get dio => _dio;
+
+  /// Read one credential, never blocking the request for more than 3s.
+  /// A stalled/broken keystore yields null (request goes out unauthenticated
+  /// and the server answers 401) instead of freezing the app.
+  static Future<String?> _read(Future<String?> Function() get, String key) async {
+    try {
+      return await get().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[api_client] secure-storage read "$key" failed: $e');
+      return null;
+    }
+  }
 
   bool _isRefreshCall(RequestOptions o) => o.path.contains('/auth/refresh');
 
