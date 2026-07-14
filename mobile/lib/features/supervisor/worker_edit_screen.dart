@@ -18,10 +18,14 @@ import '../printing/print_cards.dart';
 /// panel form. IDs (W-/S-/V-####) are always auto-generated and immutable;
 /// the QR badge is derived from the ID, so no credential input is needed.
 class WorkerEditScreen extends ConsumerStatefulWidget {
-  const WorkerEditScreen({super.key, this.workerId});
+  const WorkerEditScreen({super.key, this.workerId, this.initialCategory = 'WORKER'});
 
   /// Null = create new.
   final String? workerId;
+
+  /// What the "Add" button opened: WORKER, STAFF or VISITOR. Ignored on edit —
+  /// the stored category wins.
+  final String initialCategory;
 
   @override
   ConsumerState<WorkerEditScreen> createState() => _WorkerEditScreenState();
@@ -59,7 +63,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   final _escortName = TextEditingController();
   final _visitorCompany = TextEditingController();
 
-  String _category = 'WORKER';
+  late String _category = widget.initialCategory;
+  String? _companyName;
   String? _gender;
   String? _status;
   DateTime? _dob;
@@ -89,6 +94,10 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
 
   bool get _isEdit => widget.workerId != null;
   bool get _isVisitor => _category == 'VISITOR';
+
+  /// Staff are the company's own people: the employer is captured automatically
+  /// and we keep only the minimum on file — no bank, nominee or induction card.
+  bool get _isStaff => _category == 'STAFF';
 
   @override
   void initState() {
@@ -136,6 +145,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       final results = await Future.wait([
         dio.get('/designations'),
         dio.get('/vendors'),
+        dio.get('/organizations/current'),
         if (_isEdit) dio.get('/workers/${widget.workerId}'),
       ]);
       _designations = (results[0].data as List).cast<Map<String, dynamic>>();
@@ -143,8 +153,11 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
           .cast<Map<String, dynamic>>()
           .where((v) => v['isActive'] != false)
           .toList();
+      // Staff work for us, not a contractor — read the company name rather than
+      // hard-coding it, so a rename in Company settings follows through.
+      _companyName = (results[2].data as Map<String, dynamic>)['name'] as String?;
       if (_isEdit) {
-        final w = results[2].data as Map<String, dynamic>;
+        final w = results[3].data as Map<String, dynamic>;
         _existing = w;
         _workerCode = (w['workerCode'] ?? '') as String;
         _name.text = (w['fullName'] ?? '') as String;
@@ -424,30 +437,31 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         'dateOfBirth': _dob!.toIso8601String().substring(0, 10),
       if (!_isVisitor && text(_language) != null) 'language': text(_language),
       if (text(_mobile) != null) 'mobileNumber': text(_mobile),
-      if (!_isVisitor && text(_pincode) != null) 'pincode': text(_pincode),
+      if (!_isVisitor && !_isStaff && text(_pincode) != null) 'pincode': text(_pincode),
       if (text(_bloodGroup) != null) 'bloodGroup': text(_bloodGroup),
       if (text(_emergencyName) != null) 'emergencyContactName': text(_emergencyName),
       if (text(_emergencyNumber) != null) 'emergencyContactNumber': text(_emergencyNumber),
-      if (text(_nomineeName) != null) 'nomineeName': text(_nomineeName),
-      if (text(_nomineeRelation) != null) 'nomineeRelation': text(_nomineeRelation),
-      if (!_isVisitor) ...{
-        if (_screeningOn != null)
-          'screeningDoneOn': _screeningOn!.toIso8601String().substring(0, 10),
-        if (text(_screeningBy) != null) 'screeningDoneBy': text(_screeningBy),
+      if (!_isStaff && text(_nomineeName) != null) 'nomineeName': text(_nomineeName),
+      if (!_isStaff && text(_nomineeRelation) != null) 'nomineeRelation': text(_nomineeRelation),
+      // Induction only — screening is the same step, and staff carry no card.
+      if (!_isVisitor && !_isStaff) ...{
         if (_inductionOn != null)
           'inductionDoneOn': _inductionOn!.toIso8601String().substring(0, 10),
         if (text(_inductedBy) != null) 'inductedBy': text(_inductedBy),
         if (_validityTill != null)
           'validityTill': _validityTill!.toIso8601String().substring(0, 10),
       },
-      if (text(_bankName) != null) 'bankName': text(_bankName),
-      if (text(_bankAccount) != null) 'bankAccountNumber': text(_bankAccount),
-      if (text(_ifsc) != null) 'ifscCode': text(_ifsc),
-      if (text(_pf) != null) 'pfNumber': text(_pf),
-      if (text(_esi) != null) 'esiNumber': text(_esi),
+      if (!_isStaff) ...{
+        if (text(_bankName) != null) 'bankName': text(_bankName),
+        if (text(_bankAccount) != null) 'bankAccountNumber': text(_bankAccount),
+        if (text(_ifsc) != null) 'ifscCode': text(_ifsc),
+        if (text(_pf) != null) 'pfNumber': text(_pf),
+        if (text(_esi) != null) 'esiNumber': text(_esi),
+      },
       if (text(_natureOfContractor) != null) 'natureOfContractor': text(_natureOfContractor),
       if (!_isVisitor && _designationId != null) 'designationId': _designationId,
-      if (!_isVisitor && _vendorId != null) 'vendorId': _vendorId,
+      // Staff have no vendor: they are employed by the company itself.
+      if (!_isVisitor && !_isStaff && _vendorId != null) 'vendorId': _vendorId,
       // On edit, always send photoUrl: null clears a removed photo.
       if (_isEdit) 'photoUrl': _photoUrl else if (_photoUrl != null) 'photoUrl': _photoUrl,
       if (!_isVisitor) ...{
@@ -465,7 +479,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         if (_idProofPhotoId != null) 'idProofPhotoId': _idProofPhotoId,
       },
       if (_isEdit && _status != null) 'status': _status,
-      if (!_isEdit && _joinDate != null)
+      if (!_isEdit && !_isStaff && _joinDate != null)
         'joinDate': _joinDate!.toIso8601String().substring(0, 10),
       if (!_isEdit && _siteId != null) 'siteId': _siteId,
       // No workerCode: IDs are always auto-generated server-side (W-/S-/V-####).
@@ -730,7 +744,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                   _text(_mobile, 'Mobile number', keyboard: TextInputType.phone),
                   Row(
                     children: [
-                      if (!_isVisitor) ...[
+                      if (!_isVisitor && !_isStaff) ...[
                         Expanded(
                             child:
                                 _text(_pincode, 'Pincode', keyboard: TextInputType.number)),
@@ -830,22 +844,34 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                         onChanged: (v) => setState(() => _designationId = v),
                       ),
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: _vendorId,
-                        decoration:
-                            const InputDecoration(labelText: 'Contractor (vendor)'),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text('—')),
-                          for (final v in _vendors)
-                            DropdownMenuItem(
-                                value: v['id'] as String, child: Text(v['name'] as String)),
-                        ],
-                        onChanged: (v) => setState(() => _vendorId = v),
-                      ),
+                      // Staff are employed by the company — no vendor to pick.
+                      if (_isStaff)
+                        TextFormField(
+                          key: ValueKey(_companyName),
+                          initialValue: _companyName ?? 'Loading…',
+                          enabled: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Company',
+                            helperText: 'Staff are employed by the company',
+                          ),
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          initialValue: _vendorId,
+                          decoration:
+                              const InputDecoration(labelText: 'Contractor (vendor)'),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('—')),
+                            for (final v in _vendors)
+                              DropdownMenuItem(
+                                  value: v['id'] as String, child: Text(v['name'] as String)),
+                          ],
+                          onChanged: (v) => setState(() => _vendorId = v),
+                        ),
                       const SizedBox(height: 12),
                       if (_category == 'WORKER')
                         _text(_natureOfContractor, 'Nature of contractor'),
-                      if (!_isEdit)
+                      if (!_isEdit && !_isStaff)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: OutlinedButton(
@@ -864,35 +890,18 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     ]),
 
                   if (!_isVisitor)
-                    _section('Emergency & nominee', [
+                    _section(_isStaff ? 'Emergency contact' : 'Emergency & nominee', [
                       _text(_emergencyName, 'Emergency contact name'),
                       _text(_emergencyNumber, 'Emergency contact number',
                           keyboard: TextInputType.phone),
-                      _text(_nomineeName, 'Nominee name'),
-                      _text(_nomineeRelation, 'Nominee relation (e.g. Wife)'),
+                      if (!_isStaff) _text(_nomineeName, 'Nominee name'),
+                      if (!_isStaff) _text(_nomineeRelation, 'Nominee relation (e.g. Wife)'),
                     ]),
 
-                  if (!_isVisitor)
-                    _section('Screening & ID card', [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: OutlinedButton(
-                        onPressed: () => _pickDate(
-                          current: _screeningOn,
-                          first: DateTime(2000),
-                          onPicked: (d) => setState(() => _screeningOn = d),
-                        ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            _screeningOn == null
-                                ? 'Screening done on'
-                                : 'Screening done on: ${_screeningOn!.day}/${_screeningOn!.month}/${_screeningOn!.year}',
-                          ),
-                        ),
-                      ),
-                    ),
-                    _text(_screeningBy, 'Screening done by'),
+                  // Screening and induction are the same step on site, so only
+                  // induction is captured. Staff carry no induction card.
+                  if (!_isVisitor && !_isStaff)
+                    _section('Induction & ID card', [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: OutlinedButton(
@@ -933,7 +942,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     ),
                   ]),
 
-                  if (!_isVisitor)
+                  if (!_isVisitor && !_isStaff)
                     _section('Bank & statutory', [
                       _text(_bankName, 'Bank name'),
                       _text(_bankAccount, 'Account number', keyboard: TextInputType.number),

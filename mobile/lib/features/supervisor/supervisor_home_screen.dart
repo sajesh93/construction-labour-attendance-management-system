@@ -157,9 +157,47 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
     );
   }
 
-  Future<void> _addWorker() async {
+  /// Ask what kind of person is being registered, then open the form on that
+  /// category. The form can add staff and visitors too — this makes it reachable
+  /// instead of hiding it behind a "Type" dropdown labelled "Add worker".
+  Future<void> _addPerson() async {
+    final category = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Who are you adding?',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.engineering, color: ClamsColors.primary),
+              title: const Text('Labour / worker'),
+              subtitle: const Text('Contractor worker with an induction card'),
+              onTap: () => Navigator.pop(ctx, 'WORKER'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.badge_outlined, color: ClamsColors.primary),
+              title: const Text('Staff'),
+              subtitle: const Text('Company employee — minimum details only'),
+              onTap: () => Navigator.pop(ctx, 'STAFF'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline, color: ClamsColors.primary),
+              title: const Text('Visitor'),
+              subtitle: const Text('Short visit — escort and ID proof'),
+              onTap: () => Navigator.pop(ctx, 'VISITOR'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (category == null || !mounted) return;
     final created = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const WorkerEditScreen()),
+      MaterialPageRoute(builder: (_) => WorkerEditScreen(initialCategory: category)),
     );
     if (created == true) _load();
   }
@@ -255,9 +293,9 @@ class _SupervisorHomeScreenState extends ConsumerState<SupervisorHomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addWorker,
+        onPressed: _addPerson,
         icon: const Icon(Icons.person_add),
-        label: const Text('Add worker'),
+        label: const Text('Add person'),
       ),
       body: NotificationWatcher(
         child: _loading

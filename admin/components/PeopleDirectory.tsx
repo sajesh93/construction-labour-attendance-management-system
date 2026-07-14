@@ -273,6 +273,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   const aadhaarBackPhotoId = watch('aadhaarBackPhotoId');
   const idProofPhotoId = watch('idProofPhotoId');
   const isVisitor = category === 'VISITOR';
+  // Staff are our own people: they work for the company, not a contractor, and
+  // we keep only the minimum on file (no bank, no nominee, no screening card).
+  const isStaff = category === 'STAFF';
 
   const [sortBy, setSortBy] = React.useState('');
   const listUrl = `/workers?category=${category}&q=${encodeURIComponent(q)}&limit=200${
@@ -306,6 +309,13 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   };
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
+  // Staff belong to the company itself — read the name rather than hard-coding
+  // it, so a rename in Company settings follows through automatically.
+  const organization = useQuery({
+    queryKey: ['organization'],
+    queryFn: () => api.get<{ name: string }>('/organizations/current'),
+    enabled: isStaff,
+  });
   const designations = useQuery({
     queryKey: ['designations'],
     queryFn: () => api.get<Designation[]>('/designations'),
@@ -784,7 +794,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 ) : (
                   <>
                     <TableCell>Designation</TableCell>
-                    <TableCell>Vendor</TableCell>
+                    <TableCell>{isStaff ? 'Company' : 'Vendor'}</TableCell>
                   </>
                 )}
                 <TableCell>Mobile</TableCell>
@@ -840,7 +850,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                     ) : (
                       <>
                         <TableCell>{w.designation?.name ?? '—'}</TableCell>
-                        <TableCell>{w.vendor?.name ?? '—'}</TableCell>
+                        <TableCell>
+                          {isStaff ? (organization.data?.name ?? '—') : (w.vendor?.name ?? '—')}
+                        </TableCell>
                       </>
                     )}
                     <TableCell>{w.mobileNumber ?? '—'}</TableCell>
@@ -1097,7 +1109,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
               {!isVisitor && field('dateOfBirth', 'Date of birth', { type: 'date' })}
               {!isVisitor && field('language', 'Language')}
               {field('mobileNumber', 'Mobile number')}
-              {!isVisitor && field('pincode', 'Zipcode / pincode')}
+              {!isVisitor && !isStaff && field('pincode', 'Zipcode / pincode')}
               {field('bloodGroup', 'Blood group')}
               {isVisitor && field('escortName', 'Escort name *', { required: 'Escort name is required' })}
               {editing &&
@@ -1119,42 +1131,61 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   'Designation',
                   (designations.data ?? []).map((d) => ({ value: d.id, label: d.name })),
                 )}
-              {isVisitor
-                ? field('visitorCompany', 'Visitor company')
-                : selectField(
-                    'vendorId',
-                    'Contractor (vendor)',
-                    (vendors.data ?? []).map((v) => ({ value: v.id, label: v.name })),
-                  )}
+              {isVisitor && field('visitorCompany', 'Visitor company')}
+              {/* Staff are employed by us — the company is captured automatically. */}
+              {isStaff && (
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Company"
+                    value={organization.data?.name ?? 'Loading…'}
+                    disabled
+                    helperText="Staff are employed by the company"
+                  />
+                </Grid>
+              )}
+              {!isVisitor &&
+                !isStaff &&
+                selectField(
+                  'vendorId',
+                  'Contractor (vendor)',
+                  (vendors.data ?? []).map((v) => ({ value: v.id, label: v.name })),
+                )}
               {category === 'WORKER' && field('natureOfContractor', 'Nature of contractor')}
               {selectField(
                 'siteId',
                 'Site',
                 (sites.data ?? []).map((s) => ({ value: s.id, label: s.name })),
               )}
-              {field('joinDate', isVisitor ? 'Visit date' : 'Date of joining', {
-                type: 'date',
-                disabled: !!editing,
-              })}
+              {!isStaff &&
+                field('joinDate', isVisitor ? 'Visit date' : 'Date of joining', {
+                  type: 'date',
+                  disabled: !!editing,
+                })}
             </Grid>
 
             {showBankSections && (
               <>
-                <SectionHeading>Nominee & emergency</SectionHeading>
+                <SectionHeading>
+                  {isStaff ? 'Emergency contact' : 'Nominee & emergency'}
+                </SectionHeading>
                 <Grid container spacing={2}>
-                  {field('nomineeName', 'Nominee name')}
-                  {field('nomineeRelation', 'Nominee relation')}
+                  {!isStaff && field('nomineeName', 'Nominee name')}
+                  {!isStaff && field('nomineeRelation', 'Nominee relation')}
                   {field('emergencyContactName', 'Emergency contact name')}
                   {field('emergencyContactNumber', 'Emergency contact number')}
                 </Grid>
 
-                <SectionHeading>Bank & statutory</SectionHeading>
+                {/* Staff keep their Gov ID (identity) but no bank or statutory
+                    payroll details — those live in HR, not here. */}
+                <SectionHeading>{isStaff ? 'Gov ID' : 'Bank & statutory'}</SectionHeading>
                 <Grid container spacing={2}>
-                  {field('bankName', 'Bank name')}
-                  {field('bankAccountNumber', 'Account number')}
-                  {field('ifscCode', 'IFSC code')}
-                  {field('pfNumber', 'PF number')}
-                  {field('esiNumber', 'ESI number')}
+                  {!isStaff && field('bankName', 'Bank name')}
+                  {!isStaff && field('bankAccountNumber', 'Account number')}
+                  {!isStaff && field('ifscCode', 'IFSC code')}
+                  {!isStaff && field('pfNumber', 'PF number')}
+                  {!isStaff && field('esiNumber', 'ESI number')}
                   {field('govIdType', 'Gov ID type (e.g. Aadhaar)')}
                   {field(
                     'aadhaar',
@@ -1205,14 +1236,18 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
 
             {!isVisitor && (
               <>
-                <SectionHeading>Screening & ID card</SectionHeading>
-                <Grid container spacing={2}>
-                  {field('screeningDoneOn', 'Screening done on', { type: 'date' })}
-                  {field('screeningDoneBy', 'Screening done by')}
-                  {field('inductionDoneOn', 'Induction done on', { type: 'date' })}
-                  {field('inductedBy', 'Inducted by')}
-                  {field('validityTill', 'Validity till', { type: 'date' })}
-                </Grid>
+                {/* Screening and induction are the same step on site — one pair
+                    of fields, not two. Staff carry no induction card at all. */}
+                {!isStaff && (
+                  <>
+                    <SectionHeading>Induction & ID card</SectionHeading>
+                    <Grid container spacing={2}>
+                      {field('inductionDoneOn', 'Induction done on', { type: 'date' })}
+                      {field('inductedBy', 'Inducted by')}
+                      {field('validityTill', 'Validity till', { type: 'date' })}
+                    </Grid>
+                  </>
+                )}
 
                 <SectionHeading>Credentials</SectionHeading>
                 <Grid container spacing={2}>

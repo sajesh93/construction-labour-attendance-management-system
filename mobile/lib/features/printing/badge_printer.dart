@@ -405,8 +405,9 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        _bar('SCREENING & INDUCTION CARD', u, title: true),
-        // Company + screening rows | QR
+        _bar('INDUCTION CARD', u, title: true),
+        // Company + induction rows | QR. Screening and induction are the same
+        // step on site, so the card carries induction only.
         pw.SizedBox(
           height: 37.5 * u,
           child: pw.Container(
@@ -423,10 +424,10 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
                       pw.Expanded(
                           child: _row('Name of the Company', org?.name ?? '', u, labelW: 86)),
                       pw.Expanded(
-                          child: _row('Screening Done on', _fmtDate(b.screeningDoneOn), u,
+                          child: _row('Induction Done on', _fmtDate(b.inductionDoneOn), u,
                               labelW: 86)),
                       pw.Expanded(
-                          child: _row('Screening Done by', b.screeningDoneBy ?? '', u, labelW: 86)),
+                          child: _row('Inducted By', b.inductedBy ?? '', u, labelW: 86)),
                     ],
                   ),
                 ),
@@ -454,15 +455,6 @@ pw.Widget _back(BadgeData b, OrgInfo? org, double u) {
               ],
             ),
           ),
-        ),
-        // Induction details.
-        pw.SizedBox(
-          height: 12.5 * u,
-          child: pw.Row(children: [
-            pw.Expanded(
-                child: _row('Induction Done on', _fmtDate(b.inductionDoneOn), u, labelW: 62)),
-            pw.Expanded(child: _row('Inducted By', b.inductedBy ?? '', u, labelW: 50)),
-          ]),
         ),
         // Computer-generated note (comes right after the induction details).
         pw.Container(

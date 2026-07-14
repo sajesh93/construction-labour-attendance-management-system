@@ -347,7 +347,9 @@ export function IdCard({
     );
   }
 
-  // ---- Back face: company + screening/induction details, QR, training seals ----
+  // ---- Back face: company + induction details, QR, training seals ----
+  // Screening and induction are one and the same step on site, so the card
+  // carries induction only — the old "Screening done on/by" rows are gone.
   // Seal size kept to what fits the row (no clipping); the larger curved text +
   // wider colour band keep it readable. QR only slightly larger so it doesn't
   // squeeze the seal row.
@@ -356,14 +358,18 @@ export function IdCard({
 
   return (
     <div style={shell}>
-      {titleBar('SCREENING & INDUCTION CARD')}
+      {titleBar('INDUCTION CARD')}
 
-      {/* Company + screening rows on the left, QR on the right */}
+      {/* Company + induction rows on the left, QR on the right */}
       <div style={{ display: 'flex', borderBottom: `0.5px solid ${BORDER}`, flexShrink: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <Row cells={[{ label: 'Name of the Company', value: org?.name ?? '', labelW: 30 }]} />
-          <Row cells={[{ label: 'Screening Done on', value: fmtDate(worker.screeningDoneOn), labelW: 30 }]} />
-          <Row cells={[{ label: 'Screening Done by', value: worker.screeningDoneBy ?? '', labelW: 30 }]} />
+          <Row
+            cells={[
+              { label: 'Induction Done on', value: fmtDate(worker.inductionDoneOn), labelW: 30 },
+            ]}
+          />
+          <Row cells={[{ label: 'Inducted By', value: worker.inductedBy ?? '', labelW: 30 }]} />
         </div>
         <div
           style={{
@@ -382,16 +388,6 @@ export function IdCard({
             {worker.workerCode}
           </div>
         </div>
-      </div>
-
-      {/* Induction details */}
-      <div style={{ flexShrink: 0 }}>
-        <Row
-          cells={[
-            { label: 'Induction Done on', value: fmtDate(worker.inductionDoneOn), labelW: 30, valueFlex: 1 },
-            { label: 'Inducted By', value: worker.inductedBy ?? '', labelW: 20, valueFlex: 1 },
-          ]}
-        />
       </div>
 
       {/* Computer-generated note (comes right after the induction details) */}
