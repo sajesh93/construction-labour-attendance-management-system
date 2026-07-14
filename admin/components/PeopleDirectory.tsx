@@ -653,7 +653,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
 
   const showBankSections = category !== 'VISITOR';
   const loading = workers.isLoading;
-  const columnCount = 6 + (isVisitor ? 0 : 1) + (category === 'WORKER' ? 1 : 0) - 1;
+  // Staff drop the Gov ID column, so the empty-state colspan drops with it.
+  const columnCount =
+    6 + (isVisitor ? 0 : 1) + (category === 'WORKER' ? 1 : 0) - 1 - (isStaff ? 1 : 0);
 
   return (
     <>
@@ -799,7 +801,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 )}
                 <TableCell>Mobile</TableCell>
                 {category === 'WORKER' && <TableCell>PF / ESI</TableCell>}
-                {!isVisitor && <TableCell>Gov ID</TableCell>}
+                {!isVisitor && !isStaff && <TableCell>Gov ID</TableCell>}
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -859,7 +861,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                     {category === 'WORKER' && (
                       <TableCell>{(w.pfNumber ?? '—') + ' / ' + (w.esiNumber ?? '—')}</TableCell>
                     )}
-                    {!isVisitor && (
+                    {!isVisitor && !isStaff && (
                       <TableCell>
                         {[
                           w.govIdType ? `${w.govIdType} ••${w.aadhaarLast4 ?? ''}` : null,
@@ -1177,25 +1179,31 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   {field('emergencyContactNumber', 'Emergency contact number')}
                 </Grid>
 
-                {/* Staff keep their Gov ID (identity) but no bank or statutory
-                    payroll details — those live in HR, not here. */}
-                <SectionHeading>{isStaff ? 'Gov ID' : 'Bank & statutory'}</SectionHeading>
-                <Grid container spacing={2}>
-                  {!isStaff && field('bankName', 'Bank name')}
-                  {!isStaff && field('bankAccountNumber', 'Account number')}
-                  {!isStaff && field('ifscCode', 'IFSC code')}
-                  {!isStaff && field('pfNumber', 'PF number')}
-                  {!isStaff && field('esiNumber', 'ESI number')}
-                  {field('govIdType', 'Gov ID type (e.g. Aadhaar)')}
-                  {field(
-                    'aadhaar',
-                    editing ? 'Gov ID number (leave blank to keep)' : 'Gov ID number (encrypted)',
-                  )}
-                  {field(
-                    'pan',
-                    editing ? 'PAN (leave blank to keep)' : 'PAN card number (encrypted)',
-                  )}
-                </Grid>
+                {/* Staff: no bank, no statutory, no Gov ID — the whole block is
+                    beyond the minimum we keep on our own employees. */}
+                {!isStaff && (
+                  <>
+                    <SectionHeading>Bank & statutory</SectionHeading>
+                    <Grid container spacing={2}>
+                      {field('bankName', 'Bank name')}
+                      {field('bankAccountNumber', 'Account number')}
+                      {field('ifscCode', 'IFSC code')}
+                      {field('pfNumber', 'PF number')}
+                      {field('esiNumber', 'ESI number')}
+                      {field('govIdType', 'Gov ID type (e.g. Aadhaar)')}
+                      {field(
+                        'aadhaar',
+                        editing
+                          ? 'Gov ID number (leave blank to keep)'
+                          : 'Gov ID number (encrypted)',
+                      )}
+                      {field(
+                        'pan',
+                        editing ? 'PAN (leave blank to keep)' : 'PAN card number (encrypted)',
+                      )}
+                    </Grid>
+                  </>
+                )}
               </>
             )}
             {isVisitor && (

@@ -464,7 +464,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (!_isVisitor && !_isStaff && _vendorId != null) 'vendorId': _vendorId,
       // On edit, always send photoUrl: null clears a removed photo.
       if (_isEdit) 'photoUrl': _photoUrl else if (_photoUrl != null) 'photoUrl': _photoUrl,
-      if (!_isVisitor) ...{
+      if (!_isVisitor && !_isStaff) ...{
         if (_aadhaarFrontPhotoId != null) 'aadhaarFrontPhotoId': _aadhaarFrontPhotoId,
         if (_aadhaarBackPhotoId != null) 'aadhaarBackPhotoId': _aadhaarBackPhotoId,
         if (text(_aadhaar) != null) ...{
@@ -630,7 +630,9 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  if (!_isVisitor)
+                  // Staff: no Gov ID at all — no Aadhaar images, no scan, no
+                  // Aadhaar/PAN numbers.
+                  if (!_isVisitor && !_isStaff)
                     Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       child: Padding(
@@ -684,7 +686,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                             const InputDecoration(labelText: 'ID (auto-generated)'),
                       ),
                     ),
-                  if (!_isEdit && !_isVisitor) ...[
+                  if (!_isEdit && !_isVisitor && !_isStaff) ...[
                     OutlinedButton.icon(
                       onPressed: _scanAadhaar,
                       icon: const Icon(Icons.qr_code_scanner),
@@ -951,7 +953,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                       _text(_esi, 'ESI number'),
                     ]),
 
-                  if (!_isVisitor)
+                  if (!_isVisitor && !_isStaff)
                     _section('Gov ID (Aadhaar / PAN)', [
                     _text(
                       _aadhaar,
