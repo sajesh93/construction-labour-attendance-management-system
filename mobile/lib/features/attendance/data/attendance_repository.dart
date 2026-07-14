@@ -89,18 +89,18 @@ class AttendanceRepository {
     return null;
   }
 
-  /// Core offline-first tap: resolve locally → decide → persist to outbox →
-  /// (best-effort) push to server. Cooldown + duplicate handled locally too.
-  Future<TapOutcome> tap({
+  /// Work out what a scan would do — who the worker is, and whether the tap is
+  /// a LOGIN, a LOGOUT, a DUPLICATE or a refused EXPIRED card. Writes nothing.
+  ///
+  /// [preview] and [tap] both go through this, so the action the operator
+  /// confirms on screen is the action that gets recorded.
+  Future<TapOutcome> _evaluate({
     required String siteId,
-    required String deviceId,
     required TapSource source,
     required String identifier,
     required int cooldownSeconds,
-    bool manualBackup = false,
-    String? manualReason,
+    required DateTime now,
   }) async {
-    final now = DateTime.now().toUtc();
     final worker = await resolve(source, identifier);
 
     // Decide locally using the last tap recorded for this worker.
@@ -109,7 +109,7 @@ class AttendanceRepository {
     final decision = decideTap(
       tapTime: now,
       cooldownSeconds: cooldownSeconds,
-      openSession: openSessionId == null
+      openSession: openSessionId == null || openSessionId.isEmpty
           ? null
           : OpenSession(id: openSessionId, loginAt: now, siteId: siteId),
       lastTapTime: lastTapIso == null ? null : DateTime.tryParse(lastTapIso),
@@ -123,9 +123,9 @@ class AttendanceRepository {
       );
     }
 
-    // An expired ID card may not start a shift. Refused here, before the
-    // durable write, so nothing is queued and nothing is ever synced — the
-    // server enforces the same rule for taps that reach it another way.
+    // An expired ID card may not start a shift. Refused before the durable
+    // write, so nothing is queued and nothing is ever synced — the server
+    // enforces the same rule for taps that reach it another way.
     // A logout is always allowed: never trap a worker inside the gate.
     if (decision.action == TapAction.login &&
         worker != null &&
@@ -137,6 +137,56 @@ class AttendanceRepository {
         message: "${worker.fullName}'s ID card expired on $on. Renew the card before logging in.",
       );
     }
+
+    return TapOutcome(
+      action: decision.action,
+      worker: worker,
+      message: worker == null ? 'Unknown card — will resolve on sync' : null,
+    );
+  }
+
+  /// Dry run of [tap] for the confirmation prompt: says what the scan would
+  /// record without recording it. Nothing is queued, no session is opened or
+  /// closed — call [tap] once the operator presses OK.
+  Future<TapOutcome> preview({
+    required String siteId,
+    required TapSource source,
+    required String identifier,
+    required int cooldownSeconds,
+  }) {
+    return _evaluate(
+      siteId: siteId,
+      source: source,
+      identifier: identifier,
+      cooldownSeconds: cooldownSeconds,
+      now: DateTime.now().toUtc(),
+    );
+  }
+
+  /// Core offline-first tap: resolve locally → decide → persist to outbox →
+  /// (best-effort) push to server. Cooldown + duplicate handled locally too.
+  Future<TapOutcome> tap({
+    required String siteId,
+    required String deviceId,
+    required TapSource source,
+    required String identifier,
+    required int cooldownSeconds,
+    bool manualBackup = false,
+    String? manualReason,
+  }) async {
+    final now = DateTime.now().toUtc();
+    final outcome = await _evaluate(
+      siteId: siteId,
+      source: source,
+      identifier: identifier,
+      cooldownSeconds: cooldownSeconds,
+      now: now,
+    );
+    // Refusals (duplicate tap, expired card) never reach the outbox.
+    if (outcome.action == TapAction.duplicate || outcome.action == TapAction.expired) {
+      return outcome;
+    }
+    final worker = outcome.worker;
 
     GeoFix? geo;
     try {
@@ -163,7 +213,7 @@ class AttendanceRepository {
     await _db.enqueue(event);
     if (worker != null) {
       await _db.setMeta('lasttap:${worker.id}', now.toIso8601String());
-      if (decision.action == TapAction.login) {
+      if (outcome.action == TapAction.login) {
         await _db.setMeta('opensession:${worker.id}', event.eventId);
       } else {
         await _db.setMeta('opensession:${worker.id}', '');
@@ -187,11 +237,7 @@ class AttendanceRepository {
       await _db.recordFailure(event.eventId, e.message ?? 'network');
     }
 
-    return TapOutcome(
-      action: decision.action,
-      worker: worker,
-      message: worker == null ? 'Unknown card — will resolve on sync' : null,
-    );
+    return outcome;
   }
 
   /// Manual-backup search. Hits the server (finds any worker in the org, not

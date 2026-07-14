@@ -17,6 +17,7 @@ import '../../sos/notification_watcher.dart';
 import '../../sos/sos_button.dart';
 import 'worker_card_sheet.dart';
 import 'manual_search_sheet.dart';
+import 'confirm_tap_dialog.dart';
 import 'qr_scan_screen.dart';
 
 class AttendanceHomeScreen extends ConsumerStatefulWidget {
@@ -30,14 +31,13 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
   String? _siteId;
   String _siteName = '';
   bool _busy = false;
-  String _status = 'Tap a card to begin';
+  String _status = 'Scan a worker QR badge to begin';
 
   // Site cooldown — refreshed from cached settings; default 30s.
   final int _cooldownSeconds = 30;
 
   DeviceState? _deviceState;
   String? _deviceId;
-  bool _nfcAvailable = true;
   Timer? _syncTimer;
   DateTime _lastCacheRefresh = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -86,12 +86,9 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
     final db = ref.read(localDbProvider);
     final siteId = await db.getMeta('active_site');
     final name = await db.getMeta('active_site_name') ?? '';
-    final nfcOk = await ref.read(nfcReaderProvider).isAvailable();
     setState(() {
       _siteId = siteId;
       _siteName = name;
-      _nfcAvailable = nfcOk;
-      if (!nfcOk) _status = 'No NFC on this device — scan the worker QR code';
     });
     await _ensureDevice();
     // Kick a sync + fresh worker cache on entry (app start).
@@ -106,32 +103,6 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       _deviceState = st.state;
       _deviceId = st.deviceId;
     });
-  }
-
-  Future<void> _onNfc() async {
-    final reader = ref.read(nfcReaderProvider);
-    if (!await reader.isAvailable()) {
-      setState(() => _status = 'NFC unavailable — use QR or manual');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _status = 'Hold the card to the device…';
-    });
-    final result = await reader.readOnce();
-    if (!result.hasData) {
-      setState(() {
-        _busy = false;
-        _status = result.error ?? 'Could not read tag — try QR or manual';
-      });
-      return;
-    }
-    // Prefer NDEF worker code; fall back to UID.
-    if (result.ndefText != null && result.ndefText!.isNotEmpty) {
-      await _handleTap(TapSource.nfcNdef, result.ndefText!);
-    } else if (result.uid != null) {
-      await _handleTap(TapSource.nfcUid, result.uid!);
-    }
   }
 
   Future<void> _onManual() async {
@@ -168,14 +139,110 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
     );
   }
 
+  /// Scan → confirm → record. A scan never writes attendance on its own: the
+  /// operator sees who was scanned and whether it is a LOGIN or a LOGOUT, and
+  /// must press OK. Cancel records nothing and puts the camera straight back up
+  /// for the next badge, so a queue at the gate keeps moving.
   Future<void> _onQr() async {
-    final code = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    if (_siteId == null) return;
+    if (await _clockIsWrong()) return;
+
+    while (true) {
+      if (!mounted) return;
+      final code = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const QrScanScreen()),
+      );
+      // Back button out of the scanner — done scanning.
+      if (code == null || !mounted) return;
+      // QR badges are "CLAMS:<EMP-ID>"; accept a bare code too.
+      final value = code.startsWith('CLAMS:') ? code.substring(6) : code;
+      final recorded = await _reviewScan(value.trim());
+      if (recorded || !mounted) return;
+      // Cancelled — loop round and reopen the scanner.
+    }
+  }
+
+  /// Shows the OK/Cancel prompt for one scanned badge. Returns true when the
+  /// punch was recorded (or refused outright, e.g. an expired card), false when
+  /// the operator cancelled and we should scan again.
+  Future<bool> _reviewScan(String identifier) async {
+    setState(() => _busy = true);
+    final outcome = await ref.read(attendanceRepositoryProvider).preview(
+          siteId: _siteId!,
+          source: TapSource.qr,
+          identifier: identifier,
+          cooldownSeconds: _cooldownSeconds,
+        );
+    if (!mounted) return true;
+    setState(() => _busy = false);
+
+    switch (outcome.action) {
+      case TapAction.duplicate:
+        setState(() => _status =
+            'Duplicate scan ignored (${outcome.cooldownRemainingSeconds}s cooldown)');
+        return true;
+      case TapAction.expired:
+        setState(() => _status = 'ID card expired — login not recorded');
+        await _showExpired(outcome.message);
+        return true;
+      case TapAction.login:
+      case TapAction.logout:
+        final ok = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => ConfirmTapDialog(
+            action: outcome.action,
+            identifier: identifier,
+            worker: outcome.worker,
+          ),
+        );
+        if (ok != true) {
+          if (mounted) setState(() => _status = 'Cancelled — nothing recorded');
+          return false;
+        }
+        await _handleTap(TapSource.qr, identifier);
+        return true;
+    }
+  }
+
+  /// A wrong phone clock would record punches at the wrong time — refuse the
+  /// scan while online with >10 min skew. (Offline punches are allowed.)
+  Future<bool> _clockIsWrong() async {
+    if (!await ref.read(clockGuardProvider).clockIsWrong()) return false;
+    if (!mounted) return true;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.schedule, color: ClamsColors.error, size: 40),
+        title: const Text('Phone clock is wrong'),
+        content: const Text(
+          'This phone\'s time differs from the server by more than 10 minutes, '
+          'so punches would be recorded at the wrong time.\n\n'
+          'Open Settings → Date & time and enable "Automatic date & time", '
+          'then try again.',
+        ),
+        actions: [
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
     );
-    if (code == null || !mounted) return;
-    // QR badges are "CLAMS:<EMP-ID>"; accept a bare code too.
-    final value = code.startsWith('CLAMS:') ? code.substring(6) : code;
-    await _handleTap(TapSource.qr, value.trim());
+    return true;
+  }
+
+  Future<void> _showExpired(String? message) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.gpp_bad_outlined, color: Colors.red, size: 40),
+        title: const Text('ID card expired'),
+        content: Text(
+          message ?? 'This ID card has expired. Renew it before logging in.',
+        ),
+        actions: [
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleTap(
@@ -185,29 +252,7 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
     String? manualReason,
   }) async {
     if (_siteId == null) return;
-
-    // A wrong phone clock would record punches at the wrong time — refuse the
-    // scan while online with >10 min skew. (Offline punches are allowed.)
-    if (await ref.read(clockGuardProvider).clockIsWrong()) {
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.schedule, color: ClamsColors.error, size: 40),
-          title: const Text('Phone clock is wrong'),
-          content: const Text(
-            'This phone\'s time differs from the server by more than 10 minutes, '
-            'so punches would be recorded at the wrong time.\n\n'
-            'Open Settings → Date & time and enable "Automatic date & time", '
-            'then try again.',
-          ),
-          actions: [
-            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-          ],
-        ),
-      );
-      return;
-    }
+    if (source != TapSource.qr && await _clockIsWrong()) return;
 
     setState(() => _busy = true);
     final repo = ref.read(attendanceRepositoryProvider);
@@ -232,19 +277,7 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       case TapAction.expired:
         // Nothing was queued: the login is refused outright, not "pending".
         setState(() => _status = 'ID card expired — login not recorded');
-        await showDialog<void>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            icon: const Icon(Icons.gpp_bad_outlined, color: Colors.red, size: 40),
-            title: const Text('ID card expired'),
-            content: Text(
-              outcome.message ?? 'This ID card has expired. Renew it before logging in.',
-            ),
-            actions: [
-              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-            ],
-          ),
-        );
+        await _showExpired(outcome.message);
         break;
       case TapAction.login:
       case TapAction.logout:
@@ -355,31 +388,16 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
                 ),
               ),
             ClamsSpacing.gapMd,
-            const Icon(Icons.contactless, size: 96, color: ClamsColors.primary),
+            const Icon(Icons.qr_code_scanner, size: 96, color: ClamsColors.primary),
             ClamsSpacing.gapXl,
             Text(_status, textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium),
             ClamsSpacing.gapXxl,
-            if (_nfcAvailable) ...[
-              FilledButton.icon(
-                onPressed: _busy ? null : _onNfc,
-                icon: const Icon(Icons.nfc),
-                label: const Text('Tap NFC card'),
-              ),
-              ClamsSpacing.gapMd,
-            ],
-            // QR is the primary action when there is no NFC.
-            _nfcAvailable
-                ? OutlinedButton.icon(
-                    onPressed: _busy ? null : _onQr,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text('Scan QR code'),
-                  )
-                : FilledButton.icon(
-                    onPressed: _busy ? null : _onQr,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text('Scan QR code'),
-                  ),
+            FilledButton.icon(
+              onPressed: _busy ? null : _onQr,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Scan QR code'),
+            ),
             ClamsSpacing.gapMd,
             OutlinedButton.icon(
               onPressed: _busy ? null : _onManual,
