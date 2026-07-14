@@ -105,15 +105,34 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  /// Sign in. EVERY failure path must end with `loading: false` and an error to
+  /// show — otherwise the button sticks on "Signing in…" forever with no clue
+  /// why. The keystore write is the dangerous one: it is not a DioException, so
+  /// an unguarded throw (or a platform channel that never answers) used to
+  /// escape this method and wedge the screen.
   Future<bool> login(String identifier, String password) async {
     state = state.copyWith(loading: true, error: null);
     try {
       final res = await _dio
           .post('/auth/login', data: {'identifier': identifier, 'password': password});
-      await _store.saveTokens(
-        res.data['accessToken'] as String,
-        res.data['refreshToken'] as String,
-      );
+
+      final access = res.data['accessToken'] as String?;
+      final refresh = res.data['refreshToken'] as String?;
+      if (access == null || refresh == null) {
+        state = state.copyWith(
+          loading: false,
+          error: 'Server did not return a session token — try again.',
+        );
+        return false;
+      }
+
+      // Secure storage lives behind a platform channel and can stall or throw
+      // (keystore trouble on some Android builds). Bound it, so a broken
+      // keystore surfaces as a message instead of an endless spinner.
+      await _store
+          .saveTokens(access, refresh)
+          .timeout(const Duration(seconds: 10));
+
       state = state.copyWith(
         initialized: true,
         loading: false,
@@ -128,8 +147,35 @@ class AuthController extends StateNotifier<AuthState> {
       final detail = e.response?.data is Map
           ? (e.response?.data['detail'] ?? e.response?.data['title'])
           : null;
-      state = state.copyWith(loading: false, error: (detail as String?) ?? 'Login failed');
+      state = state.copyWith(
+        loading: false,
+        error: (detail as String?) ?? _networkMessage(e),
+      );
       return false;
+    } on TimeoutException {
+      state = state.copyWith(
+        loading: false,
+        error: 'Could not save the session on this phone (secure storage timed out). '
+            'Restart the phone and try again.',
+      );
+      return false;
+    } catch (e) {
+      // Anything else — a keystore PlatformException, a bad response shape.
+      // Never leave the screen spinning; say what happened.
+      state = state.copyWith(loading: false, error: 'Login failed: $e');
+      return false;
+    }
+  }
+
+  String _networkMessage(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.connectionError:
+        return 'Cannot reach the server — check the internet connection.';
+      default:
+        return 'Login failed';
     }
   }
 
