@@ -395,31 +395,17 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
         return api.post('/workers', body);
       }
 
-      const { siteId, nfcUid, qrIdentifier, ...patch } = body;
+      const { siteId, nfcUid: _nfcUid, qrIdentifier: _qrIdentifier, ...patch } = body;
       delete patch.workerCode;
       delete patch.joinDate;
       const updated = await api.patch(`/workers/${editing.id}`, patch);
 
       const currentSiteId = editing.assignments?.[0]?.siteId ?? '';
-      if (siteId && siteId !== currentSiteId) {
+      if (!isStaff && siteId && siteId !== currentSiteId) {
         await api.post(`/workers/${editing.id}/assign-site`, {
           siteId,
           vendorId: patch.vendorId,
           startDate: new Date().toISOString().slice(0, 10),
-        });
-      }
-      if (nfcUid && nfcUid !== (editing.nfcUid ?? '')) {
-        await api.post(`/workers/${editing.id}/credentials`, {
-          kind: 'NFC_UID',
-          value: nfcUid,
-          reason: 'updated from admin panel',
-        });
-      }
-      if (qrIdentifier && qrIdentifier !== (editing.qrIdentifier ?? '')) {
-        await api.post(`/workers/${editing.id}/credentials`, {
-          kind: 'QR',
-          value: qrIdentifier,
-          reason: 'updated from admin panel',
         });
       }
       return updated;
@@ -1155,11 +1141,12 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   (vendors.data ?? []).map((v) => ({ value: v.id, label: v.name })),
                 )}
               {category === 'WORKER' && field('natureOfContractor', 'Nature of contractor')}
-              {selectField(
-                'siteId',
-                'Site',
-                (sites.data ?? []).map((s) => ({ value: s.id, label: s.name })),
-              )}
+              {!isStaff &&
+                selectField(
+                  'siteId',
+                  'Site',
+                  (sites.data ?? []).map((s) => ({ value: s.id, label: s.name })),
+                )}
               {!isStaff &&
                 field('joinDate', isVisitor ? 'Visit date' : 'Date of joining', {
                   type: 'date',
@@ -1256,12 +1243,6 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                     </Grid>
                   </>
                 )}
-
-                <SectionHeading>Credentials</SectionHeading>
-                <Grid container spacing={2}>
-                  {field('nfcUid', 'NFC UID')}
-                  {field('qrIdentifier', 'QR identifier')}
-                </Grid>
               </>
             )}
           </DialogContent>
