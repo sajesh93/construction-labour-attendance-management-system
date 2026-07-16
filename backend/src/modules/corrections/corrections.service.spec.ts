@@ -18,6 +18,11 @@ describe('CorrectionsService.approve (approval gate)', () => {
         }),
         update: jest.fn(),
       },
+      site: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'site1', timezone: 'Asia/Kolkata', settings: null }),
+      },
       attendanceSession: {
         findUnique: jest.fn().mockResolvedValue({
           id: 's1',
@@ -65,6 +70,11 @@ describe('CorrectionsService.approve (approval gate)', () => {
           items: [{ field: 'logout_at', proposedValue: '2026-06-08T12:30:00Z' }],
         }),
         update: jest.fn().mockResolvedValue({ id: 'c1', status: 'APPROVED' }),
+      },
+      site: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'site1', timezone: 'Asia/Kolkata', settings: null }),
       },
       attendanceSession: {
         findUnique: jest.fn(),
@@ -130,6 +140,11 @@ describe('CorrectionsService.approve (approval gate)', () => {
         }),
         update: jest.fn().mockResolvedValue({ id: 'c1', status: 'APPROVED' }),
       },
+      site: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'site1', timezone: 'Asia/Kolkata', settings: null }),
+      },
       attendanceSession: {
         findUnique: jest.fn(),
         findFirst: jest.fn().mockResolvedValue(session),
@@ -145,6 +160,168 @@ describe('CorrectionsService.approve (approval gate)', () => {
 
     expect(tx.attendanceSession.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { workDate: new Date(Date.UTC(2026, 5, 9)) } }),
+    );
+  });
+
+  it('targets the day the supervisor picked, not the off-by-one workDate', async () => {
+    // The mobile files workDate as UTC-converted local midnight, so a correction
+    // meant for the 15th arrives stamped the 14th. Approving must not grab the
+    // 14th's real session and overwrite it.
+    const sessionOn14th = {
+      id: 's14',
+      updatedAt: new Date('2026-07-14T08:00:00Z'),
+      loginAt: new Date('2026-07-14T07:09:00Z'),
+      logoutAt: null,
+      siteId: 'site1',
+      shiftId: null,
+      workDate: new Date(Date.UTC(2026, 6, 14)),
+      shift: null,
+      site: { timezone: 'Asia/Kolkata' },
+    };
+    const created: any[] = [];
+    const tx: any = {
+      correctionRequest: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'c1',
+          status: 'PENDING',
+          organizationId: 'org1',
+          workerId: 'w1',
+          siteId: 'site1',
+          sessionId: null,
+          workDate: new Date(Date.UTC(2026, 6, 14)), // filed a day early
+          createdAt: new Date('2026-07-15T10:00:00Z'),
+          // Supervisor picked 2026-07-15 10:50 IST.
+          items: [{ field: 'login_at', proposedValue: '2026-07-15T05:20:00.000Z' }],
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'c1', status: 'APPROVED' }),
+      },
+      site: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'site1', timezone: 'Asia/Kolkata', settings: null }),
+      },
+      attendanceSession: {
+        findUnique: jest.fn(),
+        // Only the 14th's session exists; nothing on the 15th.
+        findFirst: jest.fn().mockImplementation(async ({ where }: any) => {
+          if (where.state === 'OPEN') return null;
+          return where.workDate?.getTime() === Date.UTC(2026, 6, 14) ? sessionOn14th : null;
+        }),
+        create: jest.fn().mockImplementation(async ({ data }: any) => {
+          const row = { id: 'sNew', ...data, shift: null, site: { timezone: 'Asia/Kolkata' } };
+          created.push(row);
+          return row;
+        }),
+        update: jest.fn().mockImplementation(async () => ({
+          ...created[0],
+          shift: null,
+          site: { timezone: 'Asia/Kolkata' },
+        })),
+      },
+    };
+    const prisma: any = { $transaction: (fn: any) => fn(tx) };
+    const svc = new CorrectionsService(prisma, { record: jest.fn() } as any);
+
+    await svc.approve(user, 'c1', {});
+
+    // The 14th's session must be untouched; a new one lands on the 15th.
+    expect(tx.attendanceSession.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 's14' } }),
+    );
+    expect(created).toHaveLength(1);
+    expect(created[0].workDate).toEqual(new Date(Date.UTC(2026, 6, 15)));
+  });
+
+  it('refuses a login-only correction when the worker already has an open session', async () => {
+    // uq_open_session_per_worker permits only one — creating a second would
+    // blow up on the unique index at write time.
+    const tx: any = {
+      correctionRequest: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'c1',
+          status: 'PENDING',
+          organizationId: 'org1',
+          workerId: 'w1',
+          siteId: 'site1',
+          sessionId: null,
+          workDate: new Date(Date.UTC(2026, 6, 15)),
+          createdAt: new Date('2026-07-15T10:00:00Z'),
+          items: [{ field: 'login_at', proposedValue: '2026-07-15T05:20:00.000Z' }],
+        }),
+        update: jest.fn(),
+      },
+      site: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'site1', timezone: 'Asia/Kolkata', settings: null }),
+      },
+      attendanceSession: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn().mockImplementation(async ({ where }: any) => {
+          if (where.state === 'OPEN') return { id: 'sOpen' }; // already clocked in
+          return null;
+        }),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+    };
+    const prisma: any = { $transaction: (fn: any) => fn(tx) };
+    const svc = new CorrectionsService(prisma, { record: jest.fn() } as any);
+
+    await expect(svc.approve(user, 'c1', {})).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(tx.attendanceSession.create).not.toHaveBeenCalled();
+  });
+
+  it('creates the session CLOSED when the correction supplies a logout', async () => {
+    const created: any[] = [];
+    const tx: any = {
+      correctionRequest: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'c1',
+          status: 'PENDING',
+          organizationId: 'org1',
+          workerId: 'w1',
+          siteId: 'site1',
+          sessionId: null,
+          workDate: new Date(Date.UTC(2026, 6, 15)),
+          createdAt: new Date('2026-07-15T10:00:00Z'),
+          items: [
+            { field: 'login_at', proposedValue: '2026-07-15T03:30:00.000Z' },
+            { field: 'logout_at', proposedValue: '2026-07-15T12:30:00.000Z' },
+          ],
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'c1', status: 'APPROVED' }),
+      },
+      site: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'site1', timezone: 'Asia/Kolkata', settings: null }),
+      },
+      attendanceSession: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(async ({ data }: any) => {
+          const row = { id: 'sNew', ...data, shift: null, site: { timezone: 'Asia/Kolkata' } };
+          created.push(row);
+          return row;
+        }),
+        update: jest.fn().mockImplementation(async () => ({
+          ...created[0],
+          shift: null,
+          site: { timezone: 'Asia/Kolkata' },
+        })),
+      },
+    };
+    const prisma: any = { $transaction: (fn: any) => fn(tx) };
+    const svc = new CorrectionsService(prisma, { record: jest.fn() } as any);
+
+    await svc.approve(user, 'c1', {});
+
+    // Never OPEN — that would collide with uq_open_session_per_worker.
+    expect(created[0].state).toBe('CLOSED');
+    // And no pre-flight open-session probe was needed.
+    expect(tx.attendanceSession.findFirst).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ state: 'OPEN' }) }),
     );
   });
 

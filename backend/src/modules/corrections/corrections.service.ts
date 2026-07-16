@@ -155,33 +155,6 @@ export class CorrectionsService {
       let appliedSessionId: string | null = null;
 
       {
-        // Requests filed from the mobile app don't pin a sessionId, so fall back
-        // to the worker's session for that work date. Without this the approval
-        // silently changed nothing and attendance/reports kept the old values.
-        let session = req.sessionId
-          ? await tx.attendanceSession.findUnique({
-              where: { id: req.sessionId },
-              include: { shift: true, site: true },
-            })
-          : await tx.attendanceSession.findFirst({
-              where: {
-                organizationId: req.organizationId,
-                workerId: req.workerId,
-                workDate: req.workDate,
-              },
-              include: { shift: true, site: true },
-              orderBy: { loginAt: 'desc' },
-            });
-
-        if (req.sessionId && !session) throw Errors.conflict('Target session no longer exists');
-
-        // Freshness: if a pinned session changed after the request was filed, abort.
-        // Resolved-by-date sessions are deliberately exempt — they are looked up
-        // fresh at approval time, so "current row wins" is the intended behaviour.
-        if (req.sessionId && session && session.updatedAt > req.createdAt) {
-          throw Errors.conflict('Session changed since the request was filed; please re-file');
-        }
-
         const patch: Prisma.AttendanceSessionUpdateInput = {};
         for (const item of req.items) {
           const v = item.proposedValue as unknown;
@@ -203,29 +176,83 @@ export class CorrectionsService {
           }
         }
 
+        const site = await tx.site.findFirst({
+          where: { id: req.siteId, organizationId: req.organizationId },
+          include: { settings: true },
+        });
+        if (!site) throw Errors.notFound('Site');
+
+        // Which day does this correction mean? NOT req.workDate — the mobile
+        // builds that from local midnight and converts to UTC, so at +05:30 it
+        // lands on the previous day and the Date column truncates it there. The
+        // proposed timestamp is an unambiguous instant, so derive the day from
+        // it and only fall back to workDate when nothing was proposed.
+        const anchor = (patch.loginAt ?? patch.logoutAt) as Date | undefined;
+        const targetDate = anchor ? businessDate(anchor, site.timezone) : req.workDate;
+
+        // Requests filed from the mobile app don't pin a sessionId, so fall back
+        // to the worker's session for the target day. Without this the approval
+        // silently changed nothing and attendance/reports kept the old values.
+        let session = req.sessionId
+          ? await tx.attendanceSession.findUnique({
+              where: { id: req.sessionId },
+              include: { shift: true, site: true },
+            })
+          : await tx.attendanceSession.findFirst({
+              where: {
+                organizationId: req.organizationId,
+                workerId: req.workerId,
+                workDate: targetDate,
+              },
+              include: { shift: true, site: true },
+              orderBy: { loginAt: 'desc' },
+            });
+
+        if (req.sessionId && !session) throw Errors.conflict('Target session no longer exists');
+
+        // Freshness: if a pinned session changed after the request was filed, abort.
+        // Resolved-by-date sessions are deliberately exempt — they are looked up
+        // fresh at approval time, so "current row wins" is the intended behaviour.
+        if (req.sessionId && session && session.updatedAt > req.createdAt) {
+          throw Errors.conflict('Session changed since the request was filed; please re-file');
+        }
+
         // A MISSING correction has no row to patch — the whole point is that the
         // worker was never scanned in. Materialise the session from the proposed
         // login time instead of approving into the void.
         if (!session) {
           if (!patch.loginAt) {
+            // Refuse rather than guess: a logout-only correction with no session
+            // on the target day (e.g. an overnight shift whose logout falls on
+            // the next day) needs a human, not an invented row.
             throw Errors.conflict(
-              'No attendance session exists for that work date; the correction must propose a login time',
+              `No attendance session for ${targetDate.toISOString().slice(0, 10)}; ` +
+                'the correction must propose a login time',
             );
           }
-          const site = await tx.site.findFirst({
-            where: { id: req.siteId, organizationId: req.organizationId },
-            include: { settings: true },
-          });
-          if (!site) throw Errors.notFound('Site');
+          // uq_open_session_per_worker allows only ONE open session per worker,
+          // so a login-only correction can't be materialised while the worker is
+          // still clocked in somewhere. Land it CLOSED when a logout is proposed.
+          if (!patch.logoutAt) {
+            const alreadyOpen = await tx.attendanceSession.findFirst({
+              where: { workerId: req.workerId, state: 'OPEN' },
+            });
+            if (alreadyOpen) {
+              throw Errors.conflict(
+                'Worker already has an open session; add a logout time to the correction or close that session first',
+              );
+            }
+          }
           session = await tx.attendanceSession.create({
             data: {
               organizationId: req.organizationId,
               workerId: req.workerId,
               siteId: req.siteId,
               shiftId: site.settings?.defaultShiftId ?? null,
-              workDate: req.workDate,
+              workDate: targetDate,
               loginAt: patch.loginAt as Date,
-              state: 'OPEN',
+              logoutAt: (patch.logoutAt as Date | undefined) ?? null,
+              state: patch.logoutAt ? 'CLOSED' : 'OPEN',
             },
             include: { shift: true, site: true },
           });

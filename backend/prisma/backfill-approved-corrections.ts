@@ -1,7 +1,7 @@
 /**
  * One-time backfill: replay correction approvals that never reached attendance.
  *
- * Two defects made approved corrections invisible in attendance and reports:
+ * Three defects made approved corrections invisible in attendance and reports:
  *
  *   1. Requests filed from the mobile app carry no sessionId, and the old
  *      approve() wrapped its whole apply block in `if (req.sessionId)`. Those
@@ -10,9 +10,18 @@
  *   2. approve() wrote loginAt but never recomputed workDate, which is the
  *      column attendance and reports actually filter on. A correction that moved
  *      a login across a day boundary left the session filed under the old date.
+ *   3. The mobile sent workDate as a UTC-converted local midnight, which at
+ *      +05:30 lands at 18:30Z the day before and truncates to the wrong day. So
+ *      every historical request is stamped one day early and its workDate CANNOT
+ *      be used to find the session — this script anchors on the proposed
+ *      timestamp instead, which is an unambiguous instant.
  *
  * This replays (1) through the fixed logic and repairs (2) for sessions an
  * approved correction touched. Both passes are idempotent.
+ *
+ * It never overwrites a session on a day the correction didn't mean, and skips
+ * (rather than guesses) anything ambiguous — read the skip list before deciding
+ * what to do about those by hand.
  *
  * DRY RUN BY DEFAULT — prints what it would do and rolls back. Pass --apply to
  * commit. Requires DATABASE_URL in env. From backend/:
@@ -133,23 +142,45 @@ export async function replayUnapplied(tx: Tx) {
       continue;
     }
 
+    const site = await tx.site.findFirst({
+      where: { id: req.siteId, organizationId: req.organizationId },
+      include: { settings: true },
+    });
+    if (!site) {
+      skipped.push(`${label} — site ${req.siteId} not found`);
+      continue;
+    }
+
+    // req.workDate is NOT trustworthy: the mobile built it from local midnight
+    // converted to UTC, so at +05:30 every one of these is filed a day early.
+    // The proposed timestamp is an unambiguous instant — derive the day from it.
+    const anchor = (patch.loginAt ?? patch.logoutAt) as Date | undefined;
+    const targetDate = anchor ? businessDate(anchor, site.timezone) : req.workDate;
+
     let session = await tx.attendanceSession.findFirst({
-      where: { organizationId: req.organizationId, workerId: req.workerId, workDate: req.workDate },
+      where: { organizationId: req.organizationId, workerId: req.workerId, workDate: targetDate },
       orderBy: { loginAt: 'desc' },
     });
 
     if (!session) {
       if (!patch.loginAt) {
-        skipped.push(`${label} — no session for that day and no proposed login time`);
+        skipped.push(
+          `${label} — no session on ${targetDate.toISOString().slice(0, 10)} and no proposed login time`,
+        );
         continue;
       }
-      const site = await tx.site.findFirst({
-        where: { id: req.siteId, organizationId: req.organizationId },
-        include: { settings: true },
-      });
-      if (!site) {
-        skipped.push(`${label} — site ${req.siteId} not found`);
-        continue;
+      // uq_open_session_per_worker: only ONE open session per worker.
+      if (!patch.logoutAt) {
+        const alreadyOpen = await tx.attendanceSession.findFirst({
+          where: { workerId: req.workerId, state: 'OPEN' },
+        });
+        if (alreadyOpen) {
+          skipped.push(
+            `${label} — worker already has an open session (${alreadyOpen.id.slice(0, 8)}); ` +
+              'login-only correction would create a second',
+          );
+          continue;
+        }
       }
       session = await tx.attendanceSession.create({
         data: {
@@ -157,15 +188,20 @@ export async function replayUnapplied(tx: Tx) {
           workerId: req.workerId,
           siteId: req.siteId,
           shiftId: site.settings?.defaultShiftId ?? null,
-          workDate: req.workDate,
+          workDate: targetDate,
           loginAt: patch.loginAt as Date,
-          state: 'OPEN',
+          logoutAt: (patch.logoutAt as Date | undefined) ?? null,
+          state: patch.logoutAt ? 'CLOSED' : 'OPEN',
         },
       });
       created++;
-      console.log(`${label} — CREATE session ${session.id.slice(0, 8)}`);
+      console.log(
+        `${label} — CREATE session ${session.id.slice(0, 8)} on ${targetDate.toISOString().slice(0, 10)}`,
+      );
     } else {
-      console.log(`${label} — PATCH session ${session.id.slice(0, 8)}`);
+      console.log(
+        `${label} — PATCH session ${session.id.slice(0, 8)} on ${targetDate.toISOString().slice(0, 10)}`,
+      );
     }
 
     const before = {

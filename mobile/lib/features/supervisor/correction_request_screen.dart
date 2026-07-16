@@ -46,6 +46,10 @@ class _CorrectionRequestScreenState extends ConsumerState<CorrectionRequestScree
 
   bool get _needsTime => _type == 'LOGIN' || _type == 'LOGOUT' || _type == 'MISSING';
 
+  /// Calendar date as the supervisor picked it, with no timezone shift.
+  String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   Future<void> _submit() async {
     setState(() {
       _busy = true;
@@ -62,7 +66,10 @@ class _CorrectionRequestScreenState extends ConsumerState<CorrectionRequestScree
       await ref.read(apiClientProvider).dio.post('/corrections', data: {
         'workerId': widget.worker.id,
         'siteId': siteId,
-        'workDate': DateTime(_date.year, _date.month, _date.day).toUtc().toIso8601String(),
+        // Plain calendar date, NOT a UTC-converted local midnight: at +05:30 the
+        // latter lands at 18:30Z the day before and the server's Date column
+        // truncates it to the wrong day.
+        'workDate': _ymd(_date),
         'type': _type,
         'reason': _reason,
         'notes': _notes.text.trim(),

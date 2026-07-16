@@ -71,12 +71,15 @@ function makeTx(seed: { sessions: Row[]; requests: Row[] }) {
     },
     attendanceSession: {
       findFirst: async ({ where, orderBy }: Row) => {
-        let out = sessions.filter(
-          (s) =>
-            s.organizationId === where.organizationId &&
-            s.workerId === where.workerId &&
-            s.workDate.getTime() === where.workDate.getTime(),
-        );
+        // Mirrors the real predicates the script uses: the target-day lookup and
+        // the uq_open_session_per_worker probe.
+        let out = sessions.filter((s) => {
+          if (where.organizationId && s.organizationId !== where.organizationId) return false;
+          if (where.workerId && s.workerId !== where.workerId) return false;
+          if (where.state && s.state !== where.state) return false;
+          if (where.workDate && s.workDate.getTime() !== where.workDate.getTime()) return false;
+          return true;
+        });
         if (orderBy?.loginAt === 'desc') {
           out = [...out].sort((a, b) => b.loginAt.getTime() - a.loginAt.getTime());
         }
@@ -206,22 +209,54 @@ describe('backfill: replayUnapplied', () => {
     expect(sessions[0].workDate).toEqual(DAY8);
   });
 
-  it('refiles the session under the corrected login date', async () => {
+  it('corrects the login time within the same day in place', async () => {
     const { tx, sessions } = makeTx({
-      sessions: [session({})],
-      // Login moves to the 9th 09:00 IST — workDate must follow.
+      sessions: [session({})], // login 09:00 IST on the 8th
       requests: [
         req({
           id: 'r3',
           type: 'LOGIN',
-          items: [{ field: 'login_at', proposedValue: '2026-06-09T03:30:00Z' }],
+          // Same day, earlier time — 07:00 IST on the 8th.
+          items: [{ field: 'login_at', proposedValue: '2026-06-08T01:30:00Z' }],
         }),
       ],
     });
 
     await replayUnapplied(tx);
 
-    expect(sessions[0].workDate).toEqual(DAY9);
+    expect(sessions).toHaveLength(1); // patched, not duplicated
+    expect(sessions[0].loginAt).toEqual(new Date('2026-06-08T01:30:00Z'));
+    expect(sessions[0].workDate).toEqual(DAY8);
+  });
+
+  it("does not hijack another day's session when workDate is filed a day early", async () => {
+    // The real prod shape: request stamped the 8th (mobile off-by-one) but the
+    // supervisor picked a login on the 9th. The 8th's session must survive.
+    const { tx, sessions } = makeTx({
+      // Closed, so the new login-only session on the 9th doesn't trip the
+      // one-open-session-per-worker rule — that path is covered separately.
+      sessions: [session({ logoutAt: new Date('2026-06-08T12:30:00Z'), state: 'CLOSED' })],
+      requests: [
+        req({
+          id: 'r3',
+          type: 'LOGIN',
+          workDate: DAY8,
+          items: [{ field: 'login_at', proposedValue: '2026-06-09T03:30:00Z' }], // 09:00 IST on the 9th
+        }),
+      ],
+    });
+
+    const res = await replayUnapplied(tx);
+
+    expect(res).toMatchObject({ applied: 1, created: 1 });
+    // The 8th's session is untouched...
+    const eighth = sessions.find((s) => s.id === 's1');
+    expect(eighth?.loginAt).toEqual(new Date('2026-06-08T03:30:00Z'));
+    expect(eighth?.workDate).toEqual(DAY8);
+    // ...and the correction landed on a new session on the 9th.
+    const ninth = sessions.find((s) => s.id !== 's1');
+    expect(ninth?.workDate).toEqual(DAY9);
+    expect(ninth?.loginAt).toEqual(new Date('2026-06-09T03:30:00Z'));
   });
 
   it('never replays a rejected or pending request', async () => {
@@ -262,6 +297,49 @@ describe('backfill: replayUnapplied', () => {
     expect(first.applied).toBe(1);
     expect(second.applied).toBe(0); // back-link excludes it from the predicate
     expect(sessions).toHaveLength(1); // no duplicate session
+  });
+
+  it('skips a login-only correction that would open a second session', async () => {
+    // uq_open_session_per_worker permits exactly one; the worker is still
+    // clocked in on the 8th, so a login-only row on the 9th cannot be created.
+    const { tx, sessions } = makeTx({
+      sessions: [session({})], // OPEN on the 8th
+      requests: [
+        req({
+          id: 'r10',
+          type: 'LOGIN',
+          items: [{ field: 'login_at', proposedValue: '2026-06-09T03:30:00Z' }],
+        }),
+      ],
+    });
+
+    const res = await replayUnapplied(tx);
+
+    expect(res).toMatchObject({ applied: 0, created: 0, skipped: 1 });
+    expect(sessions).toHaveLength(1); // nothing created
+  });
+
+  it('creates the session CLOSED when a logout is proposed, dodging the open-session rule', async () => {
+    const { tx, sessions } = makeTx({
+      sessions: [session({})], // worker still OPEN on the 8th
+      requests: [
+        req({
+          id: 'r11',
+          type: 'MISSING',
+          items: [
+            { field: 'login_at', proposedValue: '2026-06-09T03:30:00Z' },
+            { field: 'logout_at', proposedValue: '2026-06-09T12:30:00Z' },
+          ],
+        }),
+      ],
+    });
+
+    const res = await replayUnapplied(tx);
+
+    expect(res).toMatchObject({ applied: 1, created: 1 });
+    const ninth = sessions.find((s) => s.workDate.getTime() === DAY9.getTime());
+    expect(ninth?.state).toBe('CLOSED'); // never OPEN — would collide
+    expect(ninth?.workedMinutes).toBe(540);
   });
 
   it('skips rather than guesses when there is no session and no proposed login', async () => {
