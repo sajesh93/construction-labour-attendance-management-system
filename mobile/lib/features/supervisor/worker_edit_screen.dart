@@ -96,7 +96,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
   bool get _isVisitor => _category == 'VISITOR';
 
   /// Staff are the company's own people: the employer is captured automatically
-  /// and we keep only the minimum on file — no bank, nominee or induction card.
+  /// and we keep only the minimum on file — no bank, nominee or Gov ID.
   bool get _isStaff => _category == 'STAFF';
 
   @override
@@ -443,8 +443,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (text(_emergencyNumber) != null) 'emergencyContactNumber': text(_emergencyNumber),
       if (!_isStaff && text(_nomineeName) != null) 'nomineeName': text(_nomineeName),
       if (!_isStaff && text(_nomineeRelation) != null) 'nomineeRelation': text(_nomineeRelation),
-      // Induction only — screening is the same step, and staff carry no card.
-      if (!_isVisitor && !_isStaff) ...{
+      // Induction only — screening is the same step.
+      if (!_isVisitor) ...{
         if (_inductionOn != null)
           'inductionDoneOn': _inductionOn!.toIso8601String().substring(0, 10),
         if (text(_inductedBy) != null) 'inductedBy': text(_inductedBy),
@@ -901,8 +901,8 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                     ]),
 
                   // Screening and induction are the same step on site, so only
-                  // induction is captured. Staff carry no induction card.
-                  if (!_isVisitor && !_isStaff)
+                  // induction is captured.
+                  if (!_isVisitor)
                     _section('Induction & ID card', [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
