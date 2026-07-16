@@ -88,8 +88,13 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
 
   List<Map<String, dynamic>> _designations = [];
   List<Map<String, dynamic>> _vendors = [];
+  List<Map<String, dynamic>> _sites = [];
   String? _siteId;
   String? _siteName;
+
+  /// The site this person was already assigned to when the form opened. On edit
+  /// we only re-assign when the picker actually moves off it.
+  String? _initialSiteId;
   Map<String, dynamic>? _existing;
 
   bool get _isEdit => widget.workerId != null;
@@ -146,6 +151,7 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         dio.get('/designations'),
         dio.get('/vendors'),
         dio.get('/organizations/current'),
+        dio.get('/sites', queryParameters: {'active': 'true'}),
         if (_isEdit) dio.get('/workers/${widget.workerId}'),
       ]);
       _designations = (results[0].data as List).cast<Map<String, dynamic>>();
@@ -156,8 +162,9 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       // Staff work for us, not a contractor — read the company name rather than
       // hard-coding it, so a rename in Company settings follows through.
       _companyName = (results[2].data as Map<String, dynamic>)['name'] as String?;
+      _sites = (results[3].data as List).cast<Map<String, dynamic>>();
       if (_isEdit) {
-        final w = results[3].data as Map<String, dynamic>;
+        final w = results[4].data as Map<String, dynamic>;
         _existing = w;
         _workerCode = (w['workerCode'] ?? '') as String;
         _name.text = (w['fullName'] ?? '') as String;
@@ -189,6 +196,14 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
         _status = w['status'] as String?;
         _designationId = w['designationId'] as String?;
         _vendorId = w['vendorId'] as String?;
+        // On edit the picker shows where this person actually is, not whatever
+        // site this device happens to be set to.
+        final assignments = (w['assignments'] as List?) ?? const [];
+        final assignment =
+            assignments.isEmpty ? null : assignments.first as Map<String, dynamic>;
+        _siteId = assignment?['siteId'] as String?;
+        _siteName = (assignment?['site'] as Map<String, dynamic>?)?['name'] as String?;
+        _initialSiteId = _siteId;
         _photoUrl = w['photoUrl'] as String?;
         _aadhaarFrontPhotoId = w['aadhaarFrontPhotoId'] as String?;
         _aadhaarBackPhotoId = w['aadhaarBackPhotoId'] as String?;
@@ -490,6 +505,16 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
       if (_isEdit) {
         final res = await dio.patch('/workers/${widget.workerId}', data: body);
         saved = res.data as Map<String, dynamic>;
+        // The site lives on the assignment, not the worker row: a PATCH ignores
+        // siteId, so moving someone needs its own call.
+        if (_siteId != null && _siteId != _initialSiteId) {
+          await dio.post('/workers/${widget.workerId}/assign-site', data: {
+            'siteId': _siteId,
+            if (!_isStaff && _vendorId != null) 'vendorId': _vendorId,
+            'startDate': DateTime.now().toIso8601String().substring(0, 10),
+          });
+          _initialSiteId = _siteId;
+        }
       } else {
         final res = await dio.post('/workers', data: body);
         saved = res.data as Map<String, dynamic>;
@@ -870,6 +895,25 @@ class _WorkerEditScreenState extends ConsumerState<WorkerEditScreen> {
                           ],
                           onChanged: (v) => setState(() => _vendorId = v),
                         ),
+                      const SizedBox(height: 12),
+                      // Defaults to this device's active site, but a supervisor
+                      // can enrol someone onto another site from here.
+                      DropdownButtonFormField<String>(
+                        initialValue:
+                            _sites.any((s) => s['id'] == _siteId) ? _siteId : null,
+                        decoration: const InputDecoration(labelText: 'Site'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('—')),
+                          for (final s in _sites)
+                            DropdownMenuItem(
+                                value: s['id'] as String, child: Text(s['name'] as String)),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _siteId = v;
+                          _siteName = _sites.firstWhere((s) => s['id'] == v,
+                              orElse: () => {})['name'] as String?;
+                        }),
+                      ),
                       const SizedBox(height: 12),
                       if (_category == 'WORKER')
                         _text(_natureOfContractor, 'Nature of contractor'),
