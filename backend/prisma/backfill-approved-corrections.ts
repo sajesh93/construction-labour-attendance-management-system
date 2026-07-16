@@ -80,7 +80,7 @@ async function settle(tx: Tx, sessionId: string) {
 }
 
 /** Pass 1 — replay approvals that never touched a session. */
-async function replayUnapplied(tx: Tx) {
+export async function replayUnapplied(tx: Tx) {
   // APPROVED + no sessionId is exactly the never-applied set: the old code only
   // ever ran when sessionId was set, and never wrote sessionId back.
   const reqs = await tx.correctionRequest.findMany({
@@ -227,7 +227,7 @@ async function replayUnapplied(tx: Tx) {
 }
 
 /** Pass 2 — repair stale workDate on sessions an approved correction did touch. */
-async function repairWorkDates(tx: Tx) {
+export async function repairWorkDates(tx: Tx) {
   const linked = await tx.correctionRequest.findMany({
     where: { status: 'APPROVED', sessionId: { not: null } },
     select: { sessionId: true },
@@ -292,7 +292,10 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Guarded so the spec can import the passes without running the backfill.
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
