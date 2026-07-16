@@ -401,7 +401,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       const updated = await api.patch(`/workers/${editing.id}`, patch);
 
       const currentSiteId = editing.assignments?.[0]?.siteId ?? '';
-      if (!isStaff && siteId && siteId !== currentSiteId) {
+      if (siteId && siteId !== currentSiteId) {
         await api.post(`/workers/${editing.id}/assign-site`, {
           siteId,
           vendorId: patch.vendorId,
@@ -1141,12 +1141,11 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   (vendors.data ?? []).map((v) => ({ value: v.id, label: v.name })),
                 )}
               {category === 'WORKER' && field('natureOfContractor', 'Nature of contractor')}
-              {!isStaff &&
-                selectField(
-                  'siteId',
-                  'Site',
-                  (sites.data ?? []).map((s) => ({ value: s.id, label: s.name })),
-                )}
+              {selectField(
+                'siteId',
+                'Site',
+                (sites.data ?? []).map((s) => ({ value: s.id, label: s.name })),
+              )}
               {!isStaff &&
                 field('joinDate', isVisitor ? 'Visit date' : 'Date of joining', {
                   type: 'date',
@@ -1232,17 +1231,13 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
             {!isVisitor && (
               <>
                 {/* Screening and induction are the same step on site — one pair
-                    of fields, not two. Staff carry no induction card at all. */}
-                {!isStaff && (
-                  <>
-                    <SectionHeading>Induction & ID card</SectionHeading>
-                    <Grid container spacing={2}>
-                      {field('inductionDoneOn', 'Induction done on', { type: 'date' })}
-                      {field('inductedBy', 'Inducted by')}
-                      {field('validityTill', 'Validity till', { type: 'date' })}
-                    </Grid>
-                  </>
-                )}
+                    of fields, not two. */}
+                <SectionHeading>Induction & ID card</SectionHeading>
+                <Grid container spacing={2}>
+                  {field('inductionDoneOn', 'Induction done on', { type: 'date' })}
+                  {field('inductedBy', 'Inducted by')}
+                  {field('validityTill', 'Validity till', { type: 'date' })}
+                </Grid>
               </>
             )}
           </DialogContent>
