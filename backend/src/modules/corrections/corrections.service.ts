@@ -4,7 +4,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
-import { minutesOfDay } from '../../common/time/time.util';
+import { businessDate, minutesOfDay } from '../../common/time/time.util';
 import { computeWorkHours, ShiftConfig } from '../attendance/engine/work-hours.engine';
 import { CreateCorrectionDto, ReviewCorrectionDto } from './dto/correction.dto';
 
@@ -152,25 +152,35 @@ export class CorrectionsService {
 
       let sessionBefore: Record<string, unknown> | null = null;
       let sessionAfter: Record<string, unknown> | null = null;
+      let appliedSessionId: string | null = null;
 
-      if (req.sessionId) {
-        const session = await tx.attendanceSession.findUnique({
-          where: { id: req.sessionId },
-          include: { shift: true, site: true },
-        });
-        if (!session) throw Errors.conflict('Target session no longer exists');
+      {
+        // Requests filed from the mobile app don't pin a sessionId, so fall back
+        // to the worker's session for that work date. Without this the approval
+        // silently changed nothing and attendance/reports kept the old values.
+        let session = req.sessionId
+          ? await tx.attendanceSession.findUnique({
+              where: { id: req.sessionId },
+              include: { shift: true, site: true },
+            })
+          : await tx.attendanceSession.findFirst({
+              where: {
+                organizationId: req.organizationId,
+                workerId: req.workerId,
+                workDate: req.workDate,
+              },
+              include: { shift: true, site: true },
+              orderBy: { loginAt: 'desc' },
+            });
 
-        // Freshness: if the session changed after the request was filed, abort.
-        if (session.updatedAt > req.createdAt) {
+        if (req.sessionId && !session) throw Errors.conflict('Target session no longer exists');
+
+        // Freshness: if a pinned session changed after the request was filed, abort.
+        // Resolved-by-date sessions are deliberately exempt — they are looked up
+        // fresh at approval time, so "current row wins" is the intended behaviour.
+        if (req.sessionId && session && session.updatedAt > req.createdAt) {
           throw Errors.conflict('Session changed since the request was filed; please re-file');
         }
-
-        sessionBefore = {
-          loginAt: session.loginAt,
-          logoutAt: session.logoutAt,
-          siteId: session.siteId,
-          shiftId: session.shiftId,
-        };
 
         const patch: Prisma.AttendanceSessionUpdateInput = {};
         for (const item of req.items) {
@@ -193,12 +203,60 @@ export class CorrectionsService {
           }
         }
 
+        // A MISSING correction has no row to patch — the whole point is that the
+        // worker was never scanned in. Materialise the session from the proposed
+        // login time instead of approving into the void.
+        if (!session) {
+          if (!patch.loginAt) {
+            throw Errors.conflict(
+              'No attendance session exists for that work date; the correction must propose a login time',
+            );
+          }
+          const site = await tx.site.findFirst({
+            where: { id: req.siteId, organizationId: req.organizationId },
+            include: { settings: true },
+          });
+          if (!site) throw Errors.notFound('Site');
+          session = await tx.attendanceSession.create({
+            data: {
+              organizationId: req.organizationId,
+              workerId: req.workerId,
+              siteId: req.siteId,
+              shiftId: site.settings?.defaultShiftId ?? null,
+              workDate: req.workDate,
+              loginAt: patch.loginAt as Date,
+              state: 'OPEN',
+            },
+            include: { shift: true, site: true },
+          });
+        } else {
+          sessionBefore = {
+            loginAt: session.loginAt,
+            logoutAt: session.logoutAt,
+            siteId: session.siteId,
+            shiftId: session.shiftId,
+            workDate: session.workDate,
+          };
+        }
+
         // Apply, then recompute hours from resulting login/logout.
-        const applied = await tx.attendanceSession.update({
+        let applied = await tx.attendanceSession.update({
           where: { id: session.id },
           data: patch,
           include: { shift: true, site: true },
         });
+
+        // workDate is what attendance and reports filter on, so it has to follow
+        // a corrected login time (or a corrected site's timezone) — otherwise the
+        // session stays filed under the day it was originally scanned.
+        const workDate = businessDate(applied.loginAt, applied.site.timezone);
+        if (workDate.getTime() !== applied.workDate.getTime()) {
+          applied = await tx.attendanceSession.update({
+            where: { id: session.id },
+            data: { workDate },
+            include: { shift: true, site: true },
+          });
+        }
 
         if (applied.logoutAt) {
           const shiftCfg: ShiftConfig | undefined = applied.shift
@@ -235,7 +293,9 @@ export class CorrectionsService {
           logoutAt: applied.logoutAt,
           siteId: applied.siteId,
           shiftId: applied.shiftId,
+          workDate: applied.workDate,
         };
+        appliedSessionId = applied.id;
       }
 
       const updated = await tx.correctionRequest.update({
@@ -245,6 +305,9 @@ export class CorrectionsService {
           reviewedBy: user.userId,
           reviewedAt: new Date(),
           reviewNotes: dto.reviewNotes,
+          // Record which session the approval actually landed on, so the request
+          // is traceable back to the row it changed.
+          ...(req.sessionId ? {} : { sessionId: appliedSessionId }),
         },
       });
 
@@ -254,7 +317,7 @@ export class CorrectionsService {
         actorRole: user.role,
         action: 'CORRECTION_APPROVE',
         entityType: 'AttendanceSession',
-        entityId: req.sessionId ?? req.id,
+        entityId: appliedSessionId ?? req.id,
         oldValue: sessionBefore,
         newValue: sessionAfter,
         reason: dto.reviewNotes,
