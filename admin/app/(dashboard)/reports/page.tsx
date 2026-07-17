@@ -102,6 +102,35 @@ export default function ReportsPage() {
   // Attendance sheet: P/A presence grid vs IN/Out times.
   const [presenceMode, setPresenceMode] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // The hours cap stays out of sight until Ctrl+O, S is typed.
+  const [capUnlocked, setCapUnlocked] = React.useState(false);
+
+  React.useEffect(() => {
+    let sawO = false;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'o') {
+        sawO = true;
+        e.preventDefault();
+      } else if (key === 's' && sawO) {
+        sawO = false;
+        e.preventDefault();
+        setCapUnlocked(true);
+      } else if (key !== 'control') {
+        sawO = false;
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') sawO = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
 
   const vendors = useQuery({ queryKey: ['vendors'], queryFn: () => api.get<Vendor[]>('/vendors') });
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
@@ -113,7 +142,8 @@ export default function ReportsPage() {
   const showVendorTools = reportType !== 'CORRECTION';
   // Only the reports that print a "Worked (h)" column can cap it. The
   // attendance sheet marks P/A per day and the correction log has no hours.
-  const showHoursCap = reportType !== 'CORRECTION' && reportType !== 'ATTENDANCE_SHEET';
+  const showHoursCap =
+    capUnlocked && reportType !== 'CORRECTION' && reportType !== 'ATTENDANCE_SHEET';
 
   const buildParams = (): Record<string, unknown> => {
     const params: Record<string, unknown> = {};
