@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -40,6 +41,7 @@ import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import DownloadIcon from '@mui/icons-material/Download';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
@@ -264,6 +266,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     name: string;
     docs: { label: string; src: string }[] | null;
   } | null>(null);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = React.useState(false);
   const {
     register,
     handleSubmit,
@@ -343,6 +347,14 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     return true;
   });
 
+  // Selection is scoped to what the filters currently show: a row that has been
+  // filtered away must not ride along in a download the user cannot see.
+  const selectedVisible = visibleRows.filter((w) => selected.has(w.id)).map((w) => w.id);
+  const allSelected = visibleRows.length > 0 && selectedVisible.length === visibleRows.length;
+  const someSelected = selectedVisible.length > 0;
+  const toggleSelectAll = () =>
+    setSelected(allSelected ? new Set() : new Set(visibleRows.map((w) => w.id)));
+
   const refresh = () => qc.invalidateQueries({ queryKey: ['workers'] });
 
   const closeDialog = () => {
@@ -402,6 +414,58 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       toast.error(err.body?.detail ?? err.body?.title ?? 'Failed to load documents');
     }
   };
+
+  /**
+   * Downloads a zip of the given people's photos and ID cards. `filename` is
+   * what the browser saves it as; the zip holds one folder per person.
+   */
+  const downloadDocuments = async (ids: string[], filename: string) => {
+    if (ids.length === 0) return;
+    setDownloading(true);
+    try {
+      const res = await fetch('/api/worker-documents', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        throw new Error(
+          res.status === 403
+            ? 'You do not have permission to download documents.'
+            : res.status === 404
+              ? 'Nothing to download — no images are on file.'
+              : 'Download failed. Please try again.',
+        );
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Download failed');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const downloadOne = (w: Worker) =>
+    downloadDocuments([w.id], `${w.fullName.replace(/[/\\:*?"<>|]/g, ' ').trim()}.zip`);
+
+  const downloadMany = (ids: string[]) => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadDocuments(ids, `${labels.plural.toLowerCase()}-documents-${stamp}.zip`);
+  };
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const save = useMutation({
     mutationFn: async (v: PersonForm) => {
@@ -680,8 +744,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   const showBankSections = category !== 'VISITOR';
   const loading = workers.isLoading;
   // Staff drop the Gov ID column, so the empty-state colspan drops with it.
+  // The leading +1 is the selection checkbox column.
   const columnCount =
-    6 + (isVisitor ? 0 : 1) + (category === 'WORKER' ? 1 : 0) - 1 - (isStaff ? 1 : 0);
+    1 + 6 + (isVisitor ? 0 : 1) + (category === 'WORKER' ? 1 : 0) - 1 - (isStaff ? 1 : 0);
 
   return (
     <>
@@ -808,11 +873,52 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           {error}
         </Alert>
       )}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }} flexWrap="wrap">
+        <Button
+          size="small"
+          variant={someSelected ? 'contained' : 'outlined'}
+          startIcon={downloading ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+          disabled={downloading || !someSelected}
+          onClick={() => downloadMany(selectedVisible)}
+        >
+          Download selected ({selectedVisible.length})
+        </Button>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          disabled={downloading || visibleRows.length === 0}
+          onClick={() => downloadMany(visibleRows.map((w) => w.id))}
+        >
+          Download all ({visibleRows.length})
+        </Button>
+        {someSelected && (
+          <Button size="small" color="inherit" onClick={() => setSelected(new Set())}>
+            Clear selection
+          </Button>
+        )}
+        {/* "All" can only mean the rows we have actually loaded, so say so
+            rather than quietly exporting a subset. */}
+        {nextCursor && (
+          <Typography variant="caption" color="text.secondary">
+            Download all covers the {visibleRows.length} loaded — use Load more for the rest.
+          </Typography>
+        )}
+      </Stack>
       <Card>
         <Box sx={{ overflowX: 'auto' }}>
           <Table size="small" sx={{ minWidth: 720 }}>
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    size="small"
+                    checked={allSelected}
+                    indeterminate={someSelected && !allSelected}
+                    onChange={toggleSelectAll}
+                    inputProps={{ 'aria-label': 'Select all' }}
+                  />
+                </TableCell>
                 <TableCell>{isVisitor ? 'Visitor' : 'Person'}</TableCell>
                 {isVisitor ? (
                   <>
@@ -854,7 +960,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 ))}
               {!loading &&
                 visibleRows.map((w) => (
-                  <TableRow key={w.id} hover>
+                  <TableRow key={w.id} hover selected={selected.has(w.id)}>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        size="small"
+                        checked={selected.has(w.id)}
+                        onChange={() => toggleSelected(w.id)}
+                        inputProps={{ 'aria-label': `Select ${w.fullName}` }}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={1.5} alignItems="center">
                         <Tooltip title={w.photoUrl ? 'View photo' : ''}>
@@ -922,6 +1036,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                       <Tooltip title="View photo & documents">
                         <IconButton size="small" onClick={() => openDocs(w)}>
                           <CreditCardIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Download photo & documents">
+                        <IconButton
+                          size="small"
+                          disabled={downloading}
+                          onClick={() => downloadOne(w)}
+                        >
+                          <DownloadIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Edit">

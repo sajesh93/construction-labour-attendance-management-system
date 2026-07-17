@@ -1,11 +1,25 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Logger,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
+import archiver from 'archiver';
 import { WorkersService } from './workers.service';
 import {
   AssignSiteDto,
   BindCredentialDto,
   CreateWorkerDto,
   ExitWorkerDto,
+  ExportDocumentsDto,
   RehireWorkerDto,
   UpdateWorkerDto,
 } from './dto/worker.dto';
@@ -18,6 +32,8 @@ import { AuthUser } from '../../common/auth/auth-user.interface';
 @ApiBearerAuth()
 @Controller('workers')
 export class WorkersController {
+  private readonly logger = new Logger(WorkersController.name);
+
   constructor(private readonly workers: WorkersService) {}
 
   // Specific routes first so they are not shadowed by ':id'.
@@ -92,6 +108,50 @@ export class WorkersController {
       return this.workers.get(user, id, false);
     }
     return this.workers.get(user, id, wantsReveal);
+  }
+
+  /**
+   * Streams a zip of the selected people's photos and ID cards, one folder per
+   * person. POST (not GET) because the id list can be long, and it keeps the
+   * ids out of access logs — these downloads are audited on the way through.
+   */
+  @Post('documents')
+  @RequirePermissions(Permission.WORKER_MANAGE)
+  async documents(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ExportDocumentsDto,
+    @Res() res: Response,
+  ) {
+    const archive = archiver('zip', {
+      // The payload is JPEG: already compressed, so deflate would burn CPU to
+      // save almost nothing. Store and let it stream.
+      store: true,
+    });
+    archive.on('warning', (e) => this.logger.warn(`Zip warning: ${String(e)}`));
+    archive.on('error', (e) => {
+      this.logger.error(`Zip failed: ${String(e)}`);
+      res.destroy(e);
+    });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="documents.zip"');
+    res.setHeader('Cache-Control', 'no-store');
+    archive.pipe(res);
+
+    try {
+      for await (const file of this.workers.documentFiles(user, dto.ids)) {
+        archive.append(file.data, { name: file.path });
+      }
+    } catch (e) {
+      // Headers are already sent, so the usual exception filter cannot turn
+      // this into a JSON error. Abort the stream: the client sees a truncated
+      // download rather than a zip that silently omits people.
+      this.logger.error(`Document export failed: ${String(e)}`);
+      archive.abort();
+      res.destroy(e as Error);
+      return;
+    }
+    await archive.finalize();
   }
 
   @Post()

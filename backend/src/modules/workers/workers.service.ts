@@ -15,6 +15,37 @@ import {
   UpdateWorkerDto,
 } from './dto/worker.dto';
 
+/**
+ * Makes a name safe to use as a zip path segment: strips separators and the
+ * characters Windows rejects, and refuses "." / ".." so an entry can never
+ * escape its folder when extracted.
+ */
+function sanitizeSegment(raw: string): string {
+  const cleaned = raw
+    .replace(/[/\\:*?"<>|]/g, ' ')
+    // Control characters have no business in a filename.
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    // Trailing dots/spaces are silently dropped by Windows.
+    .replace(/[. ]+$/, '');
+  return cleaned === '' || cleaned === '.' || cleaned === '..' ? 'unnamed' : cleaned;
+}
+
+/** "/files/<uuid>" -> "<uuid>". Anything else (external url) has no blob. */
+function blobIdFromPhotoUrl(url: string | null): string | null {
+  if (!url?.startsWith('/files/')) return null;
+  const id = url.slice('/files/'.length);
+  return id.length > 0 ? id : null;
+}
+
+function extensionFor(mimeType: string): string {
+  if (mimeType === 'image/png') return '.png';
+  if (mimeType === 'image/webp') return '.webp';
+  return '.jpg';
+}
+
 @Injectable()
 export class WorkersService {
   constructor(
@@ -213,6 +244,72 @@ export class WorkersService {
     void _omit3;
     void _omit4;
     return { ...rest, aadhaar, pan, bankAccount };
+  }
+
+  // ---- Document export -----------------------------------------------------
+
+  /**
+   * Yields every stored image for the given people, one at a time, as
+   * `<folder>/<file>` entries ready to be zipped. Streaming rather than
+   * returning an array: a few hundred people is hundreds of MB of decrypted
+   * JPEG, which we do not want resident all at once.
+   *
+   * Blob rows are fetched one by one for the same reason — `data` is the whole
+   * image, so a findMany over a page of people would pull every card into
+   * memory before the first byte reaches the client.
+   */
+  async *documentFiles(
+    user: AuthUser,
+    ids: string[],
+  ): AsyncGenerator<{ path: string; data: Buffer }> {
+    const people = await this.prisma.worker.findMany({
+      where: { id: { in: ids }, organizationId: user.organizationId, deletedAt: null },
+      orderBy: [{ fullName: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        fullName: true,
+        workerCode: true,
+        photoUrl: true,
+        aadhaarFrontPhotoId: true,
+        aadhaarBackPhotoId: true,
+        idProofPhotoId: true,
+      },
+    });
+    if (people.length === 0) throw Errors.notFound('Worker');
+
+    for (const p of people) {
+      // Two people can share a name, so the code disambiguates the folder.
+      const folder = `${sanitizeSegment(p.fullName)} (${sanitizeSegment(p.workerCode)})`;
+      const wanted: [string, string | null][] = [
+        // The profile photo is stored as a "/files/<id>" url; cards as bare ids.
+        ['photo', blobIdFromPhotoUrl(p.photoUrl)],
+        ['aadhaar-front', p.aadhaarFrontPhotoId],
+        ['aadhaar-back', p.aadhaarBackPhotoId],
+        ['id-proof', p.idProofPhotoId],
+      ];
+      for (const [name, blobId] of wanted) {
+        if (!blobId) continue;
+        const blob = await this.prisma.photoBlob.findFirst({
+          where: { id: blobId, organizationId: user.organizationId },
+        });
+        // A dangling id is not worth failing the whole export over.
+        if (!blob) continue;
+        const data = blob.isEncrypted
+          ? this.crypto.decryptBuffer(Buffer.from(blob.data))
+          : Buffer.from(blob.data);
+        yield { path: `${folder}/${name}${extensionFor(blob.mimeType)}`, data };
+      }
+    }
+
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.userId,
+      actorRole: user.role,
+      action: 'WORKER_DOCUMENTS_EXPORT',
+      entityType: 'Worker',
+      entityId: people.length === 1 ? people[0].id : null,
+      newValue: { count: people.length, workerIds: people.map((p) => p.id) },
+    });
   }
 
   // ---- Mutations -----------------------------------------------------------

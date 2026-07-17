@@ -1,11 +1,15 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { CredentialKind, PersonCategory, WorkerStatus } from '@prisma/client';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
   IsDateString,
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Matches,
 } from 'class-validator';
@@ -307,4 +311,19 @@ export class RehireWorkerDto {
   @IsOptional()
   @IsString()
   vendorId?: string;
+}
+
+/** Bounded so one request cannot ask us to stream the entire org's cards. */
+export const MAX_EXPORT_IDS = 500;
+
+export class ExportDocumentsDto {
+  @ApiProperty({
+    type: [String],
+    description: `Worker ids to export (max ${MAX_EXPORT_IDS})`,
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(MAX_EXPORT_IDS)
+  @IsUUID('4', { each: true })
+  ids!: string[];
 }
