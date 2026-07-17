@@ -39,6 +39,7 @@ import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
@@ -256,6 +257,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   const [editing, setEditing] = React.useState<WorkerDetail | null>(null);
   const [deleting, setDeleting] = React.useState<Worker | null>(null);
   const [uploading, setUploading] = React.useState(false);
+  // Full-size Aadhaar viewer: the tile thumbnail is too small to read a card.
+  const [viewing, setViewing] = React.useState<{ src: string; label: string } | null>(null);
   const {
     register,
     handleSubmit,
@@ -479,6 +482,10 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     });
   }, []);
   React.useEffect(() => clearLocalPreviews, [clearLocalPreviews]);
+
+  const idProofSrc =
+    localPreviews.ID_PROOF ?? (idProofPhotoId ? photoSrc(`/files/${idProofPhotoId}`) : undefined);
+  const viewIdProof = () => setViewing({ src: idProofSrc!, label: 'ID proof' });
 
   /** Explain a failed scan in terms the admin can act on. */
   const reportScanFailure = () =>
@@ -974,15 +981,19 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                       ['AADHAAR_FRONT', 'Front *', aadhaarFrontPhotoId, 'aadhaarFrontPhotoId'],
                       ['AADHAAR_BACK', 'Back', aadhaarBackPhotoId, 'aadhaarBackPhotoId'],
                     ] as const
-                  ).map(([side, label, id, field]) => (
+                  ).map(([side, label, id, field]) => {
+                    // The just-picked file wins: it renders instantly and does
+                    // not depend on the upload having landed.
+                    const src = localPreviews[side] ?? (id ? photoSrc(`/files/${id}`) : undefined);
+                    const view = () => setViewing({ src: src!, label: `Aadhaar ${label}` });
+                    return (
                     <Grid item xs={12} sm={6} key={side}>
                       <Stack direction="row" spacing={2} alignItems="center">
                         <Avatar
                           variant="rounded"
-                          // The just-picked file wins: it renders instantly and
-                          // does not depend on the upload having landed.
-                          src={localPreviews[side] ?? (id ? photoSrc(`/files/${id}`) : undefined)}
-                          sx={{ width: 88, height: 56 }}
+                          src={src}
+                          onClick={src ? view : undefined}
+                          sx={{ width: 88, height: 56, cursor: src ? 'zoom-in' : 'default' }}
                         >
                           <CreditCardIcon fontSize="small" />
                         </Avatar>
@@ -991,6 +1002,16 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                             Aadhaar {label}
                           </Typography>
                           <Stack direction="row" spacing={1}>
+                            {src && (
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<ZoomInIcon />}
+                                onClick={view}
+                              >
+                                View
+                              </Button>
+                            )}
                             <Button
                               component="label"
                               variant="outlined"
@@ -1033,7 +1054,8 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                         </Stack>
                       </Stack>
                     </Grid>
-                  ))}
+                    );
+                  })}
                 </Grid>
                 <Stack
                   direction="row"
@@ -1198,11 +1220,22 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                 <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
                   <Avatar
                     variant="rounded"
-                    src={idProofPhotoId ? photoSrc(`/files/${idProofPhotoId}`) : undefined}
-                    sx={{ width: 88, height: 56 }}
+                    src={idProofSrc}
+                    onClick={idProofSrc ? viewIdProof : undefined}
+                    sx={{ width: 88, height: 56, cursor: idProofSrc ? 'zoom-in' : 'default' }}
                   >
                     <CreditCardIcon fontSize="small" />
                   </Avatar>
+                  {idProofSrc && (
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<ZoomInIcon />}
+                      onClick={viewIdProof}
+                    >
+                      View
+                    </Button>
+                  )}
                   <Button component="label" variant="outlined" size="small" disabled={uploading}>
                     {idProofPhotoId ? 'Replace' : 'Upload'}
                     <input type="file" accept="image/*" hidden onChange={onPickIdProof} />
@@ -1216,8 +1249,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   >
                     Capture
                   </Button>
-                  {idProofPhotoId && (
-                    <Button size="small" color="inherit" onClick={() => setValue('idProofPhotoId', '')}>
+                  {idProofSrc && (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      onClick={() => {
+                        setValue('idProofPhotoId', '');
+                        clearLocalPreview('ID_PROOF');
+                      }}
+                    >
                       Remove
                     </Button>
                   )}
@@ -1328,6 +1368,28 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           </Button>
           <Button variant="contained" onClick={() => window.print()}>
             Print
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!viewing} onClose={() => setViewing(null)} fullWidth maxWidth="md">
+        <DialogTitle>{viewing?.label}</DialogTitle>
+        <DialogContent dividers>
+          {viewing && (
+            <Box
+              component="img"
+              src={viewing.src}
+              alt={viewing.label}
+              sx={{ width: '100%', height: 'auto', display: 'block' }}
+            />
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button component="a" href={viewing?.src} target="_blank" rel="noreferrer" color="inherit">
+            Open in new tab
+          </Button>
+          <Button variant="contained" onClick={() => setViewing(null)}>
+            Close
           </Button>
         </DialogActions>
       </Dialog>
