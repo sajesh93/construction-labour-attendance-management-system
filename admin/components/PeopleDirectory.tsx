@@ -386,13 +386,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
       const full = await api.get<WorkerDetail>(`/workers/${w.id}`);
       const docs = (
         [
-          ['Aadhaar front', full.aadhaarFrontPhotoId],
-          ['Aadhaar back', full.aadhaarBackPhotoId],
-          ['ID proof', full.idProofPhotoId],
+          // The profile photo is stored as a full url, the cards as blob ids.
+          ['Photo', full.photoUrl],
+          ['Aadhaar front', full.aadhaarFrontPhotoId && `/files/${full.aadhaarFrontPhotoId}`],
+          ['Aadhaar back', full.aadhaarBackPhotoId && `/files/${full.aadhaarBackPhotoId}`],
+          ['ID proof', full.idProofPhotoId && `/files/${full.idProofPhotoId}`],
         ] as const
       )
-        .filter(([, id]) => !!id)
-        .map(([label, id]) => ({ label, src: photoSrc(`/files/${id}`)! }));
+        .filter(([, url]) => !!url)
+        .map(([label, url]) => ({ label, src: photoSrc(url)! }));
       setDocsFor({ name: w.fullName, docs });
     } catch (e) {
       const err = e as BrowserApiError;
@@ -514,6 +516,9 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   const idProofSrc =
     localPreviews.ID_PROOF ?? (idProofPhotoId ? photoSrc(`/files/${idProofPhotoId}`) : undefined);
   const viewIdProof = () => setViewing({ src: idProofSrc!, label: 'ID proof' });
+
+  const profileSrc = localPreviews.PROFILE ?? photoSrc(photoUrl);
+  const viewProfile = () => setViewing({ src: profileSrc!, label: 'Photo' });
 
   /** Explain a failed scan in terms the admin can act on. */
   const reportScanFailure = () =>
@@ -852,9 +857,27 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   <TableRow key={w.id} hover>
                     <TableCell>
                       <Stack direction="row" spacing={1.5} alignItems="center">
-                        <Avatar src={photoSrc(w.photoUrl)} sx={{ width: 36, height: 36 }}>
-                          {w.fullName.charAt(0)}
-                        </Avatar>
+                        <Tooltip title={w.photoUrl ? 'View photo' : ''}>
+                          <Avatar
+                            src={photoSrc(w.photoUrl)}
+                            onClick={
+                              w.photoUrl
+                                ? () =>
+                                    setViewing({
+                                      src: photoSrc(w.photoUrl)!,
+                                      label: w.fullName,
+                                    })
+                                : undefined
+                            }
+                            sx={{
+                              width: 36,
+                              height: 36,
+                              cursor: w.photoUrl ? 'zoom-in' : 'default',
+                            }}
+                          >
+                            {w.fullName.charAt(0)}
+                          </Avatar>
+                        </Tooltip>
                         <Box sx={{ minWidth: 0 }}>
                           <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                             {w.fullName}
@@ -896,13 +919,11 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                       <StatusBadge label={w.status} tone={personTone(w.status)} />
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                      {!isStaff && (
-                        <Tooltip title="View documents">
-                          <IconButton size="small" onClick={() => openDocs(w)}>
-                            <CreditCardIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                      <Tooltip title="View photo & documents">
+                        <IconButton size="small" onClick={() => openDocs(w)}>
+                          <CreditCardIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Edit">
                         <IconButton size="small" onClick={() => openEdit(w)}>
                           <EditIcon fontSize="small" />
@@ -975,7 +996,21 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
               <>
                 <SectionHeading first>Photo</SectionHeading>
                 <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Avatar src={photoSrc(photoUrl)} sx={{ width: 64, height: 64 }} />
+                  <Avatar
+                    src={profileSrc}
+                    onClick={profileSrc ? viewProfile : undefined}
+                    sx={{ width: 64, height: 64, cursor: profileSrc ? 'zoom-in' : 'default' }}
+                  />
+                  {profileSrc && (
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<ZoomInIcon />}
+                      onClick={viewProfile}
+                    >
+                      View
+                    </Button>
+                  )}
                   <Button
                     component="label"
                     variant="outlined"
@@ -995,8 +1030,15 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                   >
                     Capture
                   </Button>
-                  {photoUrl && (
-                    <Button size="small" color="inherit" onClick={() => setValue('photoUrl', '')}>
+                  {profileSrc && (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      onClick={() => {
+                        setValue('photoUrl', '');
+                        clearLocalPreview('PROFILE');
+                      }}
+                    >
                       Remove
                     </Button>
                   )}
@@ -1439,7 +1481,14 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                     component="img"
                     src={d.src}
                     alt={d.label}
-                    sx={{ width: '100%', height: 'auto', display: 'block', cursor: 'zoom-in' }}
+                    // Cap the height so a portrait photo does not tower over the
+                    // landscape cards; cards still fill the width.
+                    sx={{
+                      maxWidth: '100%',
+                      maxHeight: 420,
+                      display: 'block',
+                      cursor: 'zoom-in',
+                    }}
                   />
                 </Box>
               </Box>
@@ -1461,7 +1510,7 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
               component="img"
               src={viewing.src}
               alt={viewing.label}
-              sx={{ width: '100%', height: 'auto', display: 'block' }}
+              sx={{ maxWidth: '100%', maxHeight: '70vh', display: 'block', mx: 'auto' }}
             />
           )}
         </DialogContent>
