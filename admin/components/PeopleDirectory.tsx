@@ -1585,38 +1585,50 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
               No Aadhaar or ID-proof images on file.
             </Typography>
           )}
-          <Stack spacing={2}>
+          {/* Tiles, not a single column: a portrait photo left a dead column of
+              whitespace beside it. Each image is contained in an equal tile, so
+              portraits and landscape cards line up and the width gets used. */}
+          <Grid container spacing={2}>
             {docsFor?.docs?.map((d) => (
-              <Box key={d.label}>
+              <Grid item xs={12} sm={6} key={d.label}>
                 <Typography variant="caption" color="text.secondary">
                   {d.label}
                 </Typography>
-                {/* Already full-width here, so the click goes straight to a new
-                    tab for zooming/saving rather than stacking another dialog. */}
+                {/* The tile is only a preview, so the click goes straight to a
+                    new tab for zooming/saving rather than stacking a dialog. */}
                 <Box
                   component="a"
                   href={d.src}
                   target="_blank"
                   rel="noreferrer"
-                  sx={{ display: 'block' }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: 260,
+                    mt: 0.5,
+                    p: 1,
+                    borderRadius: 1,
+                    border: 1,
+                    borderColor: 'divider',
+                    bgcolor: 'action.hover',
+                  }}
                 >
                   <Box
                     component="img"
                     src={d.src}
                     alt={d.label}
-                    // Cap the height so a portrait photo does not tower over the
-                    // landscape cards; cards still fill the width.
                     sx={{
                       maxWidth: '100%',
-                      maxHeight: 420,
-                      display: 'block',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
                       cursor: 'zoom-in',
                     }}
                   />
                 </Box>
-              </Box>
+              </Grid>
             ))}
-          </Stack>
+          </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button variant="contained" onClick={() => setDocsFor(null)}>

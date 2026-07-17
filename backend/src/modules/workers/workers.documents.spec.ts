@@ -116,10 +116,13 @@ describe('WorkersService.documentFiles', () => {
   });
 
   it('audits the export with everyone it covered', async () => {
-    const { service, audit } = setup([makePerson(), makePerson({ id: 'w2', workerCode: 'W-002' })], {
-      'photo-1': makeBlob(),
-      'front-1': makeBlob(),
-    });
+    const { service, audit } = setup(
+      [makePerson(), makePerson({ id: 'w2', workerCode: 'W-002' })],
+      {
+        'photo-1': makeBlob(),
+        'front-1': makeBlob(),
+      },
+    );
 
     await collect(service.documentFiles(user, ['w1', 'w2']));
 
@@ -135,7 +138,10 @@ describe('WorkersService.documentFiles', () => {
   });
 
   it('scopes the export to the caller organization', async () => {
-    const { service, prisma } = setup([makePerson()], { 'photo-1': makeBlob(), 'front-1': makeBlob() });
+    const { service, prisma } = setup([makePerson()], {
+      'photo-1': makeBlob(),
+      'front-1': makeBlob(),
+    });
 
     await collect(service.documentFiles(user, ['w1']));
 
