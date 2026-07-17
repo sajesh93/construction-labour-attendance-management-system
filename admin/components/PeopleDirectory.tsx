@@ -259,6 +259,11 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
   const [uploading, setUploading] = React.useState(false);
   // Full-size Aadhaar viewer: the tile thumbnail is too small to read a card.
   const [viewing, setViewing] = React.useState<{ src: string; label: string } | null>(null);
+  // Row-level document viewer. `docs: null` means the fetch is still in flight.
+  const [docsFor, setDocsFor] = React.useState<{
+    name: string;
+    docs: { label: string; src: string }[] | null;
+  } | null>(null);
   const {
     register,
     handleSubmit,
@@ -370,6 +375,29 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
     } catch (e) {
       const err = e as BrowserApiError;
       toast.error(err.body?.detail ?? err.body?.title ?? `Failed to load ${labels.singular}`);
+    }
+  };
+
+  // Read-only document viewer, straight off the row: opening the edit form just
+  // to look at a card is a lot of ceremony (and risks an accidental change).
+  const openDocs = async (w: Worker) => {
+    setDocsFor({ name: w.fullName, docs: null });
+    try {
+      const full = await api.get<WorkerDetail>(`/workers/${w.id}`);
+      const docs = (
+        [
+          ['Aadhaar front', full.aadhaarFrontPhotoId],
+          ['Aadhaar back', full.aadhaarBackPhotoId],
+          ['ID proof', full.idProofPhotoId],
+        ] as const
+      )
+        .filter(([, id]) => !!id)
+        .map(([label, id]) => ({ label, src: photoSrc(`/files/${id}`)! }));
+      setDocsFor({ name: w.fullName, docs });
+    } catch (e) {
+      const err = e as BrowserApiError;
+      setDocsFor(null);
+      toast.error(err.body?.detail ?? err.body?.title ?? 'Failed to load documents');
     }
   };
 
@@ -868,6 +896,13 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
                       <StatusBadge label={w.status} tone={personTone(w.status)} />
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      {!isStaff && (
+                        <Tooltip title="View documents">
+                          <IconButton size="small" onClick={() => openDocs(w)}>
+                            <CreditCardIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       <Tooltip title="Edit">
                         <IconButton size="small" onClick={() => openEdit(w)}>
                           <EditIcon fontSize="small" />
@@ -1368,6 +1403,52 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
           </Button>
           <Button variant="contained" onClick={() => window.print()}>
             Print
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!docsFor} onClose={() => setDocsFor(null)} fullWidth maxWidth="md">
+        <DialogTitle>Documents — {docsFor?.name}</DialogTitle>
+        <DialogContent dividers>
+          {docsFor?.docs === null && (
+            <Stack alignItems="center" sx={{ py: 4 }}>
+              <CircularProgress size={24} />
+            </Stack>
+          )}
+          {docsFor?.docs?.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+              No Aadhaar or ID-proof images on file.
+            </Typography>
+          )}
+          <Stack spacing={2}>
+            {docsFor?.docs?.map((d) => (
+              <Box key={d.label}>
+                <Typography variant="caption" color="text.secondary">
+                  {d.label}
+                </Typography>
+                {/* Already full-width here, so the click goes straight to a new
+                    tab for zooming/saving rather than stacking another dialog. */}
+                <Box
+                  component="a"
+                  href={d.src}
+                  target="_blank"
+                  rel="noreferrer"
+                  sx={{ display: 'block' }}
+                >
+                  <Box
+                    component="img"
+                    src={d.src}
+                    alt={d.label}
+                    sx={{ width: '100%', height: 'auto', display: 'block', cursor: 'zoom-in' }}
+                  />
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button variant="contained" onClick={() => setDocsFor(null)}>
+            Close
           </Button>
         </DialogActions>
       </Dialog>
