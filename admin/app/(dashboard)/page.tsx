@@ -362,11 +362,21 @@ export default function DashboardPage() {
             <LineChart
               height={260}
               series={vendorSeries.map((s, i) => ({
+                id: `vendor-${i}`,
                 data: s.data,
                 label: s.vendor,
                 color: vendorPalette[i % vendorPalette.length],
                 curve: 'monotoneX',
+                area: true,
               }))}
+              // One tinted fill per vendor. A single .MuiAreaElement-root rule
+              // would paint every series the same colour, so target each by id.
+              sx={Object.fromEntries(
+                vendorSeries.map((_, i) => [
+                  `& .MuiAreaElement-series-vendor-${i}`,
+                  { fill: alpha(vendorPalette[i % vendorPalette.length], 0.12) },
+                ]),
+              )}
               xAxis={[
                 {
                   scaleType: 'point',
