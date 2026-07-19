@@ -39,6 +39,7 @@ import { Site, Vendor } from '@/lib/types';
 
 const REPORT_TYPES = [
   'DAILY',
+  'WEEKLY',
   'MONTHLY',
   'WORKER',
   'VENDOR',
@@ -74,6 +75,11 @@ interface ReportResult {
   rowCount?: number;
 }
 
+/** The Monday on or before `d`. dayjs weeks start on Sunday, so shift by hand. */
+function mondayOf(d: Dayjs): Dayjs {
+  return d.subtract((d.day() + 6) % 7, 'day').startOf('day');
+}
+
 /** Render ISO timestamps from the API as readable local date-times. */
 function cell(header: string, value: string | number | null): string {
   if (value == null || value === '') return '—';
@@ -89,6 +95,8 @@ export default function ReportsPage() {
   const [reportType, setReportType] = React.useState('MONTHLY');
   const [month, setMonth] = React.useState<Dayjs | null>(dayjs());
   const [date, setDate] = React.useState<Dayjs | null>(dayjs());
+  // Weekly report: the admin picks any day, the report covers its Mon–Sun week.
+  const [week, setWeek] = React.useState<Dayjs | null>(dayjs());
   const [from, setFrom] = React.useState<Dayjs | null>(dayjs().startOf('month'));
   const [to, setTo] = React.useState<Dayjs | null>(dayjs().endOf('day'));
   const [vendorId, setVendorId] = React.useState('');
@@ -138,7 +146,9 @@ export default function ReportsPage() {
   const showAttSheet = reportType === 'ATTENDANCE_SHEET';
   const showMonth = reportType === 'MONTHLY';
   const showDate = reportType === 'DAILY';
-  const showRange = !showMonth && !showDate && !showAttSheet && reportType !== 'CORRECTION';
+  const showWeek = reportType === 'WEEKLY';
+  const showRange =
+    !showMonth && !showDate && !showWeek && !showAttSheet && reportType !== 'CORRECTION';
   const showVendorTools = reportType !== 'CORRECTION';
   // Only the reports that print a "Worked (h)" column can cap it. The
   // attendance sheet marks P/A per day and the correction log has no hours.
@@ -149,6 +159,7 @@ export default function ReportsPage() {
     const params: Record<string, unknown> = {};
     if (showMonth && month) params.month = month.format('YYYY-MM');
     if (showDate && date) params.date = date.format('YYYY-MM-DD');
+    if (showWeek && week) params.weekStart = mondayOf(week).format('YYYY-MM-DD');
     if (showRange) {
       if (from) params.from = from.toISOString();
       if (to) params.to = to.toISOString();
@@ -254,6 +265,25 @@ export default function ReportsPage() {
                   value={date}
                   onChange={setDate}
                   slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
+            )}
+            {showWeek && (
+              <Grid item xs={12} sm={6} md={4}>
+                <DatePicker
+                  label="Week of"
+                  value={week}
+                  onChange={setWeek}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      helperText: week
+                        ? `${mondayOf(week).format('DD MMM')} – ${mondayOf(week)
+                            .add(6, 'day')
+                            .format('DD MMM YYYY')}`
+                        : 'Pick any day in the week',
+                    },
+                  }}
                 />
               </Grid>
             )}

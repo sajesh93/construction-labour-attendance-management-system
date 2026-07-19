@@ -230,6 +230,14 @@ export class ReportsService {
     if (type === ReportType.DAILY && params.date) {
       where.workDate = new Date(String(params.date));
     }
+    // Weekly: params.weekStart is the Monday of the week; the range runs the
+    // seven days from there, so the admin only ever picks one date.
+    if (type === ReportType.WEEKLY && params.weekStart) {
+      const start = new Date(`${String(params.weekStart)}T00:00:00.000Z`);
+      const end = new Date(start);
+      end.setUTCDate(end.getUTCDate() + 7);
+      where.workDate = { gte: start, lt: end };
+    }
     if (type === ReportType.MONTHLY && params.month) {
       const [y, m] = String(params.month)
         .split('-')

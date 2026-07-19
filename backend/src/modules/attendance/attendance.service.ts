@@ -839,6 +839,74 @@ export class AttendanceService {
     };
   }
 
+  /**
+   * Vendor-wise attendance across one month — man-days, distinct people and
+   * total hours per vendor. Powers the dashboard's monthly vendor chart.
+   */
+  async vendorMonthly(user: AuthUser, month?: string) {
+    const now = new Date();
+    const asked =
+      month ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const [year, mon] = asked.split('-').map((n) => parseInt(n, 10));
+    if (!year || !mon || mon < 1 || mon > 12) {
+      throw Errors.validation({ message: 'month must be YYYY-MM' });
+    }
+    const from = new Date(Date.UTC(year, mon - 1, 1));
+    const to = new Date(Date.UTC(year, mon, 1));
+
+    const scopeFilter =
+      user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
+        ? { siteId: { in: user.siteScopes } }
+        : {};
+
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        workDate: { gte: from, lt: to },
+        ...scopeFilter,
+      },
+      select: {
+        workerId: true,
+        workedMinutes: true,
+        worker: { select: { vendor: { select: { name: true } } } },
+      },
+    });
+
+    const byVendor = new Map<string, { manDays: number; minutes: number; workers: Set<string> }>();
+    for (const s of sessions) {
+      const name = s.worker.vendor?.name?.trim() || 'No vendor';
+      let v = byVendor.get(name);
+      if (!v) {
+        v = { manDays: 0, minutes: 0, workers: new Set() };
+        byVendor.set(name, v);
+      }
+      v.manDays += 1;
+      // Open sessions have no worked_minutes yet — they still count as a man-day.
+      v.minutes += s.workedMinutes ?? 0;
+      v.workers.add(s.workerId);
+    }
+
+    const vendors = [...byVendor.entries()]
+      .map(([vendor, v]) => ({
+        vendor,
+        manDays: v.manDays,
+        workers: v.workers.size,
+        hours: Math.round(v.minutes / 6) / 10,
+      }))
+      .sort((a, b) => b.manDays - a.manDays);
+
+    return {
+      month: `${year}-${String(mon).padStart(2, '0')}`,
+      totals: {
+        manDays: vendors.reduce((a, v) => a + v.manDays, 0),
+        hours: Math.round(vendors.reduce((a, v) => a + v.hours, 0) * 10) / 10,
+        workers: new Set(sessions.map((s) => s.workerId)).size,
+        vendors: vendors.length,
+      },
+      vendors,
+    };
+  }
+
   /** Supervisor monthly summary for a worker (docs/03 §5). */
   async workerSummary(organizationId: string, workerId: string, month: string) {
     const [year, mon] = month.split('-').map((n) => parseInt(n, 10));

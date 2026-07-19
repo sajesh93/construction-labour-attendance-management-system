@@ -55,3 +55,6 @@ calog.txt
 *.py
 deck/
 outputs/
+
+# Local DB backups — contain worker PII, never commit
+backups/

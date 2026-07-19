@@ -40,6 +40,7 @@ import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { ChartCard } from '@/components/ui/ChartCard';
+import { VendorMonthlyChart } from '@/components/charts/VendorMonthlyChart';
 import { CorrectionRequest, Paginated, Site } from '@/lib/types';
 
 interface StatPerson {
@@ -333,6 +334,13 @@ export default function DashboardPage() {
             loading={sites.isLoading}
             href="/sites"
           />
+        </Grid>
+      </Grid>
+
+      {/* ---- Vendor-wise month ---- */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12}>
+          <VendorMonthlyChart />
         </Grid>
       </Grid>
 

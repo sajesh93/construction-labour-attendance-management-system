@@ -83,6 +83,12 @@ export class AttendanceController {
     return this.attendance.dashboardCharts(user);
   }
 
+  @Get('vendor-monthly')
+  @RequirePermissions(Permission.ATTENDANCE_VIEW)
+  vendorMonthly(@CurrentUser() user: AuthUser, @Query('month') month?: string) {
+    return this.attendance.vendorMonthly(user, month);
+  }
+
   @Get('day-summary')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
   daySummary(

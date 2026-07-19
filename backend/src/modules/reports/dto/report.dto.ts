@@ -3,6 +3,7 @@ import { IsEnum, IsObject, IsOptional } from 'class-validator';
 
 export enum ReportType {
   DAILY = 'DAILY',
+  WEEKLY = 'WEEKLY',
   MONTHLY = 'MONTHLY',
   WORKER = 'WORKER',
   VENDOR = 'VENDOR',
