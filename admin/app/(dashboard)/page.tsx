@@ -40,7 +40,6 @@ import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { ChartCard } from '@/components/ui/ChartCard';
-import { VendorMonthlyChart } from '@/components/charts/VendorMonthlyChart';
 import { CorrectionRequest, Paginated, Site } from '@/lib/types';
 
 interface StatPerson {
@@ -58,7 +57,7 @@ interface DashboardStats {
   missedLogout: { date: string; total: number; byCategory: Record<string, StatBucket> };
 }
 interface DashboardCharts {
-  trend: { date: string; sessions: number; missed: number }[];
+  vendorTrend: { days: string[]; series: { vendor: string; total: number; data: number[] }[] };
   siteWise: { site: string; onSite: number }[];
   distribution: { category: string; onSite: number }[];
   correctionsBySite: { site: string; pending: number }[];
@@ -163,8 +162,21 @@ export default function DashboardPage() {
   const storagePct =
     storage.data?.usedPercent != null ? Math.round(storage.data.usedPercent * 100) : null;
 
-  const trend = charts.data?.trend ?? [];
-  const chartPalette = [theme.palette.primary.main, theme.palette.warning.main];
+  const vendorTrend = charts.data?.vendorTrend;
+  const vendorDays = vendorTrend?.days ?? [];
+  const vendorSeries = vendorTrend?.series ?? [];
+  // Categorical hues for vendor identity, ordered so neighbouring slots
+  // alternate warm/cool — validated for colour-vision separation on white.
+  const vendorPalette = [
+    '#3E5BA9',
+    '#B7791F',
+    '#0091AD',
+    '#A8452B',
+    '#7C4DBE',
+    '#1E7F4F',
+    '#9B2C6F',
+    '#2B6CB0',
+  ];
   const pieColors = [
     theme.palette.primary.main,
     theme.palette.info.main,
@@ -337,55 +349,40 @@ export default function DashboardPage() {
         </Grid>
       </Grid>
 
-      {/* ---- Vendor-wise month ---- */}
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={12}>
-          <VendorMonthlyChart />
-        </Grid>
-      </Grid>
-
       {/* ---- Charts row 1 ---- */}
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={8}>
           <ChartCard
-            title="Attendance — last 7 days"
-            subtitle="Sessions per day, with missed logouts"
+            title="Vendor-wise attendance — last 30 days"
+            subtitle="Man-days per day, by vendor"
             loading={charts.isLoading}
-            empty={!charts.isLoading && trend.every((t) => t.sessions === 0 && t.missed === 0)}
-            emptyText="No attendance recorded in the last 7 days"
+            empty={!charts.isLoading && vendorSeries.length === 0}
+            emptyText="No attendance recorded in the last 30 days"
           >
             <LineChart
               height={260}
-              series={[
-                {
-                  data: trend.map((t) => t.sessions),
-                  label: 'Sessions',
-                  color: chartPalette[0],
-                  curve: 'monotoneX',
-                  area: true,
-                },
-                {
-                  data: trend.map((t) => t.missed),
-                  label: 'Missed logouts',
-                  color: chartPalette[1],
-                  curve: 'monotoneX',
-                },
-              ]}
+              series={vendorSeries.map((s, i) => ({
+                data: s.data,
+                label: s.vendor,
+                color: vendorPalette[i % vendorPalette.length],
+                curve: 'monotoneX',
+              }))}
               xAxis={[
                 {
                   scaleType: 'point',
-                  data: trend.map((t) =>
-                    new Date(t.date).toLocaleDateString(undefined, {
-                      weekday: 'short',
+                  data: vendorDays.map((d) =>
+                    new Date(d).toLocaleDateString(undefined, {
                       day: 'numeric',
+                      month: 'short',
                     }),
                   ),
+                  // 30 ticks will not fit — label roughly every fifth day.
+                  tickInterval: (_, i) => i % 5 === 0,
                 },
               ]}
-              sx={{
-                '& .MuiAreaElement-root': { fill: alpha(chartPalette[0], 0.12) },
-              }}
-              margin={{ left: 40, right: 16, top: 24, bottom: 24 }}
+              // Taller top margin than the other cards: vendor names make for a
+              // wide legend that would otherwise sit on top of the peaks.
+              margin={{ left: 40, right: 16, top: 44, bottom: 24 }}
               slotProps={{ legend: { hidden: false } }}
             />
           </ChartCard>

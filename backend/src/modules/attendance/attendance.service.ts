@@ -760,22 +760,17 @@ export class AttendanceService {
     const orgScope = { organizationId: user.organizationId, ...scopeFilter };
 
     const today = businessDate(new Date(), tz);
-    const from = new Date(today.getTime() - 6 * 86_400_000);
+    // The vendor trend spans 30 days; every other series is "now" or "today".
+    const from = new Date(today.getTime() - 29 * 86_400_000);
 
-    const [byDay, missedByDay, openNow, pendingCorrections, todaySessions] = await Promise.all([
-      this.prisma.attendanceSession.groupBy({
-        by: ['workDate'],
+    const [windowSessions, openNow, pendingCorrections, todaySessions] = await Promise.all([
+      this.prisma.attendanceSession.findMany({
         where: { ...orgScope, workDate: { gte: from } },
-        _count: { _all: true },
-      }),
-      this.prisma.attendanceSession.groupBy({
-        by: ['workDate'],
-        where: {
-          ...orgScope,
-          workDate: { gte: from },
-          OR: [{ state: 'AUTO_CLOSED' }, { forgotLogoutNotifiedAt: { not: null } }],
+        select: {
+          workDate: true,
+          worker: { select: { vendor: { select: { name: true } } } },
         },
-        _count: { _all: true },
+        take: 20000,
       }),
       this.prisma.attendanceSession.findMany({
         where: { ...orgScope, state: 'OPEN' },
@@ -796,13 +791,34 @@ export class AttendanceService {
     ]);
 
     const dayKey = (d: Date) => d.toISOString().slice(0, 10);
-    const missedMap = new Map(missedByDay.map((r) => [dayKey(r.workDate), r._count._all]));
-    const countMap = new Map(byDay.map((r) => [dayKey(r.workDate), r._count._all]));
-    const trend: { date: string; sessions: number; missed: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = dayKey(new Date(today.getTime() - i * 86_400_000));
-      trend.push({ date: d, sessions: countMap.get(d) ?? 0, missed: missedMap.get(d) ?? 0 });
+
+    // Vendor-wise man-days per day across the window — one line per vendor.
+    // Days with no attendance still appear, so gaps read as gaps.
+    const days: string[] = [];
+    for (let i = 29; i >= 0; i--) days.push(dayKey(new Date(today.getTime() - i * 86_400_000)));
+    const perVendor = new Map<string, Map<string, number>>();
+    for (const s of windowSessions) {
+      const name = s.worker.vendor?.name?.trim() || 'No vendor';
+      let m = perVendor.get(name);
+      if (!m) {
+        m = new Map();
+        perVendor.set(name, m);
+      }
+      const k = dayKey(s.workDate);
+      m.set(k, (m.get(k) ?? 0) + 1);
     }
+    const vendorTrend = {
+      days,
+      series: [...perVendor.entries()]
+        .map(([vendor, m]) => ({
+          vendor,
+          total: [...m.values()].reduce((a, b) => a + b, 0),
+          data: days.map((d) => m.get(d) ?? 0),
+        }))
+        // Busiest vendors first; the chart palette only carries eight hues.
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 8),
+    };
 
     const tally = <T>(rows: T[], key: (r: T) => string) => {
       const m = new Map<string, number>();
@@ -811,7 +827,7 @@ export class AttendanceService {
     };
 
     return {
-      trend,
+      vendorTrend,
       siteWise: tally(openNow, (s) => s.site?.name ?? 'Unknown site').map(([name, count]) => ({
         site: name,
         onSite: count,
@@ -836,74 +852,6 @@ export class AttendanceService {
       vendorToday: tally(todaySessions, (s) => s.worker.vendor?.name ?? 'No vendor')
         .slice(0, 8)
         .map(([name, count]) => ({ vendor: name, count })),
-    };
-  }
-
-  /**
-   * Vendor-wise attendance across one month — man-days, distinct people and
-   * total hours per vendor. Powers the dashboard's monthly vendor chart.
-   */
-  async vendorMonthly(user: AuthUser, month?: string) {
-    const now = new Date();
-    const asked =
-      month ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-    const [year, mon] = asked.split('-').map((n) => parseInt(n, 10));
-    if (!year || !mon || mon < 1 || mon > 12) {
-      throw Errors.validation({ message: 'month must be YYYY-MM' });
-    }
-    const from = new Date(Date.UTC(year, mon - 1, 1));
-    const to = new Date(Date.UTC(year, mon, 1));
-
-    const scopeFilter =
-      user.role !== 'SUPER_ADMIN' && user.siteScopes.length > 0
-        ? { siteId: { in: user.siteScopes } }
-        : {};
-
-    const sessions = await this.prisma.attendanceSession.findMany({
-      where: {
-        organizationId: user.organizationId,
-        workDate: { gte: from, lt: to },
-        ...scopeFilter,
-      },
-      select: {
-        workerId: true,
-        workedMinutes: true,
-        worker: { select: { vendor: { select: { name: true } } } },
-      },
-    });
-
-    const byVendor = new Map<string, { manDays: number; minutes: number; workers: Set<string> }>();
-    for (const s of sessions) {
-      const name = s.worker.vendor?.name?.trim() || 'No vendor';
-      let v = byVendor.get(name);
-      if (!v) {
-        v = { manDays: 0, minutes: 0, workers: new Set() };
-        byVendor.set(name, v);
-      }
-      v.manDays += 1;
-      // Open sessions have no worked_minutes yet — they still count as a man-day.
-      v.minutes += s.workedMinutes ?? 0;
-      v.workers.add(s.workerId);
-    }
-
-    const vendors = [...byVendor.entries()]
-      .map(([vendor, v]) => ({
-        vendor,
-        manDays: v.manDays,
-        workers: v.workers.size,
-        hours: Math.round(v.minutes / 6) / 10,
-      }))
-      .sort((a, b) => b.manDays - a.manDays);
-
-    return {
-      month: `${year}-${String(mon).padStart(2, '0')}`,
-      totals: {
-        manDays: vendors.reduce((a, v) => a + v.manDays, 0),
-        hours: Math.round(vendors.reduce((a, v) => a + v.hours, 0) * 10) / 10,
-        workers: new Set(sessions.map((s) => s.workerId)).size,
-        vendors: vendors.length,
-      },
-      vendors,
     };
   }
 
