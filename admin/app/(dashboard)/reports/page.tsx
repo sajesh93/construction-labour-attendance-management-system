@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Alert,
+  Box,
   Button,
   Card,
   CardContent,
@@ -13,7 +14,6 @@ import {
   MenuItem,
   Stack,
   Switch,
-  Tooltip,
   Table,
   TableBody,
   TableCell,
@@ -52,6 +52,9 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   ATTENDANCE_SHEET: 'Attendance sheet',
 };
 const PREVIEW_LIMIT = 500;
+// Deliberately dull: this survives reloads and should not stand out to anyone
+// reading through browser storage.
+const CAP_STORAGE_KEY = 'clams.reports.prefs.v1';
 
 const FORMATS: { value: string; label: string; icon: React.ReactNode }[] = [
   { value: 'CSV', label: 'CSV', icon: <TableChartOutlinedIcon /> },
@@ -105,13 +108,23 @@ export default function ReportsPage() {
   const [sortByVendor, setSortByVendor] = React.useState(false);
   // Full-profile report (adds decrypted Aadhaar/PAN/bank/etc. columns).
   const [includeSensitive, setIncludeSensitive] = React.useState(false);
-  // Compliance mode: trim any day over the statutory 9 hours back to 9.
+  // Compliance mode: trim any day over the statutory 9 hours back to 9. There
+  // is no control for it on the page — Ctrl+O, S toggles it, and it stays on
+  // for every report run from this browser until the same keys turn it off.
   const [capHours, setCapHours] = React.useState(false);
   // Attendance sheet: P/A presence grid vs IN/Out times.
   const [presenceMode, setPresenceMode] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  // The hours cap stays out of sight until Ctrl+O, S is typed.
-  const [capUnlocked, setCapUnlocked] = React.useState(false);
+
+  // Restored after mount rather than in the initial state, so the server and
+  // client first renders match.
+  React.useEffect(() => {
+    try {
+      setCapHours(window.localStorage.getItem(CAP_STORAGE_KEY) === '1');
+    } catch {
+      /* storage blocked — the cap simply starts off */
+    }
+  }, []);
 
   React.useEffect(() => {
     let sawO = false;
@@ -124,7 +137,15 @@ export default function ReportsPage() {
       } else if (key === 's' && sawO) {
         sawO = false;
         e.preventDefault();
-        setCapUnlocked(true);
+        setCapHours((on) => {
+          const next = !on;
+          try {
+            window.localStorage.setItem(CAP_STORAGE_KEY, next ? '1' : '0');
+          } catch {
+            /* storage blocked — the cap lasts for this page only */
+          }
+          return next;
+        });
       } else if (key !== 'control') {
         sawO = false;
       }
@@ -152,8 +173,8 @@ export default function ReportsPage() {
   const showVendorTools = reportType !== 'CORRECTION';
   // Only the reports that print a "Worked (h)" column can cap it. The
   // attendance sheet marks P/A per day and the correction log has no hours.
-  const showHoursCap =
-    capUnlocked && reportType !== 'CORRECTION' && reportType !== 'ATTENDANCE_SHEET';
+  const capApplies =
+    capHours && reportType !== 'CORRECTION' && reportType !== 'ATTENDANCE_SHEET';
 
   const buildParams = (): Record<string, unknown> => {
     const params: Record<string, unknown> = {};
@@ -174,7 +195,7 @@ export default function ReportsPage() {
     if (showVendorTools && category) params.category = category;
     if (showVendorTools && sortByVendor) params.sortBy = 'vendor';
     if (reportType !== 'CORRECTION' && includeSensitive) params.includeSensitive = true;
-    if (showHoursCap && capHours) params.capHours = true;
+    if (capApplies) params.capHours = true;
     if (showAttSheet && presenceMode) params.attendanceMode = 'PRESENCE';
     return params;
   };
@@ -425,16 +446,6 @@ export default function ReportsPage() {
                     label="P/A marking (one column per day)"
                   />
                 )}
-                {showHoursCap && (
-                  <Tooltip title="Days over 9 hours — usually a missed logout — are trimmed to 9. Overtime is cut back first, and the logout time is adjusted to match, so the row stays consistent. Nothing in the attendance records changes.">
-                    <FormControlLabel
-                      control={
-                        <Switch checked={capHours} onChange={(e) => setCapHours(e.target.checked)} />
-                      }
-                      label="Cap working hours at 9 (compliance)"
-                    />
-                  </Tooltip>
-                )}
                 <FormControlLabel
                   control={
                     <Switch
@@ -454,7 +465,28 @@ export default function ReportsPage() {
             </Alert>
           )}
 
-          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
+          <Stack
+            direction="row"
+            justifyContent="flex-end"
+            alignItems="center"
+            spacing={1.5}
+            sx={{ mt: 3 }}
+          >
+            {/* Cap indicator. Filled = the cap will be applied to this report,
+                hollow = the cap is on but this report type has no hours to cap.
+                Reserves its space either way so nothing shifts when it flips. */}
+            <Box
+              aria-hidden
+              sx={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                opacity: capHours ? 0.5 : 0,
+                bgcolor: capApplies ? 'text.disabled' : 'transparent',
+                border: capApplies ? 'none' : '1px solid',
+                borderColor: 'text.disabled',
+              }}
+            />
             <Button
               variant="contained"
               size="large"

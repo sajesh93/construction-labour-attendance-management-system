@@ -40,6 +40,7 @@ import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { ChartCard } from '@/components/ui/ChartCard';
+import { VendorTrendTooltip, VendorTrendData } from '@/components/VendorTrendTooltip';
 import { CorrectionRequest, Paginated, Site } from '@/lib/types';
 
 interface StatPerson {
@@ -57,7 +58,7 @@ interface DashboardStats {
   missedLogout: { date: string; total: number; byCategory: Record<string, StatBucket> };
 }
 interface DashboardCharts {
-  vendorTrend: { days: string[]; series: { vendor: string; total: number; data: number[] }[] };
+  vendorTrend: VendorTrendData;
   siteWise: { site: string; onSite: number }[];
   distribution: { category: string; onSite: number }[];
   correctionsBySite: { site: string; pending: number }[];
@@ -393,7 +394,15 @@ export default function DashboardPage() {
               // Taller top margin than the other cards: vendor names make for a
               // wide legend that would otherwise sit on top of the peaks.
               margin={{ left: 40, right: 16, top: 44, bottom: 24 }}
-              slotProps={{ legend: { hidden: false } }}
+              // Axis trigger so the tooltip opens anywhere over a day, not only
+              // on a mark; the custom content adds the all-vendor total and the
+              // designation split for the vendor under the pointer.
+              tooltip={{ trigger: 'axis' }}
+              slots={{ axisContent: VendorTrendTooltip }}
+              slotProps={{
+                legend: { hidden: false },
+                axisContent: { trend: vendorTrend, palette: vendorPalette } as never,
+              }}
             />
           </ChartCard>
         </Grid>

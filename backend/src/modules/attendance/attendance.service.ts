@@ -768,7 +768,12 @@ export class AttendanceService {
         where: { ...orgScope, workDate: { gte: from } },
         select: {
           workDate: true,
-          worker: { select: { vendor: { select: { name: true } } } },
+          worker: {
+            select: {
+              vendor: { select: { name: true } },
+              designation: { select: { name: true } },
+            },
+          },
         },
         take: 20000,
       }),
@@ -796,28 +801,78 @@ export class AttendanceService {
     // Days with no attendance still appear, so gaps read as gaps.
     const days: string[] = [];
     for (let i = 29; i >= 0; i--) days.push(dayKey(new Date(today.getTime() - i * 86_400_000)));
-    const perVendor = new Map<string, Map<string, number>>();
+    // Each vendor keeps a day -> designation -> count cube, so the chart can
+    // draw a line from the day totals and the tooltip can break a day down by
+    // trade without a second round trip.
+    const dayIndex = new Map(days.map((d, i) => [d, i]));
+    type Cube = Map<string, Map<string, number>>; // day -> designation -> count
+    const bump = (cube: Cube, day: string, designation: string) => {
+      let byDesignation = cube.get(day);
+      if (!byDesignation) {
+        byDesignation = new Map();
+        cube.set(day, byDesignation);
+      }
+      byDesignation.set(designation, (byDesignation.get(designation) ?? 0) + 1);
+    };
+    const perVendor = new Map<string, Cube>();
+    const allVendors: Cube = new Map();
     for (const s of windowSessions) {
       const name = s.worker.vendor?.name?.trim() || 'No vendor';
-      let m = perVendor.get(name);
-      if (!m) {
-        m = new Map();
-        perVendor.set(name, m);
+      const designation = s.worker.designation?.name?.trim() || 'No designation';
+      const day = dayKey(s.workDate);
+      if (!dayIndex.has(day)) continue;
+      let cube = perVendor.get(name);
+      if (!cube) {
+        cube = new Map();
+        perVendor.set(name, cube);
       }
-      const k = dayKey(s.workDate);
-      m.set(k, (m.get(k) ?? 0) + 1);
+      bump(cube, day, designation);
+      bump(allVendors, day, designation);
     }
+
+    // Counts per day, and the matching designation split per day. Splits are
+    // sorted heaviest-first and emitted as plain objects for the JSON payload.
+    const spread = (cube: Cube) => {
+      const counts: number[] = [];
+      const splits: Record<string, number>[] = [];
+      for (const d of days) {
+        const byDesignation = cube.get(d);
+        counts.push(byDesignation ? [...byDesignation.values()].reduce((a, b) => a + b, 0) : 0);
+        splits.push(
+          Object.fromEntries([...(byDesignation ?? new Map())].sort((a, b) => b[1] - a[1])),
+        );
+      }
+      return { counts, splits };
+    };
+
+    const ranked = [...perVendor.entries()]
+      .map(([vendor, cube]) => {
+        const { counts, splits } = spread(cube);
+        return {
+          vendor,
+          total: counts.reduce((a, b) => a + b, 0),
+          data: counts,
+          splits,
+        };
+      })
+      // Busiest vendors first; the chart palette only carries eight hues.
+      .sort((a, b) => b.total - a.total);
+    const shown = ranked.slice(0, 8);
+
+    const grand = spread(allVendors);
+    // Anything past the top 8 has no line, so the tooltip totals would not add
+    // up. Roll the remainder into one row that reconciles the arithmetic.
+    const otherTotals = days.map((_, i) =>
+      Math.max(0, grand.counts[i] - shown.reduce((sum, s) => sum + s.data[i], 0)),
+    );
+
     const vendorTrend = {
       days,
-      series: [...perVendor.entries()]
-        .map(([vendor, m]) => ({
-          vendor,
-          total: [...m.values()].reduce((a, b) => a + b, 0),
-          data: days.map((d) => m.get(d) ?? 0),
-        }))
-        // Busiest vendors first; the chart palette only carries eight hues.
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 8),
+      series: shown,
+      totals: grand.counts,
+      totalSplits: grand.splits,
+      otherTotals,
+      hiddenVendorCount: ranked.length - shown.length,
     };
 
     const tally = <T>(rows: T[], key: (r: T) => string) => {
