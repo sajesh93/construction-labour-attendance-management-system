@@ -35,6 +35,7 @@ import { api, BrowserApiError } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
+import { ManpowerReportView, ManpowerReport } from '@/components/ManpowerReportView';
 import { Site, Vendor } from '@/lib/types';
 
 const REPORT_TYPES = [
@@ -55,6 +56,8 @@ const PREVIEW_LIMIT = 500;
 // Deliberately dull: this survives reloads and should not stand out to anyone
 // reading through browser storage.
 const CAP_STORAGE_KEY = 'clams.reports.prefs.v1';
+/** These run as manpower charts; the rest stay as row previews. */
+const CHART_REPORTS = ['DAILY', 'WEEKLY', 'MONTHLY'];
 
 const FORMATS: { value: string; label: string; icon: React.ReactNode }[] = [
   { value: 'CSV', label: 'CSV', icon: <TableChartOutlinedIcon /> },
@@ -171,6 +174,8 @@ export default function ReportsPage() {
   const showRange =
     !showMonth && !showDate && !showWeek && !showAttSheet && reportType !== 'CORRECTION';
   const showVendorTools = reportType !== 'CORRECTION';
+  // Daily/weekly/monthly render as manpower charts instead of a row table.
+  const isChartReport = CHART_REPORTS.includes(reportType);
   // Only the reports that print a "Worked (h)" column can cap it. The
   // attendance sheet marks P/A per day and the correction log has no hours.
   const capApplies =
@@ -210,6 +215,18 @@ export default function ReportsPage() {
     },
   });
 
+  const manpower = useMutation({
+    mutationFn: () =>
+      api.post<ManpowerReport>('/reports/manpower', { reportType, params: buildParams() }),
+    onSuccess: () => setError(null),
+    onError: (e) => {
+      const err = e as BrowserApiError;
+      setError(err.body?.detail ?? err.body?.title ?? 'Failed to run report');
+    },
+  });
+
+  const run = isChartReport ? manpower : preview;
+
   const download = useMutation({
     mutationFn: (format: string) =>
       api.post<ReportResult>('/reports', { reportType, format, params: buildParams() }),
@@ -242,6 +259,7 @@ export default function ReportsPage() {
   });
 
   const data = preview.data;
+  const chart = manpower.data;
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -259,6 +277,7 @@ export default function ReportsPage() {
                 onChange={(e) => {
                   setReportType(e.target.value);
                   preview.reset();
+                  manpower.reset();
                 }}
               >
                 {REPORT_TYPES.map((t) => (
@@ -491,16 +510,71 @@ export default function ReportsPage() {
               variant="contained"
               size="large"
               startIcon={<PlayArrowIcon />}
-              disabled={preview.isPending}
-              onClick={() => preview.mutate()}
+              disabled={run.isPending}
+              onClick={() => run.mutate()}
             >
-              {preview.isPending ? 'Running…' : 'Run report'}
+              {run.isPending ? 'Running…' : 'Run report'}
             </Button>
           </Stack>
         </CardContent>
       </Card>
 
-      {data && (
+      {isChartReport && chart && (
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              justifyContent="space-between"
+              alignItems={{ sm: 'center' }}
+              spacing={2}
+              sx={{ mb: 2 }}
+            >
+              <Box>
+                <Typography variant="h6">Manpower report — {chart.periodLabel}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {chart.totalManDays} man-day{chart.totalManDays === 1 ? '' : 's'} across{' '}
+                  {chart.activeTrades} trade{chart.activeTrades === 1 ? '' : 's'}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {/* PDF renders these same charts; CSV/XLSX still carry the rows. */}
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<PictureAsPdfOutlinedIcon />}
+                  disabled={download.isPending || chart.totalManDays === 0}
+                  onClick={() => download.mutate('PDF')}
+                >
+                  Download charts (PDF)
+                </Button>
+                {FORMATS.filter((f) => f.value !== 'PDF').map((f) => (
+                  <Button
+                    key={f.value}
+                    variant="outlined"
+                    size="small"
+                    startIcon={f.icon}
+                    disabled={download.isPending || chart.totalManDays === 0}
+                    onClick={() => download.mutate(f.value)}
+                  >
+                    {f.value}
+                  </Button>
+                ))}
+              </Stack>
+            </Stack>
+            {chart.totalManDays === 0 ? (
+              <EmptyState
+                compact
+                title="No labour attendance"
+                description="Nothing matched the selected period and filters — nothing to download."
+              />
+            ) : (
+              <ManpowerReportView data={chart} />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {!isChartReport && data && (
         <Card sx={{ mt: 3 }}>
           <CardContent>
             <Stack

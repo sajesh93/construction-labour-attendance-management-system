@@ -27,6 +27,14 @@ export class ReportsController {
     return this.reports.preview(user, dto.reportType, dto.params ?? {});
   }
 
+  // Manpower chart data for the daily/weekly/monthly reports, which render as
+  // charts rather than a row table.
+  @Post('manpower')
+  @RequirePermissions(Permission.REPORTS_ALL)
+  manpower(@CurrentUser() user: AuthUser, @Body() dto: PreviewReportDto) {
+    return this.reports.previewManpower(user, dto.reportType, dto.params ?? {});
+  }
+
   @Get()
   @RequirePermissions(Permission.REPORTS_ALL)
   list(@CurrentUser() user: AuthUser, @Query('type') type?: string) {

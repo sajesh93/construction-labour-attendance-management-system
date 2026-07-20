@@ -11,6 +11,7 @@ import {
   AttSheetMonth,
   AttSheetRow,
   renderAttendanceSheetXlsx,
+  renderManpowerPdf,
   renderPresenceSheetXlsx,
   renderPdf,
   renderXlsx,
@@ -115,6 +116,36 @@ export class ReportsService {
       };
     }
 
+    // Daily/weekly/monthly PDFs are the manpower chart dashboard, not a table.
+    // CSV and XLSX still carry the underlying rows.
+    if (dto.format === 'PDF' && ReportsService.isChartReport(dto.reportType)) {
+      const manpower = await this.buildManpower(user, dto.reportType, params);
+      const org = await this.prisma.organization.findUnique({
+        where: { id: user.organizationId },
+        select: { name: true },
+      });
+      const job = await this.prisma.reportJob.create({
+        data: {
+          organizationId: user.organizationId,
+          requestedBy: user.userId,
+          reportType: dto.reportType,
+          format: dto.format,
+          params: params as Prisma.InputJsonValue,
+          status: 'DONE',
+          completedAt: new Date(),
+        },
+      });
+      const buffer = await renderManpowerPdf(manpower, org?.name ?? '');
+      return {
+        jobId: job.id,
+        status: job.status,
+        rowCount: manpower.totalManDays,
+        contentType: 'application/pdf',
+        contentBase64: buffer.toString('base64'),
+        filename: `manpower-${dto.reportType.toLowerCase()}-${job.id}.pdf`,
+      };
+    }
+
     const { headers, rows } = await this.buildRows(user, dto.reportType, params, sensitive);
 
     const job = await this.prisma.reportJob.create({
@@ -162,6 +193,14 @@ export class ReportsService {
     };
   }
 
+  /** Manpower chart data without persisting a job — powers the chart preview. */
+  async previewManpower(user: AuthUser, reportType: ReportType, params: Record<string, unknown>) {
+    if (!ReportsService.isChartReport(reportType)) {
+      throw Errors.validation({ message: 'Manpower charts cover daily, weekly and monthly only' });
+    }
+    return this.buildManpower(user, reportType, params);
+  }
+
   /** Build the report rows without persisting a job — powers the admin preview. */
   async preview(user: AuthUser, reportType: ReportType, params: Record<string, unknown> = {}) {
     const sensitive = await this.resolveSensitive(user, params, reportType);
@@ -190,34 +229,18 @@ export class ReportsService {
   }
 
   // ---- Row builders --------------------------------------------------------
-  private async buildRows(
-    user: AuthUser,
+
+  /**
+   * The shared filter for every attendance-session report: org, site/worker,
+   * vendor and person-type, plus whichever period the report type carries.
+   * Row reports and the manpower charts both run off this, so a filter only
+   * ever has to be understood in one place.
+   */
+  private sessionWhere(
+    org: string,
     type: ReportType,
     params: Record<string, unknown>,
-    sensitive = false,
-  ): Promise<{ headers: string[]; rows: (string | number | null)[][] }> {
-    const org = user.organizationId;
-
-    if (type === ReportType.CORRECTION) {
-      const reqs = await this.prisma.correctionRequest.findMany({
-        where: { organizationId: org },
-        include: { worker: true },
-        orderBy: { createdAt: 'desc' },
-      });
-      return {
-        headers: ['Date', 'Worker', 'Type', 'Reason', 'Status', 'Reviewed At'],
-        rows: reqs.map((r) => [
-          r.workDate.toISOString().slice(0, 10),
-          r.worker.fullName,
-          r.type,
-          r.reason,
-          r.status,
-          r.reviewedAt ? r.reviewedAt.toISOString() : null,
-        ]),
-      };
-    }
-
-    // Attendance-session based reports share a query shape.
+  ): Prisma.AttendanceSessionWhereInput {
     const where: Prisma.AttendanceSessionWhereInput = { organizationId: org };
     if (params.siteId) where.siteId = String(params.siteId);
     if (params.workerId) where.workerId = String(params.workerId);
@@ -255,6 +278,175 @@ export class ReportsService {
     if (type === ReportType.OVERTIME) {
       where.overtimeMinutes = { gt: 0 };
     }
+    return where;
+  }
+
+  /** Report types that render as manpower charts rather than a row table. */
+  static isChartReport(type: ReportType): boolean {
+    return type === ReportType.DAILY || type === ReportType.WEEKLY || type === ReportType.MONTHLY;
+  }
+
+  /**
+   * Manpower summary behind the chart report: headline totals and the by-trade
+   * / by-vendor splits for the chosen period, plus a day-by-day trend. Labour
+   * only — staff and visitors are on site but are not manpower.
+   *
+   * A daily report still shows a seven-day trend (the period itself is one
+   * bar), so the query covers the trend window and the period totals are taken
+   * from the subset that falls inside the period.
+   */
+  async buildManpower(user: AuthUser, type: ReportType, params: Record<string, unknown>) {
+    const where = this.sessionWhere(user.organizationId, type, params);
+    // Manpower is labour; an explicit category filter still wins so the admin
+    // can look at staff deliberately.
+    const worker = (where.worker ?? {}) as Prisma.WorkerWhereInput;
+    where.worker = { ...worker, ...(params.category ? {} : { category: 'WORKER' }) };
+
+    const dayMs = 86_400_000;
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const { start, end } = this.periodRange(type, params);
+    // Daily reports get six days of run-up for context; the others trend across
+    // their own period.
+    const trendStart = type === ReportType.DAILY ? new Date(start.getTime() - 6 * dayMs) : start;
+
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: { ...where, workDate: { gte: trendStart, lt: end } },
+      select: {
+        workDate: true,
+        workedMinutes: true,
+        overtimeMinutes: true,
+        loginAt: true,
+        logoutAt: true,
+        workerId: true,
+        worker: {
+          select: {
+            vendor: { select: { name: true } },
+            designation: { select: { name: true } },
+          },
+        },
+      },
+      take: 50000,
+    });
+
+    const capHours = params.capHours === true || params.capHours === 'true';
+    const days: string[] = [];
+    for (let t = trendStart.getTime(); t < end.getTime(); t += dayMs) days.push(iso(new Date(t)));
+    const trendIndex = new Map(days.map((d, i) => [d, i]));
+    const trend = new Array<number>(days.length).fill(0);
+
+    const byTrade = new Map<string, number>();
+    const byVendor = new Map<string, number>();
+    const uniqueWorkers = new Set<string>();
+    let manMinutes = 0;
+    let inPeriod = 0;
+
+    for (const s of sessions) {
+      const key = iso(s.workDate);
+      const i = trendIndex.get(key);
+      if (i !== undefined) trend[i] += 1;
+      // Everything below is period-only; the run-up days are trend context.
+      if (s.workDate < start) continue;
+      inPeriod += 1;
+      uniqueWorkers.add(s.workerId);
+      manMinutes += (capHours ? capSessionHours(s) : s).workedMinutes ?? 0;
+      const trade = s.worker.designation?.name?.trim() || 'No designation';
+      const vendor = s.worker.vendor?.name?.trim() || 'No vendor';
+      byTrade.set(trade, (byTrade.get(trade) ?? 0) + 1);
+      byVendor.set(vendor, (byVendor.get(vendor) ?? 0) + 1);
+    }
+
+    const rank = (m: Map<string, number>) =>
+      [...m.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+    // Days that fall inside the period, for the average — a month report run
+    // mid-month should not divide by days that have not happened.
+    const periodDays = days.filter((d) => d >= iso(start)).length || 1;
+
+    return {
+      reportType: type,
+      periodLabel: this.periodLabel(type, start, end),
+      days,
+      trend,
+      // Which trend days belong to the period itself (the rest are run-up).
+      periodFrom: iso(start),
+      totalManDays: inPeriod,
+      uniqueWorkers: uniqueWorkers.size,
+      manHours: Math.round((manMinutes / 60) * 10) / 10,
+      activeTrades: byTrade.size,
+      avgPerDay: Math.round((inPeriod / periodDays) * 10) / 10,
+      peak: trend.length ? Math.max(...trend) : 0,
+      byTrade: rank(byTrade),
+      byVendor: rank(byVendor),
+    };
+  }
+
+  /** Half-open [start, end) UTC day range for a period-based report type. */
+  private periodRange(type: ReportType, params: Record<string, unknown>) {
+    const dayMs = 86_400_000;
+    const midnight = (v: string) => new Date(`${v.slice(0, 10)}T00:00:00.000Z`);
+    if (type === ReportType.DAILY) {
+      const start = params.date
+        ? midnight(String(params.date))
+        : midnight(new Date().toISOString());
+      return { start, end: new Date(start.getTime() + dayMs) };
+    }
+    if (type === ReportType.WEEKLY) {
+      const start = params.weekStart
+        ? midnight(String(params.weekStart))
+        : midnight(new Date().toISOString());
+      return { start, end: new Date(start.getTime() + 7 * dayMs) };
+    }
+    const now = new Date();
+    const [y, m] = params.month
+      ? String(params.month)
+          .split('-')
+          .map((n) => parseInt(n, 10))
+      : [now.getUTCFullYear(), now.getUTCMonth() + 1];
+    return { start: new Date(Date.UTC(y, m - 1, 1)), end: new Date(Date.UTC(y, m, 1)) };
+  }
+
+  private periodLabel(type: ReportType, start: Date, end: Date): string {
+    const fmt = (d: Date) =>
+      d.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+    if (type === ReportType.DAILY) return fmt(start);
+    if (type === ReportType.MONTHLY) {
+      return start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+    return `${fmt(start)} — ${fmt(new Date(end.getTime() - 86_400_000))}`;
+  }
+
+  private async buildRows(
+    user: AuthUser,
+    type: ReportType,
+    params: Record<string, unknown>,
+    sensitive = false,
+  ): Promise<{ headers: string[]; rows: (string | number | null)[][] }> {
+    const org = user.organizationId;
+
+    if (type === ReportType.CORRECTION) {
+      const reqs = await this.prisma.correctionRequest.findMany({
+        where: { organizationId: org },
+        include: { worker: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      return {
+        headers: ['Date', 'Worker', 'Type', 'Reason', 'Status', 'Reviewed At'],
+        rows: reqs.map((r) => [
+          r.workDate.toISOString().slice(0, 10),
+          r.worker.fullName,
+          r.type,
+          r.reason,
+          r.status,
+          r.reviewedAt ? r.reviewedAt.toISOString() : null,
+        ]),
+      };
+    }
+
+    const where = this.sessionWhere(org, type, params);
 
     // Workers always come first, then staff, then visitors. Within a category,
     // optional vendor-wise sorting (params.sortBy === 'vendor'), then chronology.

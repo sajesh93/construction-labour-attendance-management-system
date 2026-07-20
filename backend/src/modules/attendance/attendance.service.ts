@@ -764,10 +764,13 @@ export class AttendanceService {
     const from = new Date(today.getTime() - 29 * 86_400_000);
 
     const [windowSessions, openNow, pendingCorrections, todaySessions] = await Promise.all([
+      // Manpower charts count labour only — staff and visitors are on site but
+      // are not manpower, so they are filtered out at the query.
       this.prisma.attendanceSession.findMany({
-        where: { ...orgScope, workDate: { gte: from } },
+        where: { ...orgScope, workDate: { gte: from }, worker: { category: 'WORKER' } },
         select: {
           workDate: true,
+          workedMinutes: true,
           worker: {
             select: {
               vendor: { select: { name: true } },
@@ -788,9 +791,19 @@ export class AttendanceService {
         where: { ...orgScope, status: 'PENDING' },
         select: { siteId: true },
       }),
+      // Today's labour, kept as its own query rather than sliced off the 30-day
+      // window so a large org hitting that query's row cap cannot skew today.
       this.prisma.attendanceSession.findMany({
-        where: { ...orgScope, workDate: today },
-        select: { worker: { select: { vendor: { select: { name: true } } } } },
+        where: { ...orgScope, workDate: today, worker: { category: 'WORKER' } },
+        select: {
+          workedMinutes: true,
+          worker: {
+            select: {
+              vendor: { select: { name: true } },
+              designation: { select: { name: true } },
+            },
+          },
+        },
         take: 5000,
       }),
     ]);
@@ -881,8 +894,39 @@ export class AttendanceService {
       return [...m.entries()].sort((a, b) => b[1] - a[1]);
     };
 
+    // Manpower panel: headline numbers for today plus a short trend. Distinct
+    // from the 30-day vendor chart above, which is per vendor rather than total.
+    const TREND_DAYS = 7;
+    const trendDays = days.slice(-TREND_DAYS);
+    const trendIndex = new Map(trendDays.map((d, i) => [d, i]));
+    const manpowerTrend = new Array<number>(trendDays.length).fill(0);
+    for (const s of windowSessions) {
+      const i = trendIndex.get(dayKey(s.workDate));
+      if (i !== undefined) manpowerTrend[i] += 1;
+    }
+
+    const manHoursToday = todaySessions.reduce((sum, s) => sum + (s.workedMinutes ?? 0), 0) / 60;
+    const byTradeToday = tally(
+      todaySessions,
+      (s) => s.worker.designation?.name?.trim() || 'No designation',
+    ).map(([trade, count]) => ({ trade, count }));
+
+    const manpower = {
+      days: trendDays,
+      trend: manpowerTrend,
+      totalToday: todaySessions.length,
+      // One decimal is enough — this is a headline tile, not a payroll figure.
+      manHoursToday: Math.round(manHoursToday * 10) / 10,
+      activeTrades: byTradeToday.length,
+      byTrade: byTradeToday,
+      byVendor: tally(todaySessions, (s) => s.worker.vendor?.name?.trim() || 'No vendor').map(
+        ([vendor, count]) => ({ vendor, count }),
+      ),
+    };
+
     return {
       vendorTrend,
+      manpower,
       siteWise: tally(openNow, (s) => s.site?.name ?? 'Unknown site').map(([name, count]) => ({
         site: name,
         onSite: count,

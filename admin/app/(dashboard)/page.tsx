@@ -29,6 +29,8 @@ import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined
 import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
 import LocationCityOutlinedIcon from '@mui/icons-material/LocationCityOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import HandymanOutlinedIcon from '@mui/icons-material/HandymanOutlined';
 import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
 import AddLocationAltOutlinedIcon from '@mui/icons-material/AddLocationAltOutlined';
 import PlaylistAddCheckOutlinedIcon from '@mui/icons-material/PlaylistAddCheckOutlined';
@@ -57,8 +59,19 @@ interface DashboardStats {
   onSiteNow: { total: number; byCategory: Record<string, StatBucket> };
   missedLogout: { date: string; total: number; byCategory: Record<string, StatBucket> };
 }
+interface Manpower {
+  /** ISO days for the short trend, oldest first. */
+  days: string[];
+  trend: number[];
+  totalToday: number;
+  manHoursToday: number;
+  activeTrades: number;
+  byTrade: { trade: string; count: number }[];
+  byVendor: { vendor: string; count: number }[];
+}
 interface DashboardCharts {
   vendorTrend: VendorTrendData;
+  manpower: Manpower;
   siteWise: { site: string; onSite: number }[];
   distribution: { category: string; onSite: number }[];
   correctionsBySite: { site: string; pending: number }[];
@@ -183,6 +196,15 @@ export default function DashboardPage() {
     theme.palette.info.main,
     theme.palette.warning.main,
   ];
+
+  const manpower = charts.data?.manpower;
+  // Short day labels ("Mon 14") for the 7-day manpower trend.
+  const manpowerDayLabels = (manpower?.days ?? []).map((d) =>
+    new Date(d).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }),
+  );
+  // Trades and vendors are ranked, so alternating the palette keeps adjacent
+  // bars/slices distinct without implying an order in the colour itself.
+  const tradeColors = vendorPalette;
 
   const quickActions = [
     { label: 'Add worker', icon: <PersonAddAltOutlinedIcon />, href: '/workers' },
@@ -347,6 +369,127 @@ export default function DashboardPage() {
             loading={sites.isLoading}
             href="/sites"
           />
+        </Grid>
+        <Grid item xs={6} sm={4} md={3}>
+          <StatCard
+            label="Logged man-hours"
+            value={manpower ? manpower.manHoursToday : '—'}
+            icon={<AccessTimeOutlinedIcon />}
+            hint="Labour hours today"
+            tone="info"
+            loading={charts.isLoading}
+          />
+        </Grid>
+        <Grid item xs={6} sm={4} md={3}>
+          <StatCard
+            label="Active trades"
+            value={manpower?.activeTrades ?? '—'}
+            icon={<HandymanOutlinedIcon />}
+            hint="Designations on site today"
+            tone="success"
+            loading={charts.isLoading}
+          />
+        </Grid>
+      </Grid>
+
+      {/* ---- Manpower ---- */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} md={5}>
+          <ChartCard
+            title="Total manpower trend"
+            subtitle="Labour per day — last 7 days"
+            loading={charts.isLoading}
+            empty={!charts.isLoading && (manpower?.trend ?? []).every((n) => n === 0)}
+            emptyText="No labour attendance in the last 7 days"
+          >
+            <LineChart
+              height={260}
+              series={[
+                {
+                  id: 'manpower',
+                  data: manpower?.trend ?? [],
+                  label: 'Labour',
+                  color: theme.palette.primary.main,
+                  curve: 'monotoneX',
+                  area: true,
+                },
+              ]}
+              sx={{
+                '& .MuiAreaElement-series-manpower': {
+                  fill: alpha(theme.palette.primary.main, 0.14),
+                },
+              }}
+              xAxis={[{ scaleType: 'point', data: manpowerDayLabels }]}
+              margin={{ left: 40, right: 16, top: 16, bottom: 24 }}
+              slotProps={{ legend: { hidden: true } }}
+            />
+          </ChartCard>
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <ChartCard
+            title="Manpower by trade"
+            subtitle="Labour on site today"
+            loading={charts.isLoading}
+            empty={!charts.isLoading && (manpower?.byTrade.length ?? 0) === 0}
+            emptyText="No labour attendance today yet"
+          >
+            <BarChart
+              height={260}
+              series={[
+                {
+                  data: (manpower?.byTrade ?? []).map((t) => t.count),
+                  label: 'Labour',
+                },
+              ]}
+              xAxis={[
+                {
+                  scaleType: 'band',
+                  data: (manpower?.byTrade ?? []).map((t) => t.trade),
+                  // Trade names are long; angle them so they stay readable.
+                  tickLabelStyle: { angle: -35, textAnchor: 'end', fontSize: 10 },
+                  colorMap: {
+                    type: 'ordinal',
+                    colors: tradeColors,
+                  },
+                },
+              ]}
+              margin={{ left: 40, right: 16, top: 16, bottom: 64 }}
+              slotProps={{ legend: { hidden: true } }}
+            />
+          </ChartCard>
+        </Grid>
+        <Grid item xs={12} md={3}>
+          <ChartCard
+            title="Manpower by vendor"
+            subtitle="Labour on site today"
+            loading={charts.isLoading}
+            empty={!charts.isLoading && (manpower?.byVendor.length ?? 0) === 0}
+            emptyText="No labour attendance today yet"
+          >
+            <PieChart
+              height={260}
+              series={[
+                {
+                  data: (manpower?.byVendor ?? []).map((v, i) => ({
+                    id: v.vendor,
+                    value: v.count,
+                    label: v.vendor,
+                    color: vendorPalette[i % vendorPalette.length],
+                  })),
+                  innerRadius: 52,
+                  paddingAngle: 2,
+                  cornerRadius: 3,
+                  // Percentage of the day's labour, matching the donut labels.
+                  valueFormatter: (v) => {
+                    const total = (manpower?.byVendor ?? []).reduce((a, b) => a + b.count, 0);
+                    const pct = total ? Math.round((v.value / total) * 100) : 0;
+                    return `${v.value} (${pct}%)`;
+                  },
+                },
+              ]}
+              margin={{ left: 12, right: 100 }}
+            />
+          </ChartCard>
         </Grid>
       </Grid>
 
