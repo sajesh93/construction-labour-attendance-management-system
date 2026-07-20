@@ -458,6 +458,9 @@ export class WorkersService {
       fatherName: dto.fatherName,
       gender: dto.gender,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+      // Correcting a mis-keyed joining date changes which days the attendance
+      // sheet treats as "not employed", so the before/after is audited below.
+      joinDate: dto.joinDate ? new Date(dto.joinDate) : undefined,
       language: dto.language,
       pincode: dto.pincode,
       mobileNumber: dto.mobileNumber,
@@ -536,8 +539,16 @@ export class WorkersService {
       action: 'WORKER_UPDATE',
       entityType: 'Worker',
       entityId: id,
-      oldValue: { fullName: before.fullName, status: before.status },
-      newValue: { fullName: dto.fullName ?? before.fullName, status: dto.status ?? before.status },
+      oldValue: {
+        fullName: before.fullName,
+        status: before.status,
+        joinDate: before.joinDate?.toISOString().slice(0, 10) ?? null,
+      },
+      newValue: {
+        fullName: dto.fullName ?? before.fullName,
+        status: dto.status ?? before.status,
+        joinDate: dto.joinDate ?? before.joinDate?.toISOString().slice(0, 10) ?? null,
+      },
     });
     return this.get(user, id);
   }

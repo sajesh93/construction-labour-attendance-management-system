@@ -494,7 +494,6 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
 
       const { siteId, nfcUid: _nfcUid, qrIdentifier: _qrIdentifier, ...patch } = body;
       delete patch.workerCode;
-      delete patch.joinDate;
       const updated = await api.patch(`/workers/${editing.id}`, patch);
 
       const currentSiteId = editing.assignments?.[0]?.siteId ?? '';
@@ -1371,7 +1370,6 @@ export function PeopleDirectory({ category }: { category: PersonCategory }) {
               {!isStaff &&
                 field('joinDate', isVisitor ? 'Visit date' : 'Date of joining', {
                   type: 'date',
-                  disabled: !!editing,
                 })}
             </Grid>
 
