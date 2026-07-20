@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { API_INTERNAL_BASE_URL } from '@/lib/config';
-import { getAccessToken } from '@/lib/server/session';
+import { backendAuthHeaders } from '@/lib/server/api';
 
 /**
  * Streams the worker-documents zip from the backend using the httpOnly access
@@ -10,12 +10,11 @@ import { getAccessToken } from '@/lib/server/session';
  * few hundred people is a large download.
  */
 export async function POST(req: NextRequest) {
-  const token = getAccessToken();
   const res = await fetch(`${API_INTERNAL_BASE_URL}/workers/documents`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...backendAuthHeaders(),
     },
     body: await req.text(),
     cache: 'no-store',

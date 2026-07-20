@@ -31,18 +31,27 @@ export async function serverApi<T = unknown>(path: string, opts: ApiOptions = {}
   return handle<T>(res);
 }
 
-async function rawCall(path: string, opts: ApiOptions, token?: string): Promise<Response> {
-  // Approved-browser credentials ride along on every call: non-super-admin
-  // users are rejected by the API until their browser device is authorized.
+/**
+ * Auth + approved-browser credentials for a backend call. The device headers
+ * are not optional garnish: DeviceGuard rejects every non-super-admin request
+ * that arrives without them, so any route that talks to the backend by hand
+ * (the binary streams, which cannot go through the JSON proxy) must send these
+ * too or it works only for the super admin.
+ */
+export function backendAuthHeaders(token = getAccessToken()): Record<string, string> {
   const { deviceId, deviceToken } = getDeviceCredentials();
+  return {
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+    ...(deviceId && deviceToken ? { 'x-device-id': deviceId, 'x-device-token': deviceToken } : {}),
+  };
+}
+
+async function rawCall(path: string, opts: ApiOptions, token?: string): Promise<Response> {
   return fetch(`${API_INTERNAL_BASE_URL}${path}`, {
     method: opts.method ?? 'GET',
     headers: {
       'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(deviceId && deviceToken
-        ? { 'x-device-id': deviceId, 'x-device-token': deviceToken }
-        : {}),
+      ...backendAuthHeaders(token),
     },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     cache: 'no-store',
