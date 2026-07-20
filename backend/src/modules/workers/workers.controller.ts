@@ -24,7 +24,7 @@ import {
   UpdateWorkerDto,
 } from './dto/worker.dto';
 import { RequirePermissions } from '../../common/rbac/rbac.decorators';
-import { Permission } from '../../common/rbac/permissions';
+import { Permission, roleHasPermission } from '../../common/rbac/permissions';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 
@@ -102,11 +102,12 @@ export class WorkersController {
   @Get(':id')
   @RequirePermissions(Permission.WORKER_MANAGE)
   get(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('reveal') reveal?: string) {
-    // Aadhaar reveal additionally requires the sensitive permission.
-    const wantsReveal = reveal === 'true';
-    if (wantsReveal && user.role !== 'SUPER_ADMIN' && user.role !== 'SITE_ADMIN') {
-      return this.workers.get(user, id, false);
-    }
+    // Aadhaar reveal additionally requires the sensitive permission. Ask the
+    // role table rather than naming roles here — the Safety Officer (SUPERVISOR)
+    // holds WORKER_VIEW_SENSITIVE because they capture these details at
+    // registration, and a hardcoded list silently masked them.
+    const wantsReveal =
+      reveal === 'true' && roleHasPermission(user.role, Permission.WORKER_VIEW_SENSITIVE);
     return this.workers.get(user, id, wantsReveal);
   }
 
