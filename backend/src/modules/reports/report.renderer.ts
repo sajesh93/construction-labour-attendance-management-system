@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
@@ -248,6 +251,31 @@ const MUTED = '#6B7686';
 const GRID = '#DFE4EC';
 
 type Doc = PDFKit.PDFDocument;
+
+/** Optispace wordmark, ~2.58:1. Copied into dist by the nest-cli assets glob. */
+const LOGO_PATH = join(__dirname, '../../assets/logo.png');
+const LOGO_RATIO = 1129 / 437;
+let logoBuf: Buffer | null | undefined;
+
+function loadLogo(): Buffer | null {
+  if (logoBuf === undefined) {
+    logoBuf = existsSync(LOGO_PATH) ? readFileSync(LOGO_PATH) : null;
+  }
+  return logoBuf;
+}
+
+/**
+ * Draws the wordmark with its right edge at `right` and the given height,
+ * returning the width it consumed (0 when the asset is missing — a branding
+ * flourish must never fail a report).
+ */
+function drawLogo(doc: Doc, right: number, y: number, h: number): number {
+  const buf = loadLogo();
+  if (!buf) return 0;
+  const w = h * LOGO_RATIO;
+  doc.image(buf, right - w, y, { height: h });
+  return w;
+}
 
 /**
  * pdfkit loops forever laying text out in a box narrower than a single glyph,
@@ -528,11 +556,12 @@ export function renderManpowerPdf(r: ManpowerReport, orgName: string): Promise<B
       .fontSize(9)
       .fillColor(MUTED)
       .text(orgName, M, 36, { width: contentW / 2, lineBreak: false, ellipsis: true });
+    drawLogo(doc, pageW - M, 10, 20);
     doc
       .font('Helvetica-Bold')
       .fontSize(10)
       .fillColor(INK)
-      .text(r.periodLabel, M + contentW / 2, 22, {
+      .text(r.periodLabel, M + contentW / 2, 36, {
         width: contentW / 2,
         align: 'right',
         lineBreak: false,
@@ -605,7 +634,12 @@ export function renderPdf(title: string, headers: string[], rows: Row[]): Promis
     const rowH = 13;
     const bottom = doc.page.height - 28;
 
-    doc.font('Helvetica-Bold').fontSize(12).text(title, left, 24);
+    // Logo first, so the title can be clipped short of it on narrow pages.
+    const logoW = drawLogo(doc, left + usable, 22, 16);
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .text(title, left, 24, { width: usable - logoW - 12, ellipsis: true, lineBreak: false });
     let y = 46;
 
     const drawRow = (cells: Row, bold: boolean) => {
