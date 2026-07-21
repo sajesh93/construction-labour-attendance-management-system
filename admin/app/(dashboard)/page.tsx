@@ -10,12 +10,14 @@ import {
   Card,
   Divider,
   Grid,
+  IconButton,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
   Skeleton,
   Stack,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -38,6 +40,8 @@ import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import DevicesOutlinedIcon from '@mui/icons-material/DevicesOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import CircleIcon from '@mui/icons-material/Circle';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { api } from '@/lib/api/browser';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
@@ -60,9 +64,13 @@ interface DashboardStats {
   missedLogout: { date: string; total: number; byCategory: Record<string, StatBucket> };
 }
 interface Manpower {
-  /** ISO days for the short trend, oldest first. */
+  /** ISO days across the picked window, oldest first. */
   days: string[];
   trend: number[];
+  /** Echo of the window the server used (it clamps over-long spans). */
+  from: string;
+  to: string;
+  totalManDays: number;
   totalToday: number;
   manHoursToday: number;
   activeTrades: number;
@@ -138,10 +146,44 @@ const CATEGORY_LABELS: Record<string, string> = {
   VISITOR: 'Visitors',
 };
 
+/** Local-calendar YYYY-MM-DD — toISOString() would shift the day west of UTC. */
+function isoDay(d: Date) {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function shiftDays(iso: string, delta: number) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + delta);
+  return isoDay(d);
+}
+
+/** The manpower panel's default window: the seven days ending today. */
+function thisWeek() {
+  const today = isoDay(new Date());
+  return { from: shiftDays(today, -6), to: today };
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const theme = useTheme();
   const [missedDismissed, setMissedDismissed] = React.useState(false);
+  const [range, setRange] = React.useState(thisWeek);
+
+  // Whole-window nudges: the common case is "show me last week", not picking
+  // two dates by hand. The span is preserved, so a custom window steps by its
+  // own length rather than snapping back to seven days.
+  const spanDays =
+    Math.round(
+      (new Date(`${range.to}T00:00:00`).getTime() - new Date(`${range.from}T00:00:00`).getTime()) /
+        86_400_000,
+    ) + 1;
+  const shiftWindow = (dir: -1 | 1) =>
+    setRange((r) => ({
+      from: shiftDays(r.from, dir * spanDays),
+      to: shiftDays(r.to, dir * spanDays),
+    }));
+  const atToday = range.to >= isoDay(new Date());
 
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
   const pending = useQuery({
@@ -154,8 +196,14 @@ export default function DashboardPage() {
     refetchInterval: 30000,
   });
   const charts = useQuery({
-    queryKey: ['dashboard-charts'],
-    queryFn: () => api.get<DashboardCharts>('/attendance/dashboard-charts'),
+    queryKey: ['dashboard-charts', range.from, range.to],
+    queryFn: () =>
+      api.get<DashboardCharts>(
+        `/attendance/dashboard-charts?from=${range.from}&to=${range.to}`,
+      ),
+    // Hold the previous window on screen while the next loads, so stepping
+    // through weeks does not flash empty cards.
+    placeholderData: (prev) => prev,
     refetchInterval: 60000,
   });
   const storage = useQuery({
@@ -165,7 +213,12 @@ export default function DashboardPage() {
   });
   const activity = useQuery({
     queryKey: ['recent-activity'],
-    queryFn: () => api.get<Paginated<AuditRow>>('/audit?limit=8'),
+    // Scans are audited too, but there are hundreds a day — they would bury
+    // every other action in this eight-row summary. The Audit page shows them.
+    queryFn: () =>
+      api.get<Paginated<AuditRow>>(
+        '/audit?limit=8&excludeActions=ATTENDANCE_LOGIN,ATTENDANCE_LOGOUT',
+      ),
     refetchInterval: 60000,
   });
 
@@ -198,10 +251,24 @@ export default function DashboardPage() {
   ];
 
   const manpower = charts.data?.manpower;
-  // Short day labels ("Mon 14") for the 7-day manpower trend.
+  // "Mon 14" reads well for a week; past a fortnight the weekday is noise and
+  // the ticks collide, so fall back to "14 Jul".
+  const dayLabelOpts: Intl.DateTimeFormatOptions =
+    (manpower?.days.length ?? 0) > 14
+      ? { day: 'numeric', month: 'short' }
+      : { weekday: 'short', day: 'numeric' };
   const manpowerDayLabels = (manpower?.days ?? []).map((d) =>
-    new Date(d).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }),
+    new Date(`${d}T00:00:00`).toLocaleDateString(undefined, dayLabelOpts),
   );
+  const fmtDay = (d: string) =>
+    new Date(`${d}T00:00:00`).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  const manpowerPeriod = manpower
+    ? `${fmtDay(manpower.from)} – ${fmtDay(manpower.to)} · ${manpower.totalManDays} man-days`
+    : 'Labour per day, by trade and by vendor';
   // Trades and vendors are ranked, so alternating the palette keeps adjacent
   // bars/slices distinct without implying an order in the colour itself.
   const tradeColors = vendorPalette;
@@ -392,106 +459,140 @@ export default function DashboardPage() {
         </Grid>
       </Grid>
 
-      {/* ---- Manpower ---- */}
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={12} md={5}>
-          <ChartCard
-            title="Total manpower trend"
-            subtitle="Labour per day — last 7 days"
-            loading={charts.isLoading}
-            empty={!charts.isLoading && (manpower?.trend ?? []).every((n) => n === 0)}
-            emptyText="No labour attendance in the last 7 days"
-          >
-            <LineChart
-              height={260}
-              series={[
-                {
-                  id: 'manpower',
-                  data: manpower?.trend ?? [],
-                  label: 'Labour',
-                  color: theme.palette.primary.main,
-                  curve: 'monotoneX',
-                  area: true,
-                },
-              ]}
-              sx={{
-                '& .MuiAreaElement-series-manpower': {
-                  fill: alpha(theme.palette.primary.main, 0.14),
-                },
-              }}
-              xAxis={[{ scaleType: 'point', data: manpowerDayLabels }]}
-              margin={{ left: 40, right: 16, top: 16, bottom: 24 }}
-              slotProps={{ legend: { hidden: true } }}
-            />
-          </ChartCard>
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <ChartCard
-            title="Manpower by trade"
-            subtitle="Labour on site today"
-            loading={charts.isLoading}
-            empty={!charts.isLoading && (manpower?.byTrade.length ?? 0) === 0}
-            emptyText="No labour attendance today yet"
-          >
-            <BarChart
-              height={260}
-              series={[
-                {
-                  data: (manpower?.byTrade ?? []).map((t) => t.count),
-                  label: 'Labour',
-                },
-              ]}
-              xAxis={[
-                {
-                  scaleType: 'band',
-                  data: (manpower?.byTrade ?? []).map((t) => t.trade),
-                  // Trade names are long; angle them so they stay readable.
-                  tickLabelStyle: { angle: -35, textAnchor: 'end', fontSize: 10 },
-                  colorMap: {
-                    type: 'ordinal',
-                    colors: tradeColors,
+      {/* ---- Manpower: one box, three views of the same window ---- */}
+      <Box sx={{ mb: 2 }}>
+        <ChartCard
+          title="Manpower"
+          subtitle={manpowerPeriod}
+          loading={charts.isLoading}
+          empty={!charts.isLoading && (manpower?.trend ?? []).every((n) => n === 0)}
+          emptyText="No labour attendance in this period"
+          height={300}
+          action={
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+              <Tooltip title="Previous period">
+                <IconButton size="small" onClick={() => shiftWindow(-1)}>
+                  <ChevronLeftIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <TextField
+                size="small"
+                type="date"
+                label="From"
+                value={range.from}
+                onChange={(e) => e.target.value && setRange((r) => ({ ...r, from: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 150 }}
+              />
+              <TextField
+                size="small"
+                type="date"
+                label="To"
+                value={range.to}
+                onChange={(e) => e.target.value && setRange((r) => ({ ...r, to: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 150 }}
+              />
+              <Tooltip title={atToday ? 'Already at the latest period' : 'Next period'}>
+                {/* span: a disabled button fires no events for Tooltip to hear. */}
+                <span>
+                  <IconButton size="small" onClick={() => shiftWindow(1)} disabled={atToday}>
+                    <ChevronRightIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Button size="small" onClick={() => setRange(thisWeek())} disabled={atToday}>
+                This week
+              </Button>
+            </Stack>
+          }
+        >
+          <Grid container spacing={1}>
+            <Grid item xs={12} md={5}>
+              <Typography variant="caption" color="text.secondary" sx={{ pl: 1.5 }}>
+                Total manpower trend
+              </Typography>
+              <LineChart
+                height={260}
+                series={[
+                  {
+                    id: 'manpower',
+                    data: manpower?.trend ?? [],
+                    label: 'Labour',
+                    color: theme.palette.primary.main,
+                    curve: 'monotoneX',
+                    area: true,
                   },
-                },
-              ]}
-              margin={{ left: 40, right: 16, top: 16, bottom: 64 }}
-              slotProps={{ legend: { hidden: true } }}
-            />
-          </ChartCard>
-        </Grid>
-        <Grid item xs={12} md={3}>
-          <ChartCard
-            title="Manpower by vendor"
-            subtitle="Labour on site today"
-            loading={charts.isLoading}
-            empty={!charts.isLoading && (manpower?.byVendor.length ?? 0) === 0}
-            emptyText="No labour attendance today yet"
-          >
-            <PieChart
-              height={260}
-              series={[
-                {
-                  data: (manpower?.byVendor ?? []).map((v, i) => ({
-                    id: v.vendor,
-                    value: v.count,
-                    label: v.vendor,
-                    color: vendorPalette[i % vendorPalette.length],
-                  })),
-                  innerRadius: 52,
-                  paddingAngle: 2,
-                  cornerRadius: 3,
-                  // Percentage of the day's labour, matching the donut labels.
-                  valueFormatter: (v) => {
-                    const total = (manpower?.byVendor ?? []).reduce((a, b) => a + b.count, 0);
-                    const pct = total ? Math.round((v.value / total) * 100) : 0;
-                    return `${v.value} (${pct}%)`;
+                ]}
+                sx={{
+                  '& .MuiAreaElement-series-manpower': {
+                    fill: alpha(theme.palette.primary.main, 0.14),
                   },
-                },
-              ]}
-              margin={{ left: 12, right: 100 }}
-            />
-          </ChartCard>
-        </Grid>
-      </Grid>
+                }}
+                xAxis={[{ scaleType: 'point', data: manpowerDayLabels }]}
+                margin={{ left: 40, right: 16, top: 16, bottom: 24 }}
+                slotProps={{ legend: { hidden: true } }}
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Typography variant="caption" color="text.secondary" sx={{ pl: 1.5 }}>
+                Manpower by trade
+              </Typography>
+              <BarChart
+                height={260}
+                series={[
+                  {
+                    data: (manpower?.byTrade ?? []).map((t) => t.count),
+                    label: 'Labour',
+                  },
+                ]}
+                xAxis={[
+                  {
+                    scaleType: 'band',
+                    data: (manpower?.byTrade ?? []).map((t) => t.trade),
+                    // Trade names are long; angle them so they stay readable.
+                    tickLabelStyle: { angle: -35, textAnchor: 'end', fontSize: 10 },
+                    colorMap: {
+                      type: 'ordinal',
+                      colors: tradeColors,
+                    },
+                  },
+                ]}
+                margin={{ left: 40, right: 16, top: 16, bottom: 64 }}
+                slotProps={{ legend: { hidden: true } }}
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <Typography variant="caption" color="text.secondary" sx={{ pl: 1.5 }}>
+                Manpower by vendor
+              </Typography>
+              <PieChart
+                height={260}
+                series={[
+                  {
+                    data: (manpower?.byVendor ?? []).map((v, i) => ({
+                      id: v.vendor,
+                      value: v.count,
+                      label: v.vendor,
+                      color: vendorPalette[i % vendorPalette.length],
+                    })),
+                    innerRadius: 52,
+                    paddingAngle: 2,
+                    cornerRadius: 3,
+                    // Share of the window's labour, matching the donut labels.
+                    valueFormatter: (v) => {
+                      const total = (manpower?.byVendor ?? []).reduce((a, b) => a + b.count, 0);
+                      const pct = total ? Math.round((v.value / total) * 100) : 0;
+                      return `${v.value} (${pct}%)`;
+                    },
+                  },
+                ]}
+                margin={{ left: 12, right: 100 }}
+              />
+            </Grid>
+          </Grid>
+        </ChartCard>
+      </Box>
 
       {/* ---- Charts row 1 ---- */}
       <Grid container spacing={2} sx={{ mb: 2 }}>

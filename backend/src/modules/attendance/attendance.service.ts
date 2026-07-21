@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AttendanceTap,
   PersonCategory,
@@ -30,13 +30,88 @@ type ResolvedWorker = Worker & {
   designation: { name: string } | null;
 };
 
+/** Longest manpower window we will query in one go. */
+export const MANPOWER_MAX_DAYS = 92;
+
+/**
+ * Resolves the manpower panel's window from user input. Defaults to the last
+ * seven days ending today; an inverted range is swapped rather than rejected,
+ * and the span is capped so a hand-typed year cannot pull the whole table.
+ */
+export function resolveManpowerRange(
+  from: string | undefined,
+  to: string | undefined,
+  today: Date,
+): { start: Date; end: Date } {
+  const parse = (s?: string) => {
+    if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+    const d = new Date(`${s}T00:00:00.000Z`);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  };
+
+  let end = parse(to) ?? today;
+  let start = parse(from) ?? new Date(end.getTime() - 6 * 86_400_000);
+  if (start.getTime() > end.getTime()) [start, end] = [end, start];
+
+  const span = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  if (span > MANPOWER_MAX_DAYS) {
+    start = new Date(end.getTime() - (MANPOWER_MAX_DAYS - 1) * 86_400_000);
+  }
+  return { start, end };
+}
+
 @Injectable()
 export class AttendanceService {
+  private readonly logger = new Logger(AttendanceService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Records a scan in the audit trail. Called wherever a tap actually becomes a
+   * login or logout, so the log mirrors attendance rather than raw device
+   * chatter (an unresolved badge or a duplicate tap is not an attendance event).
+   *
+   * Deliberately non-fatal: a tap is the one thing that must never fail because
+   * a secondary write did. The offline outbox replays taps, and a 500 here
+   * would strand a worker at the gate.
+   */
+  private async auditScan(
+    action: 'ATTENDANCE_LOGIN' | 'ATTENDANCE_LOGOUT',
+    args: {
+      organizationId: string;
+      workerId: string;
+      ctx: TapContext;
+      source: TapSource;
+      siteId: string;
+      sessionId: string;
+      at: Date;
+      extra?: Record<string, unknown>;
+    },
+  ) {
+    try {
+      await this.audit.record({
+        organizationId: args.organizationId,
+        action,
+        entityType: 'Worker',
+        entityId: args.workerId,
+        deviceId: args.ctx.deviceId,
+        ipAddress: args.ctx.ip,
+        newValue: {
+          sessionId: args.sessionId,
+          siteId: args.siteId,
+          source: args.source,
+          at: args.at.toISOString(),
+          ...args.extra,
+        },
+      });
+    } catch (e) {
+      this.logger.error(`Audit write failed for ${action} worker=${args.workerId}: ${String(e)}`);
+    }
+  }
 
   private workerCard(w: ResolvedWorker) {
     return {
@@ -305,6 +380,16 @@ export class AttendanceService {
       },
     });
     await this.maybeAuditManual(organizationId, ctx, worker.id, dto);
+    await this.auditScan('ATTENDANCE_LOGIN', {
+      organizationId,
+      workerId: worker.id,
+      ctx,
+      source: dto.source,
+      siteId: site.id,
+      sessionId: session.id,
+      at: tapTime,
+      extra: { workDate: workDate.toISOString().slice(0, 10), verificationMode: 'AUTO' },
+    });
 
     return {
       result: 'LOGIN_RECORDED',
@@ -374,6 +459,20 @@ export class AttendanceService {
     });
 
     await this.maybeAuditManual(organizationId, ctx, worker.id, dto);
+    await this.auditScan('ATTENDANCE_LOGOUT', {
+      organizationId,
+      workerId: worker.id,
+      ctx,
+      source: dto.source,
+      siteId: dto.siteId,
+      sessionId: updated.id,
+      at: tapTime,
+      extra: {
+        workDate: session.workDate?.toISOString().slice(0, 10) ?? null,
+        workedMinutes: updated.workedMinutes,
+        isCrossSite,
+      },
+    });
 
     return {
       result: 'LOGOUT_RECORDED',
@@ -406,7 +505,7 @@ export class AttendanceService {
   }
 
   /** Finalize a MANUAL-mode login after the watchman confirms the face match. */
-  async confirm(organizationId: string, eventId: string, _ctx: TapContext) {
+  async confirm(organizationId: string, eventId: string, ctx: TapContext) {
     const tap = await this.prisma.attendanceTap.findUnique({
       where: { organizationId_eventId: { organizationId, eventId } },
     });
@@ -437,6 +536,16 @@ export class AttendanceService {
         loginAt: tap.clientEventTime,
         state: 'OPEN',
       },
+    });
+    await this.auditScan('ATTENDANCE_LOGIN', {
+      organizationId,
+      workerId: tap.workerId,
+      ctx,
+      source: tap.tapSource,
+      siteId: tap.siteId,
+      sessionId: session.id,
+      at: tap.clientEventTime,
+      extra: { workDate: workDate.toISOString().slice(0, 10), verificationMode: 'MANUAL' },
     });
     return { result: 'LOGIN_RECORDED', sessionId: session.id, loginAt: session.loginAt };
   }
@@ -747,7 +856,7 @@ export class AttendanceService {
    * per-site people on site now, on-site category split, pending corrections
    * by site and today's vendor-wise attendance.
    */
-  async dashboardCharts(user: AuthUser) {
+  async dashboardCharts(user: AuthUser, range: { from?: string; to?: string } = {}) {
     const org = await this.prisma.organization.findUnique({
       where: { id: user.organizationId },
       select: { timezone: true },
@@ -762,51 +871,75 @@ export class AttendanceService {
     const today = businessDate(new Date(), tz);
     // The vendor trend spans 30 days; every other series is "now" or "today".
     const from = new Date(today.getTime() - 29 * 86_400_000);
+    // The manpower panel follows its own picked window, which can sit outside
+    // the 30-day vendor window entirely, so it gets a query of its own.
+    const { start: rangeStart, end: rangeEnd } = resolveManpowerRange(range.from, range.to, today);
 
-    const [windowSessions, openNow, pendingCorrections, todaySessions] = await Promise.all([
-      // Manpower charts count labour only — staff and visitors are on site but
-      // are not manpower, so they are filtered out at the query.
-      this.prisma.attendanceSession.findMany({
-        where: { ...orgScope, workDate: { gte: from }, worker: { category: 'WORKER' } },
-        select: {
-          workDate: true,
-          workedMinutes: true,
-          worker: {
-            select: {
-              vendor: { select: { name: true } },
-              designation: { select: { name: true } },
+    const [windowSessions, openNow, pendingCorrections, todaySessions, rangeSessions] =
+      await Promise.all([
+        // Manpower charts count labour only — staff and visitors are on site but
+        // are not manpower, so they are filtered out at the query.
+        this.prisma.attendanceSession.findMany({
+          where: { ...orgScope, workDate: { gte: from }, worker: { category: 'WORKER' } },
+          select: {
+            workDate: true,
+            workedMinutes: true,
+            worker: {
+              select: {
+                vendor: { select: { name: true } },
+                designation: { select: { name: true } },
+              },
             },
           },
-        },
-        take: 20000,
-      }),
-      this.prisma.attendanceSession.findMany({
-        where: { ...orgScope, state: 'OPEN' },
-        select: {
-          site: { select: { name: true } },
-          worker: { select: { category: true } },
-        },
-      }),
-      this.prisma.correctionRequest.findMany({
-        where: { ...orgScope, status: 'PENDING' },
-        select: { siteId: true },
-      }),
-      // Today's labour, kept as its own query rather than sliced off the 30-day
-      // window so a large org hitting that query's row cap cannot skew today.
-      this.prisma.attendanceSession.findMany({
-        where: { ...orgScope, workDate: today, worker: { category: 'WORKER' } },
-        select: {
-          workedMinutes: true,
-          worker: {
-            select: {
-              vendor: { select: { name: true } },
-              designation: { select: { name: true } },
+          take: 20000,
+        }),
+        this.prisma.attendanceSession.findMany({
+          where: { ...orgScope, state: 'OPEN' },
+          select: {
+            site: { select: { name: true } },
+            worker: { select: { category: true } },
+          },
+        }),
+        this.prisma.correctionRequest.findMany({
+          where: { ...orgScope, status: 'PENDING' },
+          select: { siteId: true },
+        }),
+        // Today's labour, kept as its own query rather than sliced off the 30-day
+        // window so a large org hitting that query's row cap cannot skew today.
+        this.prisma.attendanceSession.findMany({
+          where: { ...orgScope, workDate: today, worker: { category: 'WORKER' } },
+          select: {
+            workedMinutes: true,
+            worker: {
+              select: {
+                vendor: { select: { name: true } },
+                designation: { select: { name: true } },
+              },
             },
           },
-        },
-        take: 5000,
-      }),
-    ]);
+          take: 5000,
+        }),
+        // The manpower panel's window: trend, by-trade and by-vendor are all
+        // tallied across these days rather than a single day.
+        this.prisma.attendanceSession.findMany({
+          where: {
+            ...orgScope,
+            workDate: { gte: rangeStart, lte: rangeEnd },
+            worker: { category: 'WORKER' },
+          },
+          select: {
+            workDate: true,
+            workedMinutes: true,
+            worker: {
+              select: {
+                vendor: { select: { name: true } },
+                designation: { select: { name: true } },
+              },
+            },
+          },
+          take: 20000,
+        }),
+      ]);
 
     const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -894,32 +1027,42 @@ export class AttendanceService {
       return [...m.entries()].sort((a, b) => b[1] - a[1]);
     };
 
-    // Manpower panel: headline numbers for today plus a short trend. Distinct
-    // from the 30-day vendor chart above, which is per vendor rather than total.
-    const TREND_DAYS = 7;
-    const trendDays = days.slice(-TREND_DAYS);
-    const trendIndex = new Map(trendDays.map((d, i) => [d, i]));
-    const manpowerTrend = new Array<number>(trendDays.length).fill(0);
-    for (const s of windowSessions) {
-      const i = trendIndex.get(dayKey(s.workDate));
+    // Manpower panel: trend, trades and vendors all across the picked window.
+    // Distinct from the 30-day vendor chart above, which is per vendor rather
+    // than total. The headline tiles below stay "today" — they are the live
+    // overview and must not move when someone browses back a week.
+    const rangeDays: string[] = [];
+    for (let d = rangeStart.getTime(); d <= rangeEnd.getTime(); d += 86_400_000) {
+      rangeDays.push(dayKey(new Date(d)));
+    }
+    const rangeIndex = new Map(rangeDays.map((d, i) => [d, i]));
+    const manpowerTrend = new Array<number>(rangeDays.length).fill(0);
+    for (const s of rangeSessions) {
+      const i = rangeIndex.get(dayKey(s.workDate));
       if (i !== undefined) manpowerTrend[i] += 1;
     }
 
     const manHoursToday = todaySessions.reduce((sum, s) => sum + (s.workedMinutes ?? 0), 0) / 60;
-    const byTradeToday = tally(
-      todaySessions,
-      (s) => s.worker.designation?.name?.trim() || 'No designation',
-    ).map(([trade, count]) => ({ trade, count }));
+    const activeTradesToday = new Set(
+      todaySessions.map((s) => s.worker.designation?.name?.trim() || 'No designation'),
+    ).size;
 
     const manpower = {
-      days: trendDays,
+      days: rangeDays,
       trend: manpowerTrend,
+      from: dayKey(rangeStart),
+      to: dayKey(rangeEnd),
+      // Man-days across the window: one worker on five days counts five.
+      totalManDays: rangeSessions.length,
       totalToday: todaySessions.length,
       // One decimal is enough — this is a headline tile, not a payroll figure.
       manHoursToday: Math.round(manHoursToday * 10) / 10,
-      activeTrades: byTradeToday.length,
-      byTrade: byTradeToday,
-      byVendor: tally(todaySessions, (s) => s.worker.vendor?.name?.trim() || 'No vendor').map(
+      activeTrades: activeTradesToday,
+      byTrade: tally(
+        rangeSessions,
+        (s) => s.worker.designation?.name?.trim() || 'No designation',
+      ).map(([trade, count]) => ({ trade, count })),
+      byVendor: tally(rangeSessions, (s) => s.worker.vendor?.name?.trim() || 'No vendor').map(
         ([vendor, count]) => ({ vendor, count }),
       ),
     };

@@ -77,10 +77,16 @@ export class AttendanceController {
     return this.attendance.dashboardStats(user);
   }
 
+  // from/to (YYYY-MM-DD) drive the manpower panel only; the vendor trend below
+  // it stays a fixed 30-day window. Both default to the last seven days.
   @Get('dashboard-charts')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
-  dashboardCharts(@CurrentUser() user: AuthUser) {
-    return this.attendance.dashboardCharts(user);
+  dashboardCharts(
+    @CurrentUser() user: AuthUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.attendance.dashboardCharts(user, { from, to });
   }
 
   @Get('day-summary')

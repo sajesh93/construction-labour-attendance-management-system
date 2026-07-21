@@ -8,6 +8,8 @@ export interface AuditQuery {
   entityId?: string;
   actorUserId?: string;
   action?: string;
+  /** Actions to leave out — lets a summary feed drop high-volume scan events. */
+  excludeActions?: string[];
   from?: string;
   to?: string;
   limit?: number;
@@ -26,6 +28,7 @@ export class AuditQueryService {
       ...(q.entityId ? { entityId: q.entityId } : {}),
       ...(q.actorUserId ? { actorUserId: q.actorUserId } : {}),
       ...(q.action ? { action: q.action } : {}),
+      ...(q.excludeActions?.length ? { action: { notIn: q.excludeActions } } : {}),
       ...(q.from || q.to
         ? {
             createdAt: {

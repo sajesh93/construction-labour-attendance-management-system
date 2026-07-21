@@ -20,6 +20,7 @@ export class AuditQueryController {
     @Query('entityId') entityId?: string,
     @Query('actorUserId') actorUserId?: string,
     @Query('action') action?: string,
+    @Query('excludeActions') excludeActions?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
@@ -30,6 +31,12 @@ export class AuditQueryController {
       entityId,
       actorUserId,
       action,
+      excludeActions: excludeActions
+        ? excludeActions
+            .split(',')
+            .map((a) => a.trim())
+            .filter(Boolean)
+        : undefined,
       from,
       to,
       limit: limit ? parseInt(limit, 10) : undefined,

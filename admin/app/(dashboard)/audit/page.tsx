@@ -59,6 +59,8 @@ const ACTIONS: Record<string, { label: string; tone: BadgeTone }> = {
   WORKER_ASSIGN_SITE: { label: 'Site assigned', tone: 'info' },
   WORKER_CREDENTIAL_BIND: { label: 'Badge / NFC bound', tone: 'info' },
   WORKER_AADHAAR_REVEAL: { label: 'ID number viewed', tone: 'warning' },
+  ATTENDANCE_LOGIN: { label: 'Scanned in', tone: 'success' },
+  ATTENDANCE_LOGOUT: { label: 'Scanned out', tone: 'neutral' },
   ATTENDANCE_MANUAL_BACKUP: { label: 'Manual attendance entry', tone: 'warning' },
   CORRECTION_REQUEST: { label: 'Correction requested', tone: 'info' },
   CORRECTION_APPROVE: { label: 'Correction approved', tone: 'success' },
