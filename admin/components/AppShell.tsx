@@ -23,6 +23,7 @@ import {
 import { alpha } from '@mui/material/styles';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import EngineeringOutlinedIcon from '@mui/icons-material/EngineeringOutlined';
@@ -50,6 +51,7 @@ const DRAWER_COLLAPSED = 68;
 const NAV_ICONS: Record<string, React.ReactNode> = {
   '/': <DashboardOutlinedIcon />,
   '/attendance': <FactCheckOutlinedIcon />,
+  '/attendance/fix': <BuildOutlinedIcon />,
   '/corrections': <RuleOutlinedIcon />,
   '/reports': <AssessmentOutlinedIcon />,
   '/workers': <EngineeringOutlinedIcon />,
@@ -81,8 +83,13 @@ export function AppShell({ me, children }: { me: Me; children: React.ReactNode }
   const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
 
   const width = collapsed ? DRAWER_COLLAPSED : DRAWER_WIDTH;
-  const active = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
-  const current = items.find((i) => active(i.href));
+  // Nested routes (/attendance/fix) match their parent too, so the most specific
+  // matching item wins — otherwise both it and /attendance would highlight.
+  const matches = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+  const current = items
+    .filter((i) => matches(i.href))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+  const active = (href: string) => current?.href === href;
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });

@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AttendanceService } from './attendance.service';
+import { SessionAdminService } from './session-admin.service';
 import { SyncService } from './sync.service';
 import { ConfirmDto, TapDto } from './dto/attendance.dto';
+import { BulkLogoutDto, DeleteSessionDto, EditSessionDto } from './dto/session-admin.dto';
 import { RequirePermissions, RequiresDevice } from '../../common/rbac/rbac.decorators';
 import { Permission } from '../../common/rbac/permissions';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
@@ -28,6 +30,7 @@ export class AttendanceController {
   constructor(
     private readonly attendance: AttendanceService,
     private readonly sync: SyncService,
+    private readonly sessionAdmin: SessionAdminService,
   ) {}
 
   @Post('tap')
@@ -108,6 +111,48 @@ export class AttendanceController {
     @Query('month') month: string,
   ) {
     return this.attendance.workerSummary(user.organizationId, workerId, month);
+  }
+
+  // ---------------- Fix attendance (ATTENDANCE_EDIT — Super Admin only) ----------------
+  // Repairs to already-recorded sessions: wrong worker, wrong times, phantom
+  // rows from double scans, and the end-of-day sweep when nobody scanned out.
+
+  @Get('admin/day')
+  @RequirePermissions(Permission.ATTENDANCE_EDIT)
+  adminDay(
+    @CurrentUser() user: AuthUser,
+    @Query('date') date?: string,
+    @Query('siteId') siteId?: string,
+  ) {
+    return this.sessionAdmin.day(user, date, siteId);
+  }
+
+  @Patch('admin/sessions/:id')
+  @RequirePermissions(Permission.ATTENDANCE_EDIT)
+  adminEditSession(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: EditSessionDto,
+  ) {
+    return this.sessionAdmin.edit(user, id, dto);
+  }
+
+  @Delete('admin/sessions/:id')
+  @RequirePermissions(Permission.ATTENDANCE_EDIT)
+  adminDeleteSession(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: DeleteSessionDto,
+  ) {
+    return this.sessionAdmin.remove(user, id, dto.reason);
+  }
+
+  // Pass dryRun to preview the sweep; the admin panel shows that preview in the
+  // confirmation dialog before anything is written.
+  @Post('admin/bulk-logout')
+  @RequirePermissions(Permission.ATTENDANCE_EDIT)
+  adminBulkLogout(@CurrentUser() user: AuthUser, @Body() dto: BulkLogoutDto) {
+    return this.sessionAdmin.bulkLogout(user, dto);
   }
 
   @Post('/sync')

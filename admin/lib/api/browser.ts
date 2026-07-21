@@ -54,5 +54,7 @@ export const api = {
     call<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown) =>
     call<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
-  del: <T>(path: string) => call<T>(path, { method: 'DELETE' }),
+  // Some deletes carry a body — the audit reason on an attendance repair, say.
+  del: <T>(path: string, body?: unknown) =>
+    call<T>(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined }),
 };

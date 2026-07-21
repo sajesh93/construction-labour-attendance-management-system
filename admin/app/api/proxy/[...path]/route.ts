@@ -10,8 +10,10 @@ async function handle(req: NextRequest, path: string[]) {
   const search = req.nextUrl.search;
   const backendPath = `/${path.join('/')}${search}`;
   const method = req.method;
+  // DELETE included: an attendance repair sends its audit reason in the body.
+  // Bodyless deletes still work — the parse just yields undefined.
   let body: unknown;
-  if (method !== 'GET' && method !== 'DELETE') {
+  if (method !== 'GET') {
     body = await req.json().catch(() => undefined);
   }
 

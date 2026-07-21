@@ -12,6 +12,9 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/', roles: ['SUPER_ADMIN', 'SITE_ADMIN', 'SUPERVISOR'], group: 'Overview' },
   { label: 'Attendance', href: '/attendance', roles: ['SUPER_ADMIN', 'SITE_ADMIN', 'SUPERVISOR'], group: 'Operations' },
+  // Editing a recorded session is the Super Admin's escape hatch (ATTENDANCE_EDIT).
+  // Everyone else raises a correction instead, which an admin then approves.
+  { label: 'Fix attendance', href: '/attendance/fix', roles: ['SUPER_ADMIN'], group: 'Operations' },
   // Safety Officers raise corrections from the mobile app; the web list is for
   // the admins who approve them, so it stays off the Safety Officer's nav.
   { label: 'Corrections', href: '/corrections', roles: ['SUPER_ADMIN', 'SITE_ADMIN'], group: 'Operations' },
