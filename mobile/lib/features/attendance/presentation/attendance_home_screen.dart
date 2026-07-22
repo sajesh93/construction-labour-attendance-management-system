@@ -76,6 +76,10 @@ class _AttendanceHomeScreenState extends ConsumerState<AttendanceHomeScreen> {
       final res = await dio.get('/workers/by-site', queryParameters: {'siteId': _siteId});
       final data = (res.data['data'] as List).cast<Map<String, dynamic>>();
       await ref.read(localDbProvider).replaceWorkers(data.map(WorkerCard.fromMap).toList());
+      // Who is already logged in, org-wide — including logins recorded on other
+      // devices. Without this a handset that goes offline would offer a fresh
+      // LOGIN to someone another gate already scanned in.
+      await ref.read(attendanceRepositoryProvider).refreshOpenSessions();
       _lastCacheRefresh = DateTime.now();
     } catch (_) {
       // Offline — keep the existing cache; retried on the next cycle.

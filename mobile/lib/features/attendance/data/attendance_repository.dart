@@ -33,6 +33,10 @@ class AttendanceRepository {
   final LocationService _location;
   final _uuid = const Uuid();
 
+  /// How long a scan will wait on the server before falling back to local
+  /// state. Short on purpose — the queue at the gate doesn't wait.
+  static const _stateTimeout = Duration(seconds: 5);
+
   /// Resolve a worker from cached data for the given identifier/source.
   /// QR badges encode the EMP-ID (worker code); fall back to the opaque
   /// qr identifier for legacy codes. On a local cache miss we ask the server
@@ -89,6 +93,59 @@ class AttendanceRepository {
     return null;
   }
 
+  /// Pull one worker's live login state from the server into the local meta, so
+  /// the in/out decision below reflects taps made on other devices.
+  ///
+  /// Best-effort and time-boxed: offline, or a server too slow to wait on at the
+  /// gate, just leaves the local meta alone. Skipped entirely while the outbox
+  /// still holds unsynced taps — the server hasn't seen those yet, so its answer
+  /// would be staler than what this device already knows.
+  Future<void> _refreshWorkerState(String workerId) async {
+    try {
+      if (await _db.pendingCount() > 0) return;
+      final res = await _api.dio
+          .get('/attendance/worker-state', queryParameters: {'workerId': workerId})
+          .timeout(_stateTimeout);
+      final data = res.data;
+      if (data is! Map) return;
+      await _db.setMeta('opensession:$workerId', (data['openSessionId'] as String?) ?? '');
+      await _mergeLastTap(workerId, data['lastTapAt'] as String?);
+    } catch (_) {
+      // Offline/slow/unauthorised — keep the local view and decide from it.
+    }
+  }
+
+  /// Keep whichever last-tap is later. Devices' clocks differ slightly, and the
+  /// cooldown is there to swallow a double scan — erring later never loses a
+  /// punch, it only asks the operator to wait a moment longer.
+  Future<void> _mergeLastTap(String workerId, String? serverIso) async {
+    if (serverIso == null || serverIso.isEmpty) return;
+    final server = DateTime.tryParse(serverIso)?.toUtc();
+    if (server == null) return;
+    final localIso = await _db.getMeta('lasttap:$workerId');
+    final local = localIso == null ? null : DateTime.tryParse(localIso)?.toUtc();
+    if (local != null && local.isAfter(server)) return;
+    await _db.setMeta('lasttap:$workerId', server.toIso8601String());
+  }
+
+  /// Replace the cached login state for every worker in one shot. Called when
+  /// the device warms its worker cache, so a handset that then goes offline can
+  /// still scan out people logged in by other devices.
+  Future<void> refreshOpenSessions() async {
+    try {
+      if (await _db.pendingCount() > 0) return;
+      final res = await _api.dio.get('/attendance/open-sessions');
+      final rows = (res.data['data'] as List).cast<Map<String, dynamic>>();
+      await _db.replaceOpenSessions({
+        for (final r in rows)
+          if (r['workerId'] is String && r['sessionId'] is String)
+            r['workerId'] as String: r['sessionId'] as String,
+      });
+    } catch (_) {
+      // Offline — the per-scan refresh picks this up once there's a network.
+    }
+  }
+
   /// Work out what a scan would do — who the worker is, and whether the tap is
   /// a LOGIN, a LOGOUT, a DUPLICATE or a refused EXPIRED card. Writes nothing.
   ///
@@ -102,6 +159,12 @@ class AttendanceRepository {
     required DateTime now,
   }) async {
     final worker = await resolve(source, identifier);
+
+    // Whoever scanned them IN may have been a different device, whose login
+    // this one never saw. Refresh from the server first so the local meta is
+    // the org-wide truth, not just this handset's history — otherwise a worker
+    // logged in at gate A gets offered another LOGIN at gate B.
+    if (worker != null) await _refreshWorkerState(worker.id);
 
     // Decide locally using the last tap recorded for this worker.
     final lastTapIso = worker == null ? null : await _db.getMeta('lasttap:${worker.id}');
@@ -221,6 +284,7 @@ class AttendanceRepository {
     }
 
     // 2) Best-effort immediate push; failures are fine — the sync engine retries.
+    var recorded = outcome;
     try {
       final res = await _api.dio.post('/attendance/tap', data: event.toJson());
       // MANUAL verification sites defer the session until the device confirms.
@@ -231,13 +295,42 @@ class AttendanceRepository {
         await _api.dio.post('/attendance/confirm', data: {'eventId': event.eventId});
       }
       await _db.markSynced(event.eventId);
+      // The server decides in/out from every device's taps, not just this one.
+      // If it disagrees with the local guess, it wins — both in the local meta
+      // and in what the operator is told was recorded.
+      if (data is Map && worker != null) {
+        recorded = await _reconcile(outcome, worker, data);
+      }
     } on DioException catch (e) {
       // Stays pending — the sync engine retries and the server auto-confirms
       // offline-ingested logins.
       await _db.recordFailure(event.eventId, e.message ?? 'network');
     }
 
-    return outcome;
+    return recorded;
+  }
+
+  /// Align the local view with what the server actually recorded for this tap.
+  /// Returns the outcome to show the operator — corrected when the server made
+  /// the opposite call (a login this device never saw makes the scan a LOGOUT).
+  Future<TapOutcome> _reconcile(
+    TapOutcome local,
+    WorkerCard worker,
+    Map<dynamic, dynamic> data,
+  ) async {
+    final result = data['result'];
+    final sessionId = data['sessionId'];
+    if (result == 'LOGOUT_RECORDED') {
+      await _db.setMeta('opensession:${worker.id}', '');
+      if (local.action == TapAction.logout) return local;
+      return TapOutcome(action: TapAction.logout, worker: worker);
+    }
+    if (result == 'LOGIN_RECORDED' || result == 'LOGIN_PENDING_CONFIRM') {
+      if (sessionId is String) await _db.setMeta('opensession:${worker.id}', sessionId);
+      if (local.action == TapAction.login) return local;
+      return TapOutcome(action: TapAction.login, worker: worker);
+    }
+    return local;
   }
 
   /// Manual-backup search. Hits the server (finds any worker in the org, not

@@ -171,4 +171,19 @@ class LocalDb {
     final rows = await _db.query('meta', where: 'k = ?', whereArgs: [key], limit: 1);
     return rows.isEmpty ? null : rows.first['v'] as String?;
   }
+
+  /// Swap the whole `opensession:<workerId>` set for the server's list, in one
+  /// transaction. Dropping the old keys is the point: a worker scanned out on
+  /// another device must stop looking logged in here.
+  Future<void> replaceOpenSessions(Map<String, String> sessionIdByWorkerId) async {
+    await _db.transaction((txn) async {
+      await txn.delete('meta', where: "k LIKE 'opensession:%'");
+      final batch = txn.batch();
+      sessionIdByWorkerId.forEach((workerId, sessionId) {
+        batch.insert('meta', {'k': 'opensession:$workerId', 'v': sessionId},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      });
+      await batch.commit(noResult: true);
+    });
+  }
 }

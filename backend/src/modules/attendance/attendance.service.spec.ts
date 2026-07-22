@@ -268,3 +268,39 @@ describe('AttendanceService.loggedOutToday', () => {
     );
   });
 });
+
+describe('AttendanceService.workerTapState', () => {
+  it('reports the open session a *different* device opened, so this one scans OUT', async () => {
+    const { svc } = buildService({
+      attendanceSession: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'sess-9',
+          loginAt: new Date('2026-07-22T02:30:00Z'),
+          siteId: 'site-1',
+        }),
+      },
+      attendanceTap: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ clientEventTime: new Date('2026-07-22T02:30:00Z') }),
+      },
+    });
+
+    const state = await svc.workerTapState('org-1', 'w1');
+
+    expect(state.openSessionId).toBe('sess-9');
+    expect(state.lastTapAt).toEqual(new Date('2026-07-22T02:30:00Z'));
+  });
+
+  it('reports nobody logged in when there is no open session', async () => {
+    const { svc } = buildService({});
+    const state = await svc.workerTapState('org-1', 'w1');
+    expect(state.openSessionId).toBeNull();
+    expect(state.lastTapAt).toBeNull();
+  });
+
+  it('rejects a missing workerId rather than scanning the whole org', async () => {
+    const { svc } = buildService({});
+    await expect(svc.workerTapState('org-1', '')).rejects.toBeInstanceOf(AppException);
+  });
+});

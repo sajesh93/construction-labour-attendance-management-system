@@ -53,6 +53,23 @@ export class AttendanceController {
     });
   }
 
+  // Scanner-side state reads. Both sit on ATTENDANCE_MARK (not ATTENDANCE_VIEW)
+  // because a watchman device needs them to decide in/out, and neither exposes
+  // anything beyond "this worker is currently logged in".
+  @Get('worker-state')
+  @RequiresDevice()
+  @RequirePermissions(Permission.ATTENDANCE_MARK)
+  workerState(@CurrentUser() user: AuthUser, @Query('workerId') workerId: string) {
+    return this.attendance.workerTapState(user.organizationId, workerId);
+  }
+
+  @Get('open-sessions')
+  @RequiresDevice()
+  @RequirePermissions(Permission.ATTENDANCE_MARK)
+  openSessions(@CurrentUser() user: AuthUser) {
+    return this.attendance.openSessions(user.organizationId);
+  }
+
   @Get('active')
   @RequirePermissions(Permission.ATTENDANCE_VIEW)
   active(

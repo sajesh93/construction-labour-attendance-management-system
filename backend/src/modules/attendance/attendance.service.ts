@@ -484,6 +484,55 @@ export class AttendanceService {
     };
   }
 
+  /**
+   * Live login state for one worker, so a device can scan somebody OUT even
+   * though a *different* device recorded the login.
+   *
+   * The scanner decides LOGIN/LOGOUT from its own offline meta, which only ever
+   * knows about taps that device made. Whenever it has a network it asks here
+   * instead, and the server — the only place that sees every device — answers.
+   * `lastTapAt` comes back too so the duplicate-tap cooldown also spans devices.
+   */
+  async workerTapState(organizationId: string, workerId: string) {
+    if (!workerId) throw Errors.validation({ message: 'workerId is required' });
+    const [session, lastTap] = await Promise.all([
+      this.prisma.attendanceSession.findFirst({
+        where: { organizationId, workerId, state: 'OPEN' },
+        select: { id: true, loginAt: true, siteId: true },
+      }),
+      this.prisma.attendanceTap.findFirst({
+        where: { organizationId, workerId },
+        orderBy: { clientEventTime: 'desc' },
+        select: { clientEventTime: true, tapType: true },
+      }),
+    ]);
+    return {
+      workerId,
+      openSessionId: session?.id ?? null,
+      loginAt: session?.loginAt ?? null,
+      siteId: session?.siteId ?? null,
+      lastTapAt: lastTap?.clientEventTime ?? null,
+    };
+  }
+
+  /**
+   * Every worker currently logged in across the org — the device pulls this
+   * alongside its worker cache so it starts the day knowing who is already
+   * inside, and can still scan them out after it drops offline.
+   *
+   * Not filtered by site: a logout is allowed to happen at a different gate
+   * from the login (see `isCrossSite`), so narrowing this would reintroduce the
+   * same blind spot at the site boundary.
+   */
+  async openSessions(organizationId: string) {
+    const rows = await this.prisma.attendanceSession.findMany({
+      where: { organizationId, state: 'OPEN' },
+      select: { id: true, workerId: true, loginAt: true, siteId: true },
+      take: 5000,
+    });
+    return { data: rows.map((r) => ({ ...r, sessionId: r.id })) };
+  }
+
   private async maybeAuditManual(
     organizationId: string,
     ctx: TapContext,

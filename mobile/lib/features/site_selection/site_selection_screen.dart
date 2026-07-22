@@ -115,6 +115,9 @@ class _SiteSelectionScreenState extends ConsumerState<SiteSelectionScreen> {
       final res = await dio.get('/workers/by-site', queryParameters: {'siteId': siteId});
       final data = (res.data['data'] as List).cast<Map<String, dynamic>>();
       await db.replaceWorkers(data.map(WorkerCard.fromMap).toList());
+      // …and who is already logged in, so this device can scan out people
+      // another device scanned in, even after it drops offline.
+      await ref.read(attendanceRepositoryProvider).refreshOpenSessions();
     } catch (_) {
       // Offline or empty — proceed; sync will refresh later.
     }
