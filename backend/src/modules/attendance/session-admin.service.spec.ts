@@ -265,7 +265,10 @@ describe('SessionAdminService.bulkReopen — undoing a stray logout', () => {
 
   it('reopens only the first of two records for the same person', async () => {
     const { prisma, svc } = harness();
-    const twice = [closed[0], session({ id: 'c', workerId: 'w5', state: 'CLOSED', worker: closed[0].worker })];
+    const twice = [
+      closed[0],
+      session({ id: 'c', workerId: 'w5', state: 'CLOSED', worker: closed[0].worker }),
+    ];
     prisma.attendanceSession.findMany.mockResolvedValueOnce(twice).mockResolvedValueOnce([]);
 
     const result = await svc.bulkReopen(user, { sessionIds: ['a', 'c'], reason: 'undo' });
