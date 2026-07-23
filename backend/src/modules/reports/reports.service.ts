@@ -6,7 +6,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { Permission, roleHasPermission } from '../../common/rbac/permissions';
 import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
-import { capSessionHours, minutesToHours, toCsv } from './report.builder';
+import { CappedSession, capWorkerDay, minutesToHours, toCsv } from './report.builder';
 import {
   AttSheetMonth,
   AttSheetRow,
@@ -281,6 +281,51 @@ export class ReportsService {
     return where;
   }
 
+  /** Whether the caller asked for the statutory hours cap. */
+  private static wantsCap(params: Record<string, unknown>): boolean {
+    return params.capHours === true || params.capHours === 'true';
+  }
+
+  /**
+   * Apply the statutory cap across each worker's whole day and return the
+   * capped figures keyed by session id. The ceiling is a limit on the day, not
+   * on a single tap-in — a split shift of 6h + 6h breaches it just as surely as
+   * one forgotten 12-hour logout — so every session a worker has on a work date
+   * is capped together. Callers look each session up by id and fall back to the
+   * raw row when the cap is off.
+   */
+  private static capByDay<
+    T extends {
+      id: string;
+      workerId: string;
+      workDate: Date;
+      workedMinutes: number | null;
+      overtimeMinutes: number | null;
+      loginAt: Date | null;
+      logoutAt: Date | null;
+    },
+  >(sessions: T[]): Map<string, CappedSession> {
+    const byWorkerDay = new Map<string, T[]>();
+    for (const s of sessions) {
+      const key = `${s.workerId}|${s.workDate.toISOString().slice(0, 10)}`;
+      const group = byWorkerDay.get(key);
+      if (group) group.push(s);
+      else byWorkerDay.set(key, [s]);
+    }
+
+    const capped = new Map<string, CappedSession>();
+    for (const group of byWorkerDay.values()) {
+      // Login order, so the trimming starts at the end of the day. A session
+      // with no login stamp sorts last — it cannot anchor a shift boundary.
+      const ordered = [...group].sort(
+        (a, b) => (a.loginAt?.getTime() ?? Infinity) - (b.loginAt?.getTime() ?? Infinity),
+      );
+      const result = capWorkerDay(ordered);
+      ordered.forEach((s, i) => capped.set(s.id, result[i]));
+    }
+    return capped;
+  }
+
   /** Report types that render as manpower charts rather than a row table. */
   static isChartReport(type: ReportType): boolean {
     return type === ReportType.DAILY || type === ReportType.WEEKLY || type === ReportType.MONTHLY;
@@ -312,6 +357,7 @@ export class ReportsService {
     const sessions = await this.prisma.attendanceSession.findMany({
       where: { ...where, workDate: { gte: trendStart, lt: end } },
       select: {
+        id: true,
         workDate: true,
         workedMinutes: true,
         overtimeMinutes: true,
@@ -328,7 +374,11 @@ export class ReportsService {
       take: 50000,
     });
 
-    const capHours = params.capHours === true || params.capHours === 'true';
+    // Man-hours honour the same day-wide ceiling as the row reports, so the
+    // headline total agrees with the detail rows behind it.
+    const capped = ReportsService.wantsCap(params)
+      ? ReportsService.capByDay(sessions)
+      : new Map<string, CappedSession>();
     const days: string[] = [];
     for (let t = trendStart.getTime(); t < end.getTime(); t += dayMs) days.push(iso(new Date(t)));
     const trendIndex = new Map(days.map((d, i) => [d, i]));
@@ -348,7 +398,7 @@ export class ReportsService {
       if (s.workDate < start) continue;
       inPeriod += 1;
       uniqueWorkers.add(s.workerId);
-      manMinutes += (capHours ? capSessionHours(s) : s).workedMinutes ?? 0;
+      manMinutes += (capped.get(s.id) ?? s).workedMinutes ?? 0;
       const trade = s.worker.designation?.name?.trim() || 'No designation';
       const vendor = s.worker.vendor?.name?.trim() || 'No vendor';
       byTrade.set(trade, (byTrade.get(trade) ?? 0) + 1);
@@ -521,12 +571,16 @@ export class ReportsService {
       day(w.joinDate),
     ];
 
-    // Compliance mode: a day that ran past the statutory 9 hours — usually a
-    // missed logout — is trimmed back to it before the row is written.
-    const capHours = params.capHours === true || params.capHours === 'true';
+    // Compliance mode: a day that ran past the statutory 9 hours — a missed
+    // logout, or shifts that add up past it — is trimmed back before the rows
+    // are written. Capped across the worker's whole day, so the two rows of a
+    // split shift can never sum to more than the ceiling.
+    const capped = ReportsService.wantsCap(params)
+      ? ReportsService.capByDay(sessions)
+      : new Map<string, CappedSession>();
 
     const toRow = (s: (typeof sessions)[number]): (string | number | null)[] => {
-      const t = capHours ? capSessionHours(s) : s;
+      const t = capped.get(s.id) ?? s;
       return [
         s.workDate.toISOString().slice(0, 10),
         s.worker.workerCode,
@@ -660,16 +714,36 @@ export class ReportsService {
       orderBy: [{ category: 'asc' }, { fullName: 'asc' }],
     });
 
-    // Per-worker, per-day first IN / last Out across the whole period.
+    // Every shift, per worker per day — not just the first IN and last Out.
+    // Collapsing a split shift to its outer bounds would read as one unbroken
+    // stretch and overstate the day (10:00-12:00 plus 13:00-15:00 is four hours
+    // worked, not five), so each shift keeps its own IN/Out and lands in its
+    // own block of the sheet.
     const sessions = await this.prisma.attendanceSession.findMany({
       where: {
         organizationId: orgId,
         workerId: { in: workers.map((w) => w.id) },
         workDate: { gte: periodStart, lt: periodEnd },
       },
-      select: { workerId: true, workDate: true, loginAt: true, logoutAt: true },
+      select: {
+        id: true,
+        workerId: true,
+        workDate: true,
+        loginAt: true,
+        logoutAt: true,
+        workedMinutes: true,
+        overtimeMinutes: true,
+      },
     });
-    const byWorkerDay = new Map<string, Map<string, { inAt: Date | null; outAt: Date | null }>>();
+
+    // The sheet prints clock times rather than an hours column, so the cap acts
+    // on the stamps themselves — the final Out of an over-long day is pulled
+    // back until the day's shifts total no more than the ceiling.
+    const capped = ReportsService.wantsCap(params)
+      ? ReportsService.capByDay(sessions)
+      : new Map<string, CappedSession>();
+
+    const byWorkerDay = new Map<string, Map<string, { inAt: Date | null; outAt: Date | null }[]>>();
     for (const s of sessions) {
       const dkey = s.workDate.toISOString().slice(0, 10);
       let wm = byWorkerDay.get(s.workerId);
@@ -677,13 +751,16 @@ export class ReportsService {
         wm = new Map();
         byWorkerDay.set(s.workerId, wm);
       }
-      let e = wm.get(dkey);
-      if (!e) {
-        e = { inAt: null, outAt: null };
-        wm.set(dkey, e);
+      const shifts = wm.get(dkey) ?? [];
+      shifts.push({ inAt: s.loginAt, outAt: (capped.get(s.id) ?? s).logoutAt });
+      wm.set(dkey, shifts);
+    }
+    // Chronological within each day, so shift 1 is the morning one. A session
+    // with no login stamp sorts last rather than jumping the queue.
+    for (const wm of byWorkerDay.values()) {
+      for (const shifts of wm.values()) {
+        shifts.sort((a, b) => (a.inAt?.getTime() ?? Infinity) - (b.inAt?.getTime() ?? Infinity));
       }
-      if (s.loginAt && (!e.inAt || s.loginAt < e.inAt)) e.inAt = s.loginAt;
-      if (s.logoutAt && (!e.outAt || s.logoutAt > e.outAt)) e.outAt = s.logoutAt;
     }
 
     const timeFmt = new Intl.DateTimeFormat('en-GB', {
@@ -740,51 +817,108 @@ export class ReportsService {
       exit: w.exitDate ? w.exitDate.toISOString().slice(0, 10) : null,
     });
 
-    const rows: AttSheetRow[] = workers.map((w, idx) => {
+    const infoCells = (w: (typeof workers)[number], serial: number): (string | number | null)[] => [
+      serial,
+      w.fullName,
+      w.fatherName ?? '',
+      w.workerCode,
+      w.vendor?.name ?? '',
+      w.natureOfContractor ?? '',
+      fmtDate(w.dateOfBirth),
+      fmtDate(w.joinDate),
+      sex(w.gender),
+      w.mobileNumber ?? '',
+      ...(sensitive
+        ? [
+            w.bloodGroup ?? '',
+            this.decryptOrBlank(w.aadhaarCiphertext),
+            this.decryptOrBlank(w.panCiphertext),
+            w.bankName ?? '',
+            this.decryptOrBlank(w.bankAccountCiphertext) || (w.bankAccountNumber ?? ''),
+            w.ifscCode ?? '',
+            w.pfNumber ?? '',
+            w.esiNumber ?? '',
+            w.emergencyContactName ?? '',
+            w.emergencyContactNumber ?? '',
+          ]
+        : []),
+    ];
+
+    /** Every day key in the sheet, in column order. */
+    const dayKeys: string[] = [];
+    for (const b of blocks) {
+      for (const day of b.days) {
+        dayKeys.push(
+          `${b.year}-${String(b.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        );
+      }
+    }
+
+    /** One worker's cells for a given shift of the day (0 = their first). */
+    const shiftCells = (w: (typeof workers)[number], shiftIndex: number): (string | null)[] => {
       const wm = byWorkerDay.get(w.id);
-      const info: (string | number | null)[] = [
-        idx + 1,
-        w.fullName,
-        w.fatherName ?? '',
-        w.workerCode,
-        w.vendor?.name ?? '',
-        w.natureOfContractor ?? '',
-        fmtDate(w.dateOfBirth),
-        fmtDate(w.joinDate),
-        sex(w.gender),
-        w.mobileNumber ?? '',
-        ...(sensitive
-          ? [
-              w.bloodGroup ?? '',
-              this.decryptOrBlank(w.aadhaarCiphertext),
-              this.decryptOrBlank(w.panCiphertext),
-              w.bankName ?? '',
-              this.decryptOrBlank(w.bankAccountCiphertext) || (w.bankAccountNumber ?? ''),
-              w.ifscCode ?? '',
-              w.pfNumber ?? '',
-              w.esiNumber ?? '',
-              w.emergencyContactName ?? '',
-              w.emergencyContactNumber ?? '',
-            ]
-          : []),
-      ];
-      const cells: (string | null)[] = [];
       const emp = dkeyOf(w);
-      for (const b of blocks) {
-        for (const day of b.days) {
-          const dkey = `${b.year}-${String(b.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const e = wm?.get(dkey);
-          if (presence) {
-            const employed = (!emp.join || dkey >= emp.join) && (!emp.exit || dkey <= emp.exit);
-            cells.push(employed ? (e ? 'P' : 'A') : '');
-          } else {
-            cells.push(fmtTime(e?.inAt ?? null));
-            cells.push(fmtTime(e?.outAt ?? null));
-          }
+      const cells: (string | null)[] = [];
+      for (const dkey of dayKeys) {
+        const shift = wm?.get(dkey)?.[shiftIndex];
+        if (presence) {
+          const employed = (!emp.join || dkey >= emp.join) && (!emp.exit || dkey <= emp.exit);
+          cells.push(employed ? (shift ? 'P' : 'A') : '');
+        } else {
+          cells.push(fmtTime(shift?.inAt ?? null));
+          cells.push(fmtTime(shift?.outAt ?? null));
         }
       }
-      return { info, cells };
-    });
+      return cells;
+    };
+
+    // How many times the busiest worker-day was tapped. PRESENCE mode answers
+    // "was he here", which a second tap-in does not change, so it stays a
+    // single block however many shifts a day held.
+    const maxShifts = presence
+      ? 1
+      : (() => {
+          // Counted in a loop rather than spread into Math.max — a long period
+          // over a large workforce is more worker-days than an argument list
+          // can hold.
+          let most = 1;
+          for (const wm of byWorkerDay.values()) {
+            for (const shifts of wm.values()) most = Math.max(most, shifts.length);
+          }
+          return most;
+        })();
+
+    // One block per shift: the first holds every worker, and each block below
+    // it holds only the workers who tapped in that many times on some day in
+    // the period, blank on the days they did not. Headings appear only once
+    // there is a second block to tell apart from the first.
+    const SHIFT_HEADING = [
+      'FIRST LOGIN OF THE DAY',
+      'SECOND LOGIN OF THE DAY',
+      'THIRD LOGIN OF THE DAY',
+      'FOURTH LOGIN OF THE DAY',
+    ];
+    const headingFor = (i: number) => SHIFT_HEADING[i] ?? `LOGIN ${i + 1} OF THE DAY`;
+
+    const rows: AttSheetRow[] = [];
+    for (let shiftIndex = 0; shiftIndex < maxShifts; shiftIndex++) {
+      const inBlock =
+        shiftIndex === 0
+          ? workers
+          : workers.filter((w) => {
+              const wm = byWorkerDay.get(w.id);
+              return wm ? [...wm.values()].some((s) => s.length > shiftIndex) : false;
+            });
+      if (inBlock.length === 0) continue;
+      if (maxShifts > 1) {
+        rows.push({ heading: headingFor(shiftIndex), info: [], cells: [] });
+      }
+      // Serial numbers restart in each block — they number the rows of that
+      // block, not the workforce.
+      inBlock.forEach((w, idx) => {
+        rows.push({ info: infoCells(w, idx + 1), cells: shiftCells(w, shiftIndex) });
+      });
+    }
 
     // Flat representation for the preview table and CSV/PDF exports.
     const flatHeaders = [...infoHeaders];
@@ -798,7 +932,17 @@ export class ReportsService {
         }
       }
     }
-    const flatRows = rows.map((r) => [...r.info, ...r.cells]);
+    // A heading spans the sheet in XLSX; flat formats carry it in the first
+    // cell with the rest of the row blank, matching the section dividers the
+    // other reports already emit.
+    const flatRows = rows.map((r) =>
+      r.heading
+        ? [
+            `===== ${r.heading} =====`,
+            ...Array<string>(Math.max(0, flatHeaders.length - 1)).fill(''),
+          ]
+        : [...r.info, ...r.cells],
+    );
 
     return { months, infoHeaders, rows, flatHeaders, flatRows, presence };
   }

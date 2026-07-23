@@ -176,10 +176,11 @@ export default function ReportsPage() {
   const showVendorTools = reportType !== 'CORRECTION';
   // Daily/weekly/monthly render as manpower charts instead of a row table.
   const isChartReport = CHART_REPORTS.includes(reportType);
-  // Only the reports that print a "Worked (h)" column can cap it. The
-  // attendance sheet marks P/A per day and the correction log has no hours.
-  const capApplies =
-    capHours && reportType !== 'CORRECTION' && reportType !== 'ATTENDANCE_SHEET';
+  // Every report that carries hours honours the cap — the attendance sheet
+  // included, where it pulls the day's last Out time back rather than trimming
+  // an hours column. Only the correction log is exempt: it is a request log
+  // with neither hours nor times to cap.
+  const capApplies = capHours && reportType !== 'CORRECTION';
 
   const buildParams = (): Record<string, unknown> => {
     const params: Record<string, unknown> = {};

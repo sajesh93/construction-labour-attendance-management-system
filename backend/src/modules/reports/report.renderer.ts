@@ -37,12 +37,61 @@ export interface AttSheetMonth {
 export interface AttSheetRow {
   info: (string | number | null)[];
   cells: (string | null)[];
+  /**
+   * Section divider — when set, the row is a banner spanning the whole sheet
+   * ("SECOND LOGIN OF THE DAY") and `info`/`cells` are empty.
+   */
+  heading?: string;
+}
+
+/**
+ * Writes the data rows of a muster-roll sheet, starting at `startRow`. Shared by
+ * the times and presence layouts, which differ only in how tall their headers
+ * are. A row carrying a heading becomes a banner merged across the sheet.
+ */
+function writeAttSheetRows(
+  ws: ExcelJS.Worksheet,
+  rows: AttSheetRow[],
+  startRow: number,
+  infoCols: number,
+  lastCol: number,
+  thin: Partial<ExcelJS.Borders>,
+): void {
+  const bannerFill: ExcelJS.Fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFD6E2F2' },
+  };
+  rows.forEach((row, i) => {
+    const r = startRow + i;
+    if (row.heading) {
+      ws.mergeCells(r, 1, r, lastCol);
+      const cell = ws.getCell(r, 1);
+      cell.value = row.heading;
+      cell.font = { bold: true };
+      cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      cell.fill = bannerFill;
+      cell.border = thin;
+      return;
+    }
+    const wsRow = ws.getRow(r);
+    [...row.info, ...row.cells].forEach((v, j) => {
+      const cell = wsRow.getCell(j + 1);
+      cell.value = v as ExcelJS.CellValue;
+      cell.border = thin;
+      if (j >= infoCols) cell.alignment = { horizontal: 'center' };
+    });
+  });
 }
 
 /**
  * Renders the muster-roll "Attendance" grid: worker-info columns followed by one
  * 2-column (IN/Out) block per day, grouped under per-month headers. Mirrors the
  * layout of the workforce workbook's Attendance sheet.
+ *
+ * A worker who tapped in more than once on any day of the period gets a further
+ * block below the first, one per shift, so a split shift reads as the two
+ * stretches it actually was rather than one unbroken run.
  */
 export async function renderAttendanceSheetXlsx(
   months: AttSheetMonth[],
@@ -117,16 +166,7 @@ export async function renderAttendanceSheetXlsx(
   const lastCol = col - 1;
 
   // Data rows start at row 5 (after the four header rows).
-  rows.forEach((row, i) => {
-    const values = [...row.info, ...row.cells];
-    const wsRow = ws.getRow(5 + i);
-    values.forEach((v, j) => {
-      const cell = wsRow.getCell(j + 1);
-      cell.value = v as ExcelJS.CellValue;
-      cell.border = thin;
-      if (j >= n) cell.alignment = { horizontal: 'center' };
-    });
-  });
+  writeAttSheetRows(ws, rows, 5, n, lastCol, thin);
 
   for (let c = 1; c <= n; c++) ws.getColumn(c).width = c === 1 ? 6 : 16;
   for (let c = n + 1; c <= lastCol; c++) ws.getColumn(c).width = 6;
@@ -201,16 +241,7 @@ export async function renderPresenceSheetXlsx(
   const lastCol = col - 1;
 
   // Data rows start at row 3 (after the two header rows).
-  rows.forEach((row, i) => {
-    const values = [...row.info, ...row.cells];
-    const wsRow = ws.getRow(3 + i);
-    values.forEach((v, j) => {
-      const cell = wsRow.getCell(j + 1);
-      cell.value = v as ExcelJS.CellValue;
-      cell.border = thin;
-      if (j >= n) cell.alignment = { horizontal: 'center' };
-    });
-  });
+  writeAttSheetRows(ws, rows, 3, n, lastCol, thin);
 
   for (let c = 1; c <= n; c++) ws.getColumn(c).width = c === 1 ? 6 : 16;
   for (let c = n + 1; c <= lastCol; c++) ws.getColumn(c).width = 4;
