@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
@@ -32,6 +33,7 @@ import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
+import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
 import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
@@ -88,6 +90,19 @@ interface BulkPreview {
     logoutAt: string;
     workedMinutes: number;
     overtimeMinutes: number;
+  }[];
+  skipped: { id: string; workerCode: string; fullName: string; reason: string }[];
+}
+
+interface ReopenPreview {
+  dryRun: boolean;
+  reopened: {
+    id: string;
+    workerCode: string;
+    fullName: string;
+    loginAt: string;
+    wasLogoutAt: string | null;
+    wasWorkedMinutes: number | null;
   }[];
   skipped: { id: string; workerCode: string; fullName: string; reason: string }[];
 }
@@ -583,6 +598,168 @@ function BulkLogoutDialog({
   );
 }
 
+/**
+ * Undo a logout — the mirror of the sweep, and just as common: a second stray
+ * tap scans someone out a minute after they arrived while they are still
+ * working. Takes one row or a whole selection, and previews itself through a
+ * dryRun before writing, so the operator sees who really goes back on site.
+ */
+function ReopenDialog({
+  sessions,
+  onClose,
+  onDone,
+}: {
+  sessions: FixSession[] | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const toast = useToast();
+  const [reason, setReason] = React.useState('');
+  const [preview, setPreview] = React.useState<ReopenPreview | null>(null);
+  const open = !!sessions && sessions.length > 0;
+
+  React.useEffect(() => {
+    if (open) {
+      setReason('');
+      setPreview(null);
+    }
+  }, [open, sessions]);
+
+  const body = (dryRun: boolean) => ({
+    sessionIds: (sessions ?? []).map((s) => s.id),
+    reason: reason.trim(),
+    dryRun,
+  });
+
+  const check = useMutation({
+    mutationFn: () => api.post<ReopenPreview>('/attendance/admin/bulk-reopen', body(true)),
+    onSuccess: setPreview,
+    onError: (e) => toast.error(apiErrorMessage(e, 'Could not check these records')),
+  });
+
+  const apply = useMutation({
+    mutationFn: () => api.post<ReopenPreview>('/attendance/admin/bulk-reopen', body(false)),
+    onSuccess: (data) => {
+      const n = data.reopened.length;
+      toast.success(`Put ${n} ${n === 1 ? 'person' : 'people'} back on site`);
+      onDone();
+      onClose();
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Could not put them back on site')),
+  });
+
+  const busy = check.isPending || apply.isPending;
+  const chosen = sessions ?? [];
+  const going = preview?.reopened ?? [];
+  const skipped = preview?.skipped ?? [];
+
+  // Before the check the rows come from the table; after it, from the server's
+  // verdict. One shape either way, so the list renders the same both times.
+  const listed = preview
+    ? going.map((r) => ({
+        id: r.id,
+        code: r.workerCode,
+        name: r.fullName,
+        loginAt: r.loginAt,
+        out: r.wasLogoutAt,
+      }))
+    : chosen.map((s) => ({
+        id: s.id,
+        code: s.worker.workerCode,
+        name: s.worker.fullName,
+        loginAt: s.loginAt,
+        out: s.logoutAt,
+      }));
+
+  return (
+    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>
+        {preview
+          ? `Put ${going.length} ${going.length === 1 ? 'person' : 'people'} back on site?`
+          : `Undo the logout for ${chosen.length} ${chosen.length === 1 ? 'person' : 'people'}`}
+      </DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {preview
+            ? 'Check the list before confirming. Nothing has been saved yet.'
+            : 'Their out time is removed and they go back to being shown as on site. Their hours for the day are cleared until they are scanned out again.'}
+        </Typography>
+
+        <Card variant="outlined" sx={{ mb: 2.5 }}>
+          <Box sx={{ maxHeight: 260, overflowY: 'auto' }}>
+            {listed.map((row, i) => (
+              <Box key={row.id}>
+                {i > 0 && <Divider />}
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  spacing={2}
+                  sx={{ px: 2, py: 1.25 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
+                      {row.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {row.code} · in {clock(row.loginAt)}
+                    </Typography>
+                  </Box>
+                  <Change before={`out ${clock(row.out)}`} after="on site" />
+                </Stack>
+              </Box>
+            ))}
+          </Box>
+        </Card>
+
+        {skipped.length > 0 && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            <AlertTitle>
+              {skipped.length} {skipped.length === 1 ? 'person is' : 'people are'} not included
+            </AlertTitle>
+            {skipped.map((s) => (
+              <Typography key={s.id} variant="body2">
+                {s.workerCode} {s.fullName} — {s.reason.toLowerCase()}
+              </Typography>
+            ))}
+          </Alert>
+        )}
+
+        {!preview && (
+          <ReasonField
+            value={reason}
+            onChange={setReason}
+            placeholder="e.g. Scanned out by mistake on a second tap; they were still working"
+          />
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} disabled={busy} color="inherit">
+          Cancel
+        </Button>
+        {preview ? (
+          <Button
+            onClick={() => apply.mutate()}
+            disabled={busy || going.length === 0}
+            variant="contained"
+            startIcon={<UndoOutlinedIcon />}
+          >
+            {apply.isPending ? 'Saving…' : `Put ${going.length} back on site`}
+          </Button>
+        ) : (
+          <Button
+            onClick={() => check.mutate()}
+            disabled={busy || reason.trim().length < 3}
+            variant="contained"
+          >
+            {check.isPending ? 'Checking…' : 'Review'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 // ---------------------------------------------------------------- page
 
 export default function FixAttendancePage() {
@@ -598,7 +775,9 @@ export default function FixAttendancePage() {
   const [reassign, setReassign] = React.useState<FixSession | null>(null);
   const [retime, setRetime] = React.useState<FixSession | null>(null);
   const [remove, setRemove] = React.useState<FixSession | null>(null);
+  const [reopen, setReopen] = React.useState<FixSession[] | null>(null);
   const [menu, setMenu] = React.useState<{ el: HTMLElement; row: FixSession } | null>(null);
+  const [picked, setPicked] = React.useState<string[]>([]);
 
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<Site[]>('/sites') });
 
@@ -611,12 +790,22 @@ export default function FixAttendancePage() {
       ),
   });
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ['fix-day'] });
+  const refresh = () => {
+    setPicked([]);
+    return qc.invalidateQueries({ queryKey: ['fix-day'] });
+  };
 
+  // A tick on one day's table means nothing on the next, so the selection is
+  // dropped whenever the operator changes what they are looking at.
+  React.useEffect(() => setPicked([]), [date, siteId]);
+
+  // With rows ticked the sweep narrows to those; with none it takes everyone
+  // still open, which is what the card offers by default.
   const bulkBody = (dryRun: boolean) => ({
     date,
     time: logoutTime,
     siteId: siteId === 'all' ? undefined : siteId,
+    sessionIds: picked.length ? picked : undefined,
     reason: bulkReason.trim(),
     dryRun,
   });
@@ -646,7 +835,38 @@ export default function FixAttendancePage() {
   const duplicates = sessions.filter((s) => s.isDuplicate);
   const bulkReady = /^([01]\d|2[0-3]):([0-5]\d)$/.test(logoutTime) && bulkReason.trim().length >= 3;
 
+  const chosen = sessions.filter((s) => picked.includes(s.id));
+  const chosenClosed = chosen.filter((s) => s.state !== 'OPEN');
+  const chosenOpen = chosen.filter((s) => s.state === 'OPEN');
+  const allPicked = sessions.length > 0 && picked.length === sessions.length;
+
+  const toggle = (id: string) =>
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
   const columns: Column<FixSession>[] = [
+    {
+      key: 'pick',
+      label: (
+        <Checkbox
+          size="small"
+          checked={allPicked}
+          indeterminate={picked.length > 0 && !allPicked}
+          onChange={() => setPicked(allPicked ? [] : sessions.map((s) => s.id))}
+          inputProps={{ 'aria-label': 'Select every record on this day' }}
+          sx={{ ml: -1.25 }}
+        />
+      ),
+      width: 52,
+      render: (s) => (
+        <Checkbox
+          size="small"
+          checked={picked.includes(s.id)}
+          onChange={() => toggle(s.id)}
+          inputProps={{ 'aria-label': `Select ${s.worker.fullName}` }}
+          sx={{ ml: -1.25 }}
+        />
+      ),
+    },
     {
       key: 'worker',
       label: 'Person',
@@ -753,7 +973,7 @@ export default function FixAttendancePage() {
     <>
       <PageHeader
         title="Fix attendance"
-        subtitle="Correct a wrong name, change in and out times, remove a record, or log out everyone still on site"
+        subtitle="Correct a wrong name, change in and out times, undo a logout, remove a record, or log out everyone still on site"
         action={
           <Button
             variant="outlined"
@@ -861,7 +1081,11 @@ export default function FixAttendancePage() {
                 onClick={() => previewBulk.mutate()}
                 sx={{ flexShrink: 0, mt: { md: 1 } }}
               >
-                {previewBulk.isPending ? 'Checking…' : 'Review and log out'}
+                {previewBulk.isPending
+                  ? 'Checking…'
+                  : chosenOpen.length > 0
+                    ? `Review and log out (${chosenOpen.length} selected)`
+                    : 'Review and log out'}
               </Button>
             </Stack>
           </CardContent>
@@ -890,8 +1114,52 @@ export default function FixAttendancePage() {
         Everyone recorded on {date} ({sessions.length})
       </Typography>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-        Use the menu at the end of a row to fix that person&apos;s record
+        Tick people to fix several at once, or use the menu at the end of a row for one person
       </Typography>
+
+      {/* Ticked rows: the batch repairs that need no times typed in. */}
+      {picked.length > 0 && (
+        <Card sx={{ mb: 1.5, borderLeft: 4, borderColor: 'primary.main' }}>
+          <CardContent
+            sx={{
+              py: 1.5,
+              '&:last-child': { pb: 1.5 },
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1.5,
+              alignItems: 'center',
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 600, mr: 'auto' }}>
+              {picked.length} selected
+              {chosenOpen.length > 0 && chosenClosed.length > 0
+                ? ` · ${chosenClosed.length} logged out, ${chosenOpen.length} on site`
+                : ''}
+            </Typography>
+            <Button size="small" color="inherit" onClick={() => setPicked([])}>
+              Clear
+            </Button>
+            <Tooltip
+              title={
+                chosenClosed.length === 0
+                  ? 'Everyone selected is already shown as on site'
+                  : 'Remove their out time and show them as on site again'
+              }
+            >
+              <span>
+                <Button
+                  variant="contained"
+                  startIcon={<UndoOutlinedIcon />}
+                  disabled={chosenClosed.length === 0}
+                  onClick={() => setReopen(chosenClosed)}
+                >
+                  Put back on site ({chosenClosed.length})
+                </Button>
+              </span>
+            </Tooltip>
+          </CardContent>
+        </Card>
+      )}
 
       <DataTable
         columns={columns}
@@ -928,6 +1196,22 @@ export default function FixAttendancePage() {
           </ListItemIcon>
           <ListItemText primary="Change the times" secondary="Fix when they came in or went out" />
         </MenuItem>
+        {menu?.row.state !== 'OPEN' && (
+          <MenuItem
+            onClick={() => {
+              setReopen([menu!.row]);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <UndoOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Undo the logout"
+              secondary="They never left — put them back on site"
+            />
+          </MenuItem>
+        )}
         <Divider />
         <MenuItem
           onClick={() => {
@@ -949,6 +1233,7 @@ export default function FixAttendancePage() {
       <ReassignDialog session={reassign} onClose={() => setReassign(null)} onDone={refresh} />
       <TimesDialog session={retime} date={date} onClose={() => setRetime(null)} onDone={refresh} />
       <DeleteDialog session={remove} onClose={() => setRemove(null)} onDone={refresh} />
+      <ReopenDialog sessions={reopen} onClose={() => setReopen(null)} onDone={refresh} />
       <BulkLogoutDialog
         open={!!preview}
         preview={preview}

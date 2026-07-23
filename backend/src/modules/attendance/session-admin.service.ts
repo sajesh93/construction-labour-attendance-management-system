@@ -6,7 +6,7 @@ import { AuthUser } from '../../common/auth/auth-user.interface';
 import { Errors } from '../../common/errors/app.exception';
 import { businessDate } from '../../common/time/time.util';
 import { computeWorkHours, ShiftConfig } from './engine/work-hours.engine';
-import { BulkLogoutDto, EditSessionDto } from './dto/session-admin.dto';
+import { BulkLogoutDto, BulkReopenDto, EditSessionDto } from './dto/session-admin.dto';
 
 /** A session as the fix panel shows it. */
 const SESSION_SELECT = {
@@ -178,6 +178,24 @@ export class SessionAdminService {
       workerId = target.id;
     }
 
+    // Clearing the out time puts the person back on site, and the DB allows only
+    // one open session per worker — on any day, not just this one. Say which
+    // record is in the way rather than letting Postgres raise the constraint.
+    const reopening = logoutAt === null && session.state !== 'OPEN';
+    if (reopening) {
+      const openElsewhere = await this.prisma.attendanceSession.findFirst({
+        where: { workerId, state: 'OPEN', id: { not: session.id } },
+        select: { workDate: true },
+      });
+      if (openElsewhere) {
+        throw Errors.businessRule(
+          `This person is already shown as on site on ${openElsewhere.workDate
+            .toISOString()
+            .slice(0, 10)}. Close that record first.`,
+        );
+      }
+    }
+
     const hours = logoutAt
       ? computeWorkHours(
           loginAt,
@@ -199,6 +217,8 @@ export class SessionAdminService {
         lateMinutes: hours?.lateMinutes ?? null,
         earlyLeaveMinutes: hours?.earlyLeaveMinutes ?? null,
         ...(logoutAt && session.state === 'OPEN' ? { closedReason: 'ADMIN_EDIT' } : {}),
+        // A reopened session has not been closed by anything any more.
+        ...(logoutAt === null ? { closedReason: null } : {}),
       },
       select: SESSION_SELECT,
     });
@@ -382,6 +402,127 @@ export class SessionAdminService {
       closed,
       skipped,
     };
+  }
+
+  /**
+   * Undo the logout on chosen sessions — put those people back on site.
+   *
+   * The mirror image of the sweep, and just as common: a watchman walks the line
+   * tapping cards a second time by mistake, and a whole row of men who are still
+   * working end up scanned out a minute after they arrived. Reopening restores
+   * the session to how it stood before the stray tap: the out time goes, and the
+   * worked/overtime/late figures derived from it go with it.
+   *
+   * Only the sessions named in `sessionIds` are touched — there is no "reopen
+   * everyone" sweep, because closing a day is deliberate and undoing all of it
+   * at once is never what someone means.
+   *
+   * A worker may hold only one open session at a time (a DB constraint), so
+   * anyone already on site is reported back as skipped instead of failing the
+   * whole batch. `dryRun` returns the same shape without writing.
+   */
+  async bulkReopen(user: AuthUser, dto: BulkReopenDto) {
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        id: { in: dto.sessionIds },
+        organizationId: user.organizationId,
+        ...this.scope(user),
+      },
+      select: SESSION_SELECT,
+      orderBy: [{ worker: { workerCode: 'asc' } }],
+    });
+
+    // Everyone who already holds an open session — they cannot take another.
+    const openAlready = await this.prisma.attendanceSession.findMany({
+      where: {
+        workerId: { in: sessions.map((s) => s.workerId) },
+        state: 'OPEN',
+        id: { notIn: sessions.map((s) => s.id) },
+      },
+      select: { workerId: true, workDate: true },
+    });
+    const blocked = new Map(openAlready.map((s) => [s.workerId, s.workDate]));
+
+    const reopened: Array<{
+      id: string;
+      workerCode: string;
+      fullName: string;
+      loginAt: Date;
+      wasLogoutAt: Date | null;
+      wasWorkedMinutes: number | null;
+    }> = [];
+    const skipped: Array<{ id: string; workerCode: string; fullName: string; reason: string }> = [];
+
+    // Two rows for the same man in one batch would collide with each other, so
+    // the first one through claims him and the rest are reported.
+    const claimed = new Set<string>();
+
+    for (const s of sessions) {
+      if (s.state === 'OPEN') {
+        skipped.push({
+          id: s.id,
+          workerCode: s.worker.workerCode,
+          fullName: s.worker.fullName,
+          reason: 'Already on site',
+        });
+        continue;
+      }
+      const clash = blocked.get(s.workerId);
+      if (clash || claimed.has(s.workerId)) {
+        skipped.push({
+          id: s.id,
+          workerCode: s.worker.workerCode,
+          fullName: s.worker.fullName,
+          reason: clash
+            ? `Already on site from ${clash.toISOString().slice(0, 10)}`
+            : 'Another record for this person is being reopened',
+        });
+        continue;
+      }
+      claimed.add(s.workerId);
+
+      if (!dto.dryRun) {
+        await this.prisma.attendanceSession.update({
+          where: { id: s.id },
+          data: {
+            logoutAt: null,
+            state: 'OPEN',
+            workedMinutes: null,
+            overtimeMinutes: null,
+            lateMinutes: null,
+            earlyLeaveMinutes: null,
+            closedReason: null,
+          },
+        });
+        await this.audit.record({
+          organizationId: user.organizationId,
+          actorUserId: user.userId,
+          actorRole: user.role,
+          action: 'ATTENDANCE_SESSION_REOPEN',
+          entityType: 'AttendanceSession',
+          entityId: s.id,
+          oldValue: {
+            state: s.state,
+            logoutAt: s.logoutAt,
+            workedMinutes: s.workedMinutes,
+            closedReason: s.closedReason,
+          },
+          newValue: { state: 'OPEN', logoutAt: null, workedMinutes: null },
+          reason: dto.reason,
+        });
+      }
+
+      reopened.push({
+        id: s.id,
+        workerCode: s.worker.workerCode,
+        fullName: s.worker.fullName,
+        loginAt: s.loginAt,
+        wasLogoutAt: s.logoutAt,
+        wasWorkedMinutes: s.workedMinutes,
+      });
+    }
+
+    return { dryRun: dto.dryRun ?? false, reopened, skipped };
   }
 
   /** The instant of `hh:mm` on `workDate` as read on a clock in `timezone`. */

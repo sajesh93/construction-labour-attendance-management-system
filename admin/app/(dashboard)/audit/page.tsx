@@ -66,6 +66,7 @@ const ACTIONS: Record<string, { label: string; tone: BadgeTone }> = {
   ATTENDANCE_SESSION_EDIT: { label: 'Attendance record corrected', tone: 'warning' },
   ATTENDANCE_SESSION_DELETE: { label: 'Attendance record deleted', tone: 'error' },
   ATTENDANCE_SESSION_BULK_LOGOUT: { label: 'Logged out by admin', tone: 'warning' },
+  ATTENDANCE_SESSION_REOPEN: { label: 'Put back on site by admin', tone: 'warning' },
   ATTENDANCE_SESSION_REASSIGN: { label: 'Attendance moved to another person', tone: 'warning' },
   ATTENDANCE_SESSION_CLOSE: { label: 'Logged out by admin', tone: 'warning' },
   CORRECTION_REQUEST: { label: 'Correction requested', tone: 'info' },

@@ -5,7 +5,12 @@ import { AttendanceService } from './attendance.service';
 import { SessionAdminService } from './session-admin.service';
 import { SyncService } from './sync.service';
 import { ConfirmDto, TapDto } from './dto/attendance.dto';
-import { BulkLogoutDto, DeleteSessionDto, EditSessionDto } from './dto/session-admin.dto';
+import {
+  BulkLogoutDto,
+  BulkReopenDto,
+  DeleteSessionDto,
+  EditSessionDto,
+} from './dto/session-admin.dto';
 import { RequirePermissions, RequiresDevice } from '../../common/rbac/rbac.decorators';
 import { Permission } from '../../common/rbac/permissions';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
@@ -170,6 +175,14 @@ export class AttendanceController {
   @RequirePermissions(Permission.ATTENDANCE_EDIT)
   adminBulkLogout(@CurrentUser() user: AuthUser, @Body() dto: BulkLogoutDto) {
     return this.sessionAdmin.bulkLogout(user, dto);
+  }
+
+  // The other direction: undo a logout that should never have happened and put
+  // those people back on site. Also previews itself through dryRun.
+  @Post('admin/bulk-reopen')
+  @RequirePermissions(Permission.ATTENDANCE_EDIT)
+  adminBulkReopen(@CurrentUser() user: AuthUser, @Body() dto: BulkReopenDto) {
+    return this.sessionAdmin.bulkReopen(user, dto);
   }
 
   @Post('/sync')

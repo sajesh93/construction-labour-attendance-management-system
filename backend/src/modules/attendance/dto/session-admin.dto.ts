@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsISO8601,
@@ -52,6 +53,26 @@ export class EditSessionDto {
 }
 
 export class DeleteSessionDto {
+  @ApiProperty(REASON)
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(500)
+  reason!: string;
+}
+
+export class BulkReopenDto {
+  @ApiProperty({ description: 'The sessions to put back on site' })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsUUID('4', { each: true })
+  sessionIds!: string[];
+
+  @ApiProperty({ required: false, description: 'Preview the outcome without writing' })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
+
   @ApiProperty(REASON)
   @IsString()
   @IsNotEmpty()
